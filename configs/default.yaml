@@ -31,5 +31,6 @@ training:
 
 remote:
   use_remote: false
-  backend: "kaggle"
-  data_root: "/kaggle/input/inbed-pose-estimation-vipcup21/data/raw"
+  # Backend config is loaded from gpu_connection.json at runtime.
+  # Supports "cloudflare_tunnel" (Kaggle) and "ssh" (RunPod, Vast.ai, Lambda, etc.)
+  # Data path on remote is passed via --data_root to scripts/train.py.

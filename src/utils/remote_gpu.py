@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import time
 from contextlib import contextmanager
@@ -263,9 +264,17 @@ class GPUSession:
 
         Parameters
         ----------
-        command : shell command to run (will be wrapped with conda PATH)
-        timeout : seconds before the remote command is killed
-        stream  : if True, print stdout+stderr lines in real time
+        command : shell command to run.
+        timeout : seconds before the remote command is killed.
+        stream  : if True, print stdout+stderr lines in real time.
+
+        Notes
+        -----
+        Commands are wrapped in ``bash -l -c '...'`` (a login shell) so that
+        the remote ``~/.bash_profile`` is sourced automatically.  This is the
+        provider-agnostic standard: each GPU provider's setup script should
+        write PATH / LD_LIBRARY_PATH to ``~/.bash_profile``, not ``~/.bashrc``
+        (which is only sourced in interactive shells).
         """
         import sys
         import threading
@@ -273,11 +282,9 @@ class GPUSession:
         if not self._ssh:
             raise RuntimeError("Not connected. Use GPUManager.use() context manager.")
 
-        # Prepend PATH so conda/pip/python are available
-        wrapped = (
-            "export PATH=/opt/conda/bin:/usr/local/cuda/bin:$PATH; "
-            "export CUDA_HOME=/usr/local/cuda; " + command
-        )
+        # Wrap in a login shell so ~/.bash_profile is sourced — this is the
+        # standard way to pick up CUDA / conda / venv paths on any provider.
+        wrapped = f"bash -l -c {shlex.quote(command)}"
 
         _, stdout_f, stderr_f = self._ssh.exec_command(wrapped, timeout=timeout)
         stdout_lines: list[str] = []
@@ -462,16 +469,29 @@ class GPUManager:
 
     def add_backend_from_json(self, name: str, json_path: str):
         """
-        Load backend config from the gpu_connection.json file saved
-        by the Kaggle notebook (Cell 3).
+        Load backend config from a gpu_connection.json file.
+
+        The JSON schema supports two backend types:
+
+        Cloudflare tunnel (Kaggle, self-hosted)::
+
+            {"type": "cloudflare_tunnel", "tunnel_hostname": "abc.trycloudflare.com",
+             "ssh_user": "root", "port": 22, "gpu": "Tesla T4"}
+
+        Direct SSH (RunPod, Vast.ai, Lambda Labs, on-prem)::
+
+            {"type": "ssh", "host": "12.34.56.78", "port": 22001,
+             "ssh_user": "root", "gpu": "A100"}
         """
         with open(os.path.expanduser(json_path)) as f:
             data = json.load(f)
+        backend_type = data.get("type", "cloudflare_tunnel")
         self.add_backend(
             name,
             {
-                "type": "cloudflare_tunnel",
-                "tunnel_hostname": data["tunnel_hostname"],
+                "type": backend_type,
+                "tunnel_hostname": data.get("tunnel_hostname", ""),
+                "host": data.get("host", data.get("tunnel_hostname", "")),
                 "ssh_user": data.get("ssh_user", "root"),
                 "port": data.get("port", 22),
                 "meta": {"gpu": data.get("gpu", "unknown")},
