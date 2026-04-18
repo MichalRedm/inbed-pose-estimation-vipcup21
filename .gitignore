@@ -160,8 +160,4 @@ archive/
 *.npy
 gpu_connection.json
 
-# Initial Reference Files (to be deleted)
-importing_data.ipynb
-kaggle_gpu_server.ipynb
-/remote_gpu.py
-ideas.md
+
