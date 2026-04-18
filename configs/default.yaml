@@ -1,0 +1,31 @@
+# Project Configuration
+
+project:
+  name: inbed-pose-estimation
+  seed: 42
+
+dataset:
+  root: "data/raw"
+  modalities: ["RGB", "IR"]
+  num_subjects_train: 30
+  num_subjects_total: 70
+  temperature_range: [20, 40]
+  image_size: [256, 256]
+
+model:
+  name: "hrnet"
+  hrnet:
+    num_joints: 14
+    in_channels: 3 # Adjust based on modality
+    architecture: "w32"
+
+training:
+  batch_size: 16
+  epochs: 100
+  lr: 0.0001
+  weight_decay: 0.0001
+  save_dir: "models/checkpoints"
+
+remote:
+  use_remote: false
+  backend: "kaggle" # "kaggle", "vast", "custom"
