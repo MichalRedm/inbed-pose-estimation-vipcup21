@@ -236,6 +236,8 @@ class GPUSession:
             connect_host = self.config.host
             connect_port = self.config.port
 
+        key_path = os.path.expanduser(os.path.expandvars(key_path))
+        print(f"  Using SSH key: {key_path} (exists={os.path.exists(key_path)})")
         self._ssh = paramiko.SSHClient()
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self._ssh.connect(
@@ -243,6 +245,8 @@ class GPUSession:
             port=connect_port,
             username=self.config.ssh_user,
             key_filename=key_path,
+            allow_agent=True,
+            look_for_keys=False,
             timeout=30,
             banner_timeout=60,
         )

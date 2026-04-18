@@ -71,11 +71,11 @@ def main():
         )
         gpu.run(f"cd /root/project && {env_setup} && {download_cmd}")
 
-        # --- Step 3: Run training ---
-        print("\nExecuting training on remote GPU...")
+        # --- Step 3: Run training (smoke test: 2 epochs) ---
+        print("\nExecuting training smoke test (2 epochs) on remote GPU...")
         cmd = (
             f"cd /root/project && {env_setup} && "
-            "python3 -u scripts/train.py --data_root data/raw"
+            "python3 -u scripts/train.py --data_root data/raw --epochs 2"
         )
         result = gpu.run(cmd)
 

@@ -25,10 +25,11 @@ def train():
     
     import argparse
     parser = argparse.ArgumentParser()
-    parser.get_argument = lambda x: None # dummy
     parser.add_argument("--data_root", type=str, default=dataset_cfg.get("root", "data/raw"))
+    parser.add_argument("--epochs", type=int, default=None,
+                        help="Override number of training epochs from config")
     args, _ = parser.parse_known_args()
-    
+
     data_root = args.data_root
 
     # 2. Check for Remote Execution
@@ -70,7 +71,7 @@ def train():
     criterion = nn.MSELoss()  # Heatmap loss
 
     # 7. Training Loop
-    epochs = train_cfg.get("epochs", 10)
+    epochs = args.epochs if args.epochs is not None else train_cfg.get("epochs", 10)
     print(f"Starting training for {epochs} epochs...")
 
     for epoch in range(epochs):
