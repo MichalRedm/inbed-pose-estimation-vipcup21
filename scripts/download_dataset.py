@@ -39,9 +39,16 @@ def download_dataset(dry_run=False):
     api = KaggleApi()
     api.authenticate()
 
-    print(f"Downloading {dataset_slug}...")
-    api.dataset_download_files(dataset_slug, path=target_dir, unzip=True)
-    print(f"Download and extraction complete at {target_dir}")
+    print(f"Downloading {dataset_slug} to {target_dir}...")
+    try:
+        api.dataset_download_files(dataset_slug, path=str(target_dir), unzip=True)
+        print("Download and extraction complete.")
+        # Verify
+        files = list(target_dir.glob("*"))
+        print(f"Files in target directory: {[f.name for f in files]}")
+    except Exception as e:
+        print(f"❌ Error downloading dataset: {e}")
+        raise
 
 
 if __name__ == "__main__":

@@ -1,12 +1,19 @@
 import os
 import torch
+from tqdm import tqdm
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from src.utils import load_config
 from src.data.dataset import VIPCupDataset
 from src.models.hrnet import get_pose_net
-from tqdm import tqdm
+
+def check_cuda():
+    print(f"CUDA Available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"Device Name: {torch.cuda.get_device_name(0)}")
+    else:
+        print("WARNING: CUDA NOT AVAILABLE! Training on CPU will be extremely slow.")
 
 
 def train():
@@ -15,6 +22,14 @@ def train():
     train_cfg = config.get("training", {})
     model_cfg = config.get("model", {}).get("hrnet", {})
     dataset_cfg = config.get("dataset", {})
+    
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.get_argument = lambda x: None # dummy
+    parser.add_argument("--data_root", type=str, default=dataset_cfg.get("root", "data/raw"))
+    args, _ = parser.parse_known_args()
+    
+    data_root = args.data_root
 
     # 2. Check for Remote Execution
     if config.get("remote", {}).get("use_remote", False):
@@ -24,12 +39,13 @@ def train():
         pass
 
     # 3. Setup Device
+    check_cuda()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     # 4. Initialize Data
     train_dataset = VIPCupDataset(
-        root=dataset_cfg.get("root", "data/raw"),
+        root=data_root,
         subjects=range(1, dataset_cfg.get("num_subjects_train", 30) + 1),
         modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
@@ -64,23 +80,18 @@ def train():
 
         for batch in pbar:
             images = batch["image"].to(device)
-            joints = batch["joints"]
+            targets = batch["target"]
 
-            if joints is None:
+            if targets is None:
                 continue
 
-            joints = joints.to(device)
+            targets = targets.to(device)
 
             # Forward pass
             outputs = model(images)
 
-            # Simple joint coordinate regression loss for now
-            # (In production, this should be heatmap-based)
-            # Flatten outputs and calculate loss against target coordinates
-            # This is a placeholder for the actual heatmap-to-coordinate logic
-            loss = criterion(
-                outputs.mean(dim=[2, 3]), joints[:, :2, :].mean(dim=2)
-            )  # Placeholder
+            # Heatmap MSE loss
+            loss = criterion(outputs, targets)
 
             # Backward pass
             optimizer.zero_grad()
@@ -89,6 +100,14 @@ def train():
 
             epoch_loss += loss.item()
             pbar.set_postfix(loss=loss.item())
+
+        # Save checkpoint
+        if (epoch + 1) % 10 == 0:
+            os.makedirs(train_cfg.get("save_dir", "models/checkpoints"), exist_ok=True)
+            torch.save(
+                model.state_dict(),
+                os.path.join(train_cfg.get("save_dir", "models/checkpoints"), f"hrnet_epoch_{epoch+1}.pth")
+            )
 
     print("Training Complete!")
 
