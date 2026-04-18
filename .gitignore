@@ -153,8 +153,11 @@ cython_debug/
 .idea/
 
 # Custom for this project
+# Project-specific ignores
 .agents/
 /data/
+/docs/
+*.ipynb
 archive/
 *.mat
 *.npy
