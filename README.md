@@ -85,7 +85,6 @@ python -m pytest tests/
 ## 📂 Project Structure
 ```text
 .
-├── .agents/          # Persistent agent context (ACS)
 ├── .github/          # GitHub Actions CI workflows
 ├── configs/          # Experiment configurations (YAML)
 ├── data/             # Dataset storage (Git-ignored)
