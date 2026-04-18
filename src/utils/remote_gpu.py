@@ -209,9 +209,7 @@ class GPUSession:
             timeout=30,
             banner_timeout=60,
         )
-        print(f'✅ Connected to [{self.config.name}] '
-              f'({self.config.type}) '
-              f'GPU: {self.config.meta.get("gpu", "unknown")}')
+        print(f'Connected to [{self.config.name}]')
 
     def disconnect(self):
         if self._ssh:
@@ -278,14 +276,14 @@ class GPUSession:
         """
         with SCPClient(self._ssh.get_transport()) as scp:
             scp.put(local_path, remote_path=remote_path, recursive=recursive)
-        print(f'⬆ Uploaded {local_path!r} → {remote_path!r}')
+        print(f'Uploaded {local_path!r} -> {remote_path!r}')
 
     def download(self, remote_path: str, local_path: str, recursive: bool = True):
         """Download a file or directory from the remote GPU."""
         os.makedirs(local_path, exist_ok=True)
         with SCPClient(self._ssh.get_transport()) as scp:
             scp.get(remote_path, local_path=local_path, recursive=recursive)
-        print(f'⬇ Downloaded {remote_path!r} → {local_path!r}')
+        print(f'Downloaded {remote_path!r} -> {local_path!r}')
 
     def write_file(self, remote_path: str, content: str):
         """Write a text string directly to a file on the remote GPU."""
@@ -355,7 +353,7 @@ class GPUManager:
             tunnel_hostname=cfg.get('tunnel_hostname', cfg.get('host', '')),
             meta=cfg.get('meta', {}),
         )
-        print(f'📋 Registered backend: {name!r} [{cfg.get("type", "ssh")}]')
+        print(f'Registered backend: {name!r} [{cfg.get("type", "ssh")}]')
 
     def add_backend_from_json(self, name: str, json_path: str):
         """
@@ -417,14 +415,14 @@ class GPUManager:
             try:
                 session = GPUSession(self._backends[name])
                 session.connect()
-                print(f'🎯 Auto-selected backend: {name!r}')
+                print(f'Auto-selected backend: {name!r}')
                 try:
                     yield session
                 finally:
                     session.disconnect()
                 return
             except Exception as e:
-                print(f'⚠️  Backend {name!r} unreachable: {e}')
+                print(f'Backend {name!r} unreachable: {e}')
         raise RuntimeError('No reachable GPU backends found.')
 
     # ── Bulk operations ───────────────────────────────────────────────────────
