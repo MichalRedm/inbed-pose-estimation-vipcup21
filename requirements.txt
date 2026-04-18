@@ -6,7 +6,6 @@ scipy
 matplotlib
 paramiko
 scp
-ruff
 python-dotenv
 pyyaml
 pandas
@@ -14,4 +13,3 @@ tqdm
 scikit-learn
 opencv-python
 tensorboard
-pytest
