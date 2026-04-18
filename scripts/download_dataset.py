@@ -1,27 +1,28 @@
-import os
-import zipfile
 import argparse
 from pathlib import Path
 from src.utils import load_config
+
 
 def download_dataset(dry_run=False):
     """
     Download and extract the VIP Cup 2021 dataset from Kaggle.
     """
     config = load_config()
-    dataset_slug = config.get("dataset", {}).get("kaggle_slug", "vsharma1/ieee-vip-cup-2021")
+    dataset_slug = config.get("dataset", {}).get(
+        "kaggle_slug", "vsharma1/ieee-vip-cup-2021"
+    )
     target_dir = Path(config.get("dataset", {}).get("root", "data/raw"))
-    
+
     print(f"Dataset: {dataset_slug}")
     print(f"Target:  {target_dir}")
-    
+
     if dry_run:
         print("Dry run complete. No files downloaded.")
         return
 
     # Ensure target directory exists
     target_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Import kaggle here to avoid auth errors at startup
     try:
         from kaggle.api.kaggle_api_extended import KaggleApi
@@ -31,14 +32,19 @@ def download_dataset(dry_run=False):
 
     api = KaggleApi()
     api.authenticate()
-    
+
     print(f"Downloading {dataset_slug}...")
     api.dataset_download_files(dataset_slug, path=target_dir, unzip=True)
     print(f"Download and extraction complete at {target_dir}")
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Download VIP Cup 2021 dataset from Kaggle.")
-    parser.add_argument("--dry-run", action="store_true", help="Print info without downloading.")
+    parser = argparse.ArgumentParser(
+        description="Download VIP Cup 2021 dataset from Kaggle."
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print info without downloading."
+    )
     args = parser.parse_args()
-    
+
     download_dataset(dry_run=args.dry_run)
