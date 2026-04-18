@@ -1,2 +1,4 @@
 ruff
 pytest
+paramiko
+scp

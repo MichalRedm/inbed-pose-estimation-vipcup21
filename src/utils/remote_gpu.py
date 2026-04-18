@@ -294,6 +294,50 @@ class GPUSession:
             scp.get(remote_path, local_path=local_path, recursive=recursive)
         print(f"Downloaded {remote_path!r} -> {local_path!r}")
 
+    def sync_project(
+        self,
+        local_dir: str = ".",
+        remote_dir: str = "/root/project",
+        exclude: list[str] | None = None,
+    ):
+        """
+        Sync local code to the remote GPU, excluding data, venv, and git.
+        """
+        import shutil
+        import tempfile
+
+        if exclude is None:
+            exclude = [
+                ".git",
+                ".venv",
+                "data",
+                "__pycache__",
+                ".pytest_cache",
+                ".agents",
+                ".ipynb_checkpoints",
+            ]
+
+        print(f"Syncing project to {remote_dir}...")
+        # Create a temporary directory for cleaned project structure
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            target = os.path.join(tmp_dir, "sync_payload")
+
+            def ignore_patterns(path, names):
+                return [n for n in names if n in exclude]
+
+            shutil.copytree(local_dir, target, ignore=ignore_patterns)
+
+            # Create remote directory structure
+            self.run(f"mkdir -p {remote_dir}")
+
+            # Upload cleaned structure
+            self.upload(target, remote_dir, recursive=True)
+
+            # Move files from sync_payload to remote_dir root if needed
+            self.run(f"cp -r {remote_dir}/sync_payload/* {remote_dir}/ && rm -rf {remote_dir}/sync_payload")
+
+        print(f"✅ Project synced to {remote_dir}")
+
     def write_file(self, remote_path: str, content: str):
         """Write a text string directly to a file on the remote GPU."""
         sftp = self._ssh.open_sftp()
