@@ -6,6 +6,7 @@ project:
 
 dataset:
   root: "data/raw"
+  kaggle_slug: "awsaf49/ieee-vip-cup-2021-train-val-dataset"
   modalities: ["RGB", "IR"]
   num_subjects_train: 30
   num_subjects_total: 70
