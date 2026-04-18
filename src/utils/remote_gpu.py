@@ -134,10 +134,36 @@ class CloudflaredProxy:
         self.hostname = hostname
         self.local_port = local_port
         self._proc: subprocess.Popen | None = None
+        self._executable = self._get_cloudflared_executable()
+
+    def _get_cloudflared_executable(self) -> str:
+        """Find the cloudflared executable, checking common Windows paths if needed."""
+        # 1. Check if in PATH
+        import shutil
+        if shutil.which("cloudflared"):
+            return "cloudflared"
+            
+        # 2. Check environment variable
+        env_path = os.environ.get("GPU_CLOUDFLARED_PATH")
+        if env_path and os.path.exists(env_path):
+            return env_path
+            
+        # 3. Check common Windows paths
+        common_paths = [
+            r"C:\Program Files (x86)\cloudflared\cloudflared.exe",
+            r"C:\Program Files\cloudflared\cloudflared.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\bin\cloudflared.exe")
+        ]
+        for path in common_paths:
+            if os.path.exists(path):
+                return path
+                
+        # Default back to "cloudflared" and hope for the best
+        return "cloudflared"
 
     def start(self, timeout: float = 15.0):
         cmd = [
-            "cloudflared",
+            self._executable,
             "access",
             "tcp",
             "--hostname",
@@ -239,8 +265,11 @@ class GPUSession:
         ----------
         command : shell command to run (will be wrapped with conda PATH)
         timeout : seconds before the remote command is killed
-        stream  : if True, print stdout lines in real time
+        stream  : if True, print stdout+stderr lines in real time
         """
+        import sys
+        import threading
+
         if not self._ssh:
             raise RuntimeError("Not connected. Use GPUManager.use() context manager.")
 
@@ -251,17 +280,29 @@ class GPUSession:
         )
 
         _, stdout_f, stderr_f = self._ssh.exec_command(wrapped, timeout=timeout)
-        stdout_lines = []
-        stderr_lines = []
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
 
         if stream:
-            for line in stdout_f:
-                print(line, end="")
-                stdout_lines.append(line)
+            def _stream(channel_file, storage, prefix=""):
+                for line in channel_file:
+                    storage.append(line)
+                    safe_line = line.encode(sys.stdout.encoding, errors="replace").decode(sys.stdout.encoding)
+                    if prefix:
+                        print(f"{prefix}{safe_line}", end="", flush=True)
+                    else:
+                        print(safe_line, end="", flush=True)
+
+            t_out = threading.Thread(target=_stream, args=(stdout_f, stdout_lines, ""))
+            t_err = threading.Thread(target=_stream, args=(stderr_f, stderr_lines, "[stderr] "))
+            t_out.start()
+            t_err.start()
+            t_out.join()
+            t_err.join()
         else:
             stdout_lines = stdout_f.readlines()
+            stderr_lines = stderr_f.readlines()
 
-        stderr_lines = stderr_f.readlines()
         exit_code = stdout_f.channel.recv_exit_status()
 
         return RunResult(
@@ -323,9 +364,19 @@ class GPUSession:
             target = os.path.join(tmp_dir, "sync_payload")
 
             def ignore_patterns(path, names):
-                return [n for n in names if n in exclude]
+                # Calculate relative path from local_dir
+                rel_base = os.path.relpath(path, local_dir)
+                
+                ignored = []
+                for n in names:
+                    if n in exclude:
+                        # For 'data', only ignore if it's at the root
+                        if n == "data" and rel_base != ".":
+                            continue
+                        ignored.append(n)
+                return ignored
 
-            shutil.copytree(local_dir, target, ignore=ignore_patterns)
+            shutil.copytree(local_dir, target, ignore=ignore_patterns, dirs_exist_ok=True)
 
             # Create remote directory structure
             self.run(f"mkdir -p {remote_dir}")
@@ -336,7 +387,7 @@ class GPUSession:
             # Move files from sync_payload to remote_dir root if needed
             self.run(f"cp -r {remote_dir}/sync_payload/* {remote_dir}/ && rm -rf {remote_dir}/sync_payload")
 
-        print(f"✅ Project synced to {remote_dir}")
+        print(f"Project synced to {remote_dir}")
 
     def write_file(self, remote_path: str, content: str):
         """Write a text string directly to a file on the remote GPU."""
