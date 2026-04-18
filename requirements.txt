@@ -14,3 +14,4 @@ tqdm
 scikit-learn
 opencv-python
 tensorboard
+pytest
