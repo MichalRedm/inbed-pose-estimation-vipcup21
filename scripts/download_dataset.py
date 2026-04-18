@@ -25,6 +25,11 @@ def download_dataset(dry_run=False):
 
     # Import kaggle here to avoid auth errors at startup
     try:
+        import os
+        # Map user's custom KAGGLE_API_TOKEN to standard KAGGLE_KEY if provided
+        if os.getenv("KAGGLE_API_TOKEN") and not os.getenv("KAGGLE_KEY"):
+            os.environ["KAGGLE_KEY"] = os.getenv("KAGGLE_API_TOKEN")
+            
         from kaggle.api.kaggle_api_extended import KaggleApi
     except ImportError:
         print("❌ Kaggle API not installed. Run 'pip install kaggle'.")
