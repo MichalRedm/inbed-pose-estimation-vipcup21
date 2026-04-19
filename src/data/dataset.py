@@ -181,8 +181,12 @@ class VIPCupDataset(Dataset):
 
         for i in range(num_joints):
             # Dataset README: if_occluded == 0 means VISIBLE, != 0 means occluded.
-            # Only generate a heatmap for visible (non-occluded) joints.
-            if joints[2, i] != 0:
+            # In many tasks (like VIP Cup), we want to predict the pose even if occluded (under blanket).
+            # We skip only if the joint is completely missing/unannotated (coords at 0,0).
+            if joints[2, i] > 1:  # Type 2 is usually 'not annotated' or 'out of view'
+                continue
+
+            if joints[0, i] == 0 and joints[1, i] == 0:
                 continue
 
             mu_x = int(joints[0, i] * scale_x + 0.5)
