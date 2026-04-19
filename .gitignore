@@ -162,5 +162,8 @@ archive/
 *.mat
 *.npy
 gpu_connection.json
+/models/
+/results/
+
 
 
