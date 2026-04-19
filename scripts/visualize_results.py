@@ -10,7 +10,7 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.utils import load_config
+from src.utils import load_config, decode_heatmaps, draw_pose
 from src.data.dataset import VIPCupDataset, collate_skip_none
 from src.models.hrnet import get_pose_net
 
@@ -20,6 +20,7 @@ def visualize_samples(checkpoint_path, num_samples=3):
     config = load_config()
     model_cfg = config.get("model", {}).get("hrnet", {})
     dataset_cfg = config.get("dataset", {})
+    image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -32,13 +33,12 @@ def visualize_samples(checkpoint_path, num_samples=3):
     model.eval()
 
     # 3. Setup Dataset
-    # We use a small subset for visualization
     s_train = dataset_cfg.get("subjects_train", [1, 30])
     dataset = VIPCupDataset(
         root=dataset_cfg.get("root", "data/raw"),
         subjects=[s_train[0]],  # Use the first training subject as a sample
         modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
-        image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
+        image_size=image_size,
     )
 
     loader = DataLoader(
@@ -57,36 +57,47 @@ def visualize_samples(checkpoint_path, num_samples=3):
                 break
 
             image = batch["image"].to(device)
-            target = batch["target"].to(device)
+            # gt_joints is (B, 3, 14) -> (3, 14) -> (14, 3) where [x, y, visibility]
+            gt_joints = batch["joints"][0].cpu().numpy().T
 
             output = model(image)
+            pred_joints = decode_heatmaps(output, image_size)[0]  # (J, 2)
 
-            # Convert to numpy for plotting
-            # Image is [C, H, W] -> [H, W, C]
+            # Convert image to numpy for plotting
             img_np = image[0].cpu().numpy().transpose(1, 2, 0)
-            # Normalize for display
             img_np = (img_np - img_np.min()) / (img_np.max() - img_np.min())
 
-            # Take first few joint heatmaps for visualization
-            target_np = torch.sum(target[0], dim=0).cpu().numpy()
-            output_np = torch.sum(output[0], dim=0).cpu().numpy()
-
             # Plot
-            fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+            fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+
+            # Left: Original Image
             axes[0].imshow(img_np)
             axes[0].set_title("Input Image")
             axes[0].axis("off")
 
-            axes[1].imshow(target_np, cmap="jet")
-            axes[1].set_title("Target Heatmap")
+            # Right: Overlay
+            axes[1].imshow(img_np)
+            # SLP visibility logic: v=0 (visible), v=1 (occluded/blanket).
+            # We want to show both as Ground Truth because they have valid locations.
+            vis_mask = (gt_joints[:, 2] <= 1) & (gt_joints[:, 0] > 0)
+            draw_pose(
+                axes[1],
+                gt_joints[:, :2],
+                visibility=vis_mask,
+                color="blue",
+                label="Ground Truth",
+                alpha=0.6,
+            )
+            draw_pose(axes[1], pred_joints, color="red", label="Predicted")
+            axes[1].set_title(f"Pose Overlay (Sample {count + 1})")
+            axes[1].legend(loc="upper right")
             axes[1].axis("off")
 
-            axes[2].imshow(output_np, cmap="jet")
-            axes[2].set_title("Predicted Heatmap")
-            axes[2].axis("off")
-
+            plt.tight_layout()
+            # Adjust top to prevent title cropping
+            fig.subplots_adjust(top=0.9)
             save_path = f"results/sample_{count + 1}.png"
-            plt.savefig(save_path)
+            plt.savefig(save_path, dpi=150)
             plt.close()
             print(f"Saved visualization to: {save_path}")
 
