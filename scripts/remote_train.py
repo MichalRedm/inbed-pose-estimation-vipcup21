@@ -186,7 +186,6 @@ def main():
         training_thread = threading.Thread(target=run_training, daemon=True)
         training_thread.start()
 
-
         def run_polling():
             # Open a second session for background polling to avoid thread safety issues
             # with the primary training session.
