@@ -121,10 +121,11 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5):
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     model.eval()
 
-    # Validation dataset: subjects 71–80, cover1 + cover2
+    # 3. Setup Dataset
+    s_val = dataset_cfg.get("subjects_val", [81, 90])
     val_dataset = VIPCupDataset(
         root=data_root,
-        subjects=range(71, 81),
+        subjects=range(s_val[0], s_val[1] + 1),
         modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
         covers=["cover1", "cover2"],
         split="valid",

@@ -33,9 +33,10 @@ def visualize_samples(checkpoint_path, num_samples=3):
 
     # 3. Setup Dataset
     # We use a small subset for visualization
+    s_train = dataset_cfg.get("subjects_train", [1, 30])
     dataset = VIPCupDataset(
         root=dataset_cfg.get("root", "data/raw"),
-        subjects=[1],  # Use subject 1 as a sample
+        subjects=[s_train[0]],  # Use the first training subject as a sample
         modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
     )

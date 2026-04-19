@@ -101,16 +101,19 @@ def train():
         )
 
     # 4. Initialize Data
+    s_train = dataset_cfg.get("subjects_train", [1, 30])
+    s_val = dataset_cfg.get("subjects_val", [81, 90])
+
     train_dataset = VIPCupDataset(
         root=data_root,
-        subjects=range(1, dataset_cfg.get("num_subjects_train", 30) + 1),
+        subjects=range(s_train[0], s_train[1] + 1),
         modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
         split="train",
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
     )
     val_dataset = VIPCupDataset(
         root=data_root,
-        subjects=range(71, 81),
+        subjects=range(s_val[0], s_val[1] + 1),
         modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
         covers=["cover1", "cover2"],
         split="valid",
