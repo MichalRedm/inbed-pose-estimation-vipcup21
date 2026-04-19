@@ -1,5 +1,8 @@
 import os
 import torch
+import argparse
+import glob
+import re
 from tqdm import tqdm
 import torch.nn as nn
 import torch.optim as optim
@@ -24,8 +27,6 @@ def train():
     model_cfg = config.get("model", {}).get("hrnet", {})
     dataset_cfg = config.get("dataset", {})
 
-    import argparse
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--data_root", type=str, default=dataset_cfg.get("root", "data/raw")
@@ -36,9 +37,16 @@ def train():
         default=None,
         help="Override number of training epochs from config",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume training from the latest checkpoint in save_dir",
+    )
     args, _ = parser.parse_known_args()
 
     data_root = args.data_root
+    save_dir = train_cfg.get("save_dir", "models/checkpoints")
+    start_epoch = 0
 
     # 2. Check for Remote Execution
     if config.get("remote", {}).get("use_remote", False):
@@ -78,11 +86,27 @@ def train():
     )
     criterion = nn.MSELoss()  # Heatmap loss
 
-    # 7. Training Loop
-    epochs = args.epochs if args.epochs is not None else train_cfg.get("epochs", 10)
-    print(f"Starting training for {epochs} epochs...")
+    # 7. Resume Logic
+    if args.resume:
+        ckpt_files = glob.glob(os.path.join(save_dir, "*.pth"))
+        if ckpt_files:
+            # Sort by epoch number in filename: hrnet_epoch_10.pth
+            def get_epoch(f):
+                m = re.search(r"epoch_(\d+)", f)
+                return int(m.group(1)) if m else 0
 
-    for epoch in range(epochs):
+            latest_ckpt = max(ckpt_files, key=get_epoch)
+            print(f"Resuming from checkpoint: {latest_ckpt}")
+            model.load_state_dict(torch.load(latest_ckpt, map_location=device))
+            start_epoch = get_epoch(latest_ckpt)
+        else:
+            print("No checkpoints found. Starting from scratch.")
+
+    # 8. Training Loop
+    epochs = args.epochs if args.epochs is not None else train_cfg.get("epochs", 10)
+    print(f"Starting training from epoch {start_epoch + 1} to {epochs}...")
+
+    for epoch in range(start_epoch, epochs):
         model.train()
         pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}")
         epoch_loss = 0

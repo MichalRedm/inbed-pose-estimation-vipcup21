@@ -73,13 +73,17 @@ def main():
         print("\nExecuting training on remote GPU...")
         cmd = (
             f"cd /root/project && {env_setup} && "
-            "python3 -u scripts/train.py --data_root data/raw"
+            "python3 -u scripts/train.py --data_root data/raw --resume"
         )
         result = gpu.run(cmd)
 
         if not result.ok():
             print("\nTraining failed. Stderr:")
-            print(result.stderr)
+            # Safely print stderr by ignoring/replacing characters terminal can't handle
+            safe_stderr = result.stderr.encode(
+                sys.stdout.encoding, errors="replace"
+            ).decode(sys.stdout.encoding)
+            print(safe_stderr)
             sys.exit(result.exit_code)
 
     print("--- Remote Training Session Complete ---")
