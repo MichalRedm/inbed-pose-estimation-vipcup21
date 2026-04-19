@@ -171,15 +171,17 @@ def train():
                 return int(m.group(1)) if m else 0
 
             latest_ckpt = max(ckpt_files, key=get_epoch)
-            print(f"Resuming from checkpoint: {latest_ckpt}")
+            if rank <= 0:
+                print(f"Resuming from checkpoint: {latest_ckpt}")
             model.load_state_dict(torch.load(latest_ckpt, map_location=device))
             start_epoch = get_epoch(latest_ckpt)
-        else:
+        elif rank <= 0:
             print("No checkpoints found. Starting from scratch.")
 
     # 8. Training Loop
     epochs = args.epochs if args.epochs is not None else train_cfg.get("epochs", 10)
-    print(f"Starting training from epoch {start_epoch + 1} to {epochs}...")
+    if rank <= 0:
+        print(f"Starting training from epoch {start_epoch + 1} to {epochs}...")
 
     for epoch in range(start_epoch, epochs):
         if is_distributed:
@@ -210,6 +212,9 @@ def train():
             loss.backward()
             optimizer.step()
 
+            epoch_loss += loss.item()
+
+        # Average loss across all local batches
         epoch_loss /= max(len(train_loader), 1)
 
         # Synchronize loss across all processes in distributed mode
