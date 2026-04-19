@@ -21,7 +21,7 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.utils import load_config
+from src.utils import load_config, decode_heatmaps
 from src.data.dataset import VIPCupDataset, collate_skip_none
 from src.models.hrnet import get_pose_net
 
@@ -45,24 +45,6 @@ JOINT_NAMES = [
 # Torso diameter: distance between Right Shoulder (idx 8) and Left Hip (idx 3)
 R_SHOULDER = 8
 L_HIP = 3
-
-
-def decode_heatmaps(heatmaps, image_size):
-    """
-    Convert heatmaps (B, J, H, W) to joint coordinates (B, J, 2) in image space.
-    Uses argmax followed by upscaling to image resolution.
-    """
-    B, J, H, W = heatmaps.shape
-    flat = heatmaps.view(B, J, -1)
-    idx = flat.argmax(dim=-1)  # (B, J)
-    y = (idx // W).float()
-    x = (idx % W).float()
-    # Scale to image space
-    scale_x = image_size[0] / W
-    scale_y = image_size[1] / H
-    x = x * scale_x
-    y = y * scale_y
-    return torch.stack([x, y], dim=-1)  # (B, J, 2)
 
 
 def compute_pck(pred_joints, gt_joints, threshold=0.5):
