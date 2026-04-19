@@ -66,6 +66,42 @@ Configuration parameters (model specs, hyperparameters, dataset paths) are manag
 
 ---
 
+## 🌐 Remote Training
+
+The repository includes a provider-agnostic utility for training on remote GPU instances (e.g., Kaggle, RunPod, Lambda) via SSH or Cloudflare Tunnels.
+
+### 1. Configure Connection
+Create a `gpu_connection.json` file in the root directory (this file is Git-ignored):
+
+```json
+{
+  "remote_gpu": {
+    "type": "cloudflare_tunnel",
+    "tunnel_hostname": "your-unique-hostname.trycloudflare.com",
+    "ssh_user": "root",
+    "ssh_key": "~/.ssh/id_ed25519"
+  }
+}
+```
+*   `type`: Use `"cloudflare_tunnel"` for hosts behind tunnels or `"ssh"` for direct access.
+*   `tunnel_hostname`: The URL provided by the remote server.
+
+### 2. Launch Remote Training
+Run the orchestration script:
+```bash
+python scripts/remote_train.py
+```
+This script will:
+- Establish a secure connection.
+- Sync your current local code to the remote instance.
+- Automatically setup the remote environment and dependencies.
+- Execute `train.py` on the remote GPU.
+
+### 3. Resuming Training
+If the session is interrupted (e.g., tunnel disconnection), simply run `remote_train.py` again. Use the `--resume` flag (enabled by default) to automatically load the latest checkpoint from `models/checkpoints/` and continue training.
+
+---
+
 ## 🧪 Testing & Code Quality
 
 We use **Ruff** for linting/formatting and **Pytest** for unit testing.
