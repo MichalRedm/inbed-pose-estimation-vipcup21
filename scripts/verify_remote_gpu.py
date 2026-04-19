@@ -8,51 +8,59 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 try:
     from src.utils.remote_gpu import GPUManager
 except ImportError:
-    print("❌ Error: Could not import GPUManager. Ensure you are running from the project root.")
+    print(
+        "Error: Could not import GPUManager. Ensure you are running from the project root."
+    )
     sys.exit(1)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Verify remote Kaggle GPU connection")
-    parser.add_argument("--json", default="gpu_connection.json", help="Path to gpu_connection.json")
-    parser.add_argument("--key", default="~/.ssh/id_ed25519", help="Path to your SSH private key")
+    parser.add_argument(
+        "--json", default="gpu_connection.json", help="Path to gpu_connection.json"
+    )
+    parser.add_argument(
+        "--key", default="~/.ssh/id_ed25519", help="Path to your SSH private key"
+    )
     args = parser.parse_args()
 
     if not os.path.exists(os.path.expanduser(args.json)):
-        print(f"❌ Error: {args.json} not found. Did you download it from Kaggle?")
+        print(f"Error: {args.json} not found. Did you download it from Kaggle?")
         sys.exit(1)
 
     mgr = GPUManager()
-    
+
     try:
-        print(f"🔄 Loading connection info from {args.json}...")
+        print(f"Loading connection info from {args.json}...")
         mgr.add_backend_from_json("kaggle", args.json)
-        
+
         # Override key path if specified
         mgr._backends["kaggle"].ssh_key = args.key
-        
-        print(f"🚀 Attempting to connect to Kaggle GPU...")
+
+        print("Attempting to connect to Kaggle GPU...")
         with mgr.use("kaggle") as gpu:
-            print("✅ Connection established!")
-            
-            print("\n📊 Remote GPU Information:")
+            print("Connection established!")
+
+            print("\nRemote GPU Information:")
             print(gpu.gpu_info())
-            
-            print("\n📂 Testing file sync (creating remote directory)...")
+
+            print("\nTesting file sync (creating remote directory)...")
             gpu.run("mkdir -p /root/test_sync")
-            
-            print("\n💾 Testing simple write...")
+
+            print("\nTesting simple write...")
             gpu.write_file("/root/test_sync/hello.txt", "Hello from local machine!")
-            
-            print("\n🏁 Verification complete. You are ready to train!")
-            
+
+            print("\nVerification complete. You are ready to train!")
+
     except Exception as e:
-        print(f"\n❌ Connection failed: {e}")
+        print(f"\nConnection failed: {e}")
         print("\nTroubleshooting tips:")
         print("1. Ensure the Kaggle notebook is currently RUNNING.")
         print("2. Ensure you have installed 'cloudflared' and it is in your PATH.")
         print("3. Check that your SSH private key path is correct.")
         print("4. Verify that you added the CORRECT public key to Kaggle Secrets.")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

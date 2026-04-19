@@ -43,7 +43,8 @@ class VIPCupDataset(Dataset):
                     if potential.exists() and any(potential.iterdir()):
                         subj_dir = potential
                         break
-                if subj_dir: break
+                if subj_dir:
+                    break
 
             if not subj_dir:
                 continue
@@ -69,16 +70,22 @@ class VIPCupDataset(Dataset):
                     mod_dir = subj_dir / mod / cover
                     if not mod_dir.exists():
                         # Fallback for structured root-level modalities or other layouts
-                        fallbacks = [subj_dir / mod / cover, subj_dir / "train" / mod / cover, subj_dir / mod]
+                        fallbacks = [
+                            subj_dir / mod / cover,
+                            subj_dir / "train" / mod / cover,
+                            subj_dir / mod,
+                        ]
                         for fb in fallbacks:
                             if fb.exists():
                                 mod_dir = fb
                                 break
-                    
+
                     if not mod_dir.exists():
                         continue
 
-                    img_files = sorted(list(mod_dir.glob("*.jpg")) + list(mod_dir.glob("*.png")))
+                    img_files = sorted(
+                        list(mod_dir.glob("*.jpg")) + list(mod_dir.glob("*.png"))
+                    )
                     for i, img_path in enumerate(img_files):
                         sample = {
                             "image_path": img_path,
@@ -150,7 +157,7 @@ class VIPCupDataset(Dataset):
         heatmaps = np.zeros(
             (num_joints, self.heatmap_size[1], self.heatmap_size[0]), dtype=np.float32
         )
-        
+
         # Scale joints to heatmap size
         scale_x = self.heatmap_size[0] / self.image_size[0]
         scale_y = self.heatmap_size[1] / self.image_size[1]
@@ -158,33 +165,40 @@ class VIPCupDataset(Dataset):
         for i in range(num_joints):
             if joints[2, i] == 0:  # Occulded or not labeled
                 continue
-            
+
             mu_x = int(joints[0, i] * scale_x + 0.5)
             mu_y = int(joints[1, i] * scale_y + 0.5)
-            
+
             # Check bounds
-            if mu_x < 0 or mu_y < 0 or mu_x >= self.heatmap_size[0] or mu_y >= self.heatmap_size[1]:
+            if (
+                mu_x < 0
+                or mu_y < 0
+                or mu_x >= self.heatmap_size[0]
+                or mu_y >= self.heatmap_size[1]
+            ):
                 continue
-            
+
             # Generate gaussian
             size = 6 * self.sigma + 1
             x = np.arange(0, size, 1, float)
             y = x[:, np.newaxis]
             x0 = y0 = size // 2
-            g = np.exp(-((x - x0) ** 2 + (y - y0) ** 2) / (2 * self.sigma ** 2))
-            
+            g = np.exp(-((x - x0) ** 2 + (y - y0) ** 2) / (2 * self.sigma**2))
+
             # Heatmap corners
             ul = [int(mu_x - x0), int(mu_y - y0)]
             br = [int(mu_x + x0 + 1), int(mu_y + y0 + 1)]
-            
+
             # Range of gaussian
             g_x = [max(0, -ul[0]), min(br[0], self.heatmap_size[0]) - ul[0]]
             g_y = [max(0, -ul[1]), min(br[1], self.heatmap_size[1]) - ul[1]]
-            
+
             # Range of heatmap
             img_x = [max(0, ul[0]), min(br[0], self.heatmap_size[0])]
             img_y = [max(0, ul[1]), min(br[1], self.heatmap_size[1])]
-            
-            heatmaps[i, img_y[0]:img_y[1], img_x[0]:img_x[1]] = g[g_y[0]:g_y[1], g_x[0]:g_x[1]]
-            
+
+            heatmaps[i, img_y[0] : img_y[1], img_x[0] : img_x[1]] = g[
+                g_y[0] : g_y[1], g_x[0] : g_x[1]
+            ]
+
         return torch.from_numpy(heatmaps)

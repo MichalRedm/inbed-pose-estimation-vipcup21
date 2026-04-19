@@ -141,24 +141,25 @@ class CloudflaredProxy:
         """Find the cloudflared executable, checking common Windows paths if needed."""
         # 1. Check if in PATH
         import shutil
+
         if shutil.which("cloudflared"):
             return "cloudflared"
-            
+
         # 2. Check environment variable
         env_path = os.environ.get("GPU_CLOUDFLARED_PATH")
         if env_path and os.path.exists(env_path):
             return env_path
-            
+
         # 3. Check common Windows paths
         common_paths = [
             r"C:\Program Files (x86)\cloudflared\cloudflared.exe",
             r"C:\Program Files\cloudflared\cloudflared.exe",
-            os.path.expandvars(r"%LOCALAPPDATA%\bin\cloudflared.exe")
+            os.path.expandvars(r"%LOCALAPPDATA%\bin\cloudflared.exe"),
         ]
         for path in common_paths:
             if os.path.exists(path):
                 return path
-                
+
         # Default back to "cloudflared" and hope for the best
         return "cloudflared"
 
@@ -240,6 +241,9 @@ class GPUSession:
         print(f"  Using SSH key: {key_path} (exists={os.path.exists(key_path)})")
         self._ssh = paramiko.SSHClient()
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        print(
+            f"  Attempting SSH connection to {connect_host}:{connect_port} as {self.config.ssh_user}..."
+        )
         self._ssh.connect(
             hostname=connect_host,
             port=connect_port,
@@ -295,17 +299,22 @@ class GPUSession:
         stderr_lines: list[str] = []
 
         if stream:
+
             def _stream(channel_file, storage, prefix=""):
                 for line in channel_file:
                     storage.append(line)
-                    safe_line = line.encode(sys.stdout.encoding, errors="replace").decode(sys.stdout.encoding)
+                    safe_line = line.encode(
+                        sys.stdout.encoding, errors="replace"
+                    ).decode(sys.stdout.encoding)
                     if prefix:
                         print(f"{prefix}{safe_line}", end="", flush=True)
                     else:
                         print(safe_line, end="", flush=True)
 
             t_out = threading.Thread(target=_stream, args=(stdout_f, stdout_lines, ""))
-            t_err = threading.Thread(target=_stream, args=(stderr_f, stderr_lines, "[stderr] "))
+            t_err = threading.Thread(
+                target=_stream, args=(stderr_f, stderr_lines, "[stderr] ")
+            )
             t_out.start()
             t_err.start()
             t_out.join()
@@ -377,7 +386,7 @@ class GPUSession:
             def ignore_patterns(path, names):
                 # Calculate relative path from local_dir
                 rel_base = os.path.relpath(path, local_dir)
-                
+
                 ignored = []
                 for n in names:
                     if n in exclude:
@@ -387,7 +396,9 @@ class GPUSession:
                         ignored.append(n)
                 return ignored
 
-            shutil.copytree(local_dir, target, ignore=ignore_patterns, dirs_exist_ok=True)
+            shutil.copytree(
+                local_dir, target, ignore=ignore_patterns, dirs_exist_ok=True
+            )
 
             # Create remote directory structure
             self.run(f"mkdir -p {remote_dir}")
@@ -396,7 +407,9 @@ class GPUSession:
             self.upload(target, remote_dir, recursive=True)
 
             # Move files from sync_payload to remote_dir root if needed
-            self.run(f"cp -r {remote_dir}/sync_payload/* {remote_dir}/ && rm -rf {remote_dir}/sync_payload")
+            self.run(
+                f"cp -r {remote_dir}/sync_payload/* {remote_dir}/ && rm -rf {remote_dir}/sync_payload"
+            )
 
         print(f"Project synced to {remote_dir}")
 
