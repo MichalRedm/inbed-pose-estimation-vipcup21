@@ -27,26 +27,37 @@ def test_heatmap_generation():
 
 def test_visibility_semantics():
     """
-    Dataset README: if_occluded == 0 means VISIBLE, != 0 means occluded.
-    Visible joints must produce non-zero heatmaps; occluded joints must not.
+    SLP dataset semantics:
+    - 0: visible
+    - 1: occluded (e.g., under cover) -> We WANT heatmaps for these to train model to 'see' through blankets.
+    - 2: out of view / missing -> No heatmaps.
     """
     dataset = _make_dataset()
 
-    # All visible (if_occluded == 0)
+    # 1. Visible joints (if_occluded == 0)
     visible_joints = torch.zeros((3, 14))
-    visible_joints[0, :] = 64  # x
-    visible_joints[1, :] = 64  # y
-    visible_joints[2, :] = 0  # visible
+    visible_joints[0, :] = 64
+    visible_joints[1, :] = 64
+    visible_joints[2, :] = 0
     hm_visible = dataset._generate_heatmaps(visible_joints)
-    assert hm_visible.sum() > 0, "Visible joints must produce non-zero heatmaps"
+    assert hm_visible.sum() > 0, "Visible joints must produce heatmaps"
 
-    # All occluded (if_occluded == 1)
+    # 2. Occluded joints (if_occluded == 1)
+    # In VIP Cup, we predict joints even under blankets
     occluded_joints = torch.zeros((3, 14))
     occluded_joints[0, :] = 64
     occluded_joints[1, :] = 64
-    occluded_joints[2, :] = 1  # occluded
+    occluded_joints[2, :] = 1
     hm_occluded = dataset._generate_heatmaps(occluded_joints)
-    assert hm_occluded.sum() == 0, "Occluded joints must produce all-zero heatmaps"
+    assert hm_occluded.sum() > 0, "Occluded joints (under cover) must produce heatmaps for training"
+
+    # 3. Out of view joints (if_occluded == 2)
+    missing_joints = torch.zeros((3, 14))
+    missing_joints[0, :] = 64
+    missing_joints[1, :] = 64
+    missing_joints[2, :] = 2
+    hm_missing = dataset._generate_heatmaps(missing_joints)
+    assert hm_missing.sum() == 0, "Missing/Out-of-view joints must produce all-zero heatmaps"
 
 
 if __name__ == "__main__":
