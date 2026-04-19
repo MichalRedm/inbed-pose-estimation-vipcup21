@@ -3,6 +3,7 @@ import torch
 import argparse
 import glob
 import re
+import json
 from tqdm import tqdm
 import torch.nn as nn
 import torch.optim as optim
@@ -133,6 +134,19 @@ def train():
 
             epoch_loss += loss.item()
             pbar.set_postfix(loss=loss.item())
+
+        epoch_loss /= len(train_loader)
+
+        # Save history
+        history_path = os.path.join(save_dir, "history.json")
+        history = []
+        if os.path.exists(history_path):
+            with open(history_path, "r") as f:
+                history = json.load(f)
+
+        history.append({"epoch": epoch + 1, "loss": epoch_loss})
+        with open(history_path, "w") as f:
+            json.dump(history, f, indent=4)
 
         # Save checkpoint
         if (epoch + 1) % 10 == 0:
