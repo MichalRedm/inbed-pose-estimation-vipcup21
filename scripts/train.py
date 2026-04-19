@@ -38,7 +38,9 @@ def check_cuda():
         if torch.cuda.is_available():
             print(f"Device Name: {torch.cuda.get_device_name(0)}")
         else:
-            print("WARNING: CUDA NOT AVAILABLE! Training on CPU will be extremely slow.")
+            print(
+                "WARNING: CUDA NOT AVAILABLE! Training on CPU will be extremely slow."
+            )
 
 
 def train():
@@ -94,7 +96,9 @@ def train():
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if rank <= 0:
-        print(f"Using device: {device} (Distributed: {is_distributed}, World Size: {world_size})")
+        print(
+            f"Using device: {device} (Distributed: {is_distributed}, World Size: {world_size})"
+        )
 
     # 4. Initialize Data
     train_dataset = VIPCupDataset(
@@ -115,7 +119,9 @@ def train():
 
     num_workers = 4 if os.name != "nt" else 0
     train_sampler = DistributedSampler(train_dataset) if is_distributed else None
-    val_sampler = DistributedSampler(val_dataset, shuffle=False) if is_distributed else None
+    val_sampler = (
+        DistributedSampler(val_dataset, shuffle=False) if is_distributed else None
+    )
 
     train_loader = DataLoader(
         train_dataset,
@@ -181,8 +187,10 @@ def train():
 
         model.train()
         # Only rank 0 shows progress bar
-        show_pbar = (rank <= 0)
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}", disable=not show_pbar)
+        show_pbar = rank <= 0
+        pbar = tqdm(
+            train_loader, desc=f"Epoch {epoch + 1}/{epochs}", disable=not show_pbar
+        )
         epoch_loss = 0
 
         for batch in pbar:

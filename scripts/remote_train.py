@@ -27,7 +27,9 @@ import argparse
 def main():
     load_dotenv()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--max_gpus", type=int, default=None, help="Maximum number of GPUs to use")
+    parser.add_argument(
+        "--max_gpus", type=int, default=None, help="Maximum number of GPUs to use"
+    )
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     args_cli, other_args = parser.parse_known_args()
 
@@ -86,11 +88,11 @@ def main():
             detected_gpus = int(gpu_count_res.stdout.strip())
         except Exception:
             detected_gpus = 1
-        
+
         num_gpus = detected_gpus
         if args_cli.max_gpus is not None:
             num_gpus = min(num_gpus, args_cli.max_gpus)
-        
+
         print(f"Detected GPUs: {detected_gpus}. Using: {num_gpus}")
 
         print("\nExecuting training on remote GPU...")
@@ -99,10 +101,11 @@ def main():
         # Use torchrun for both single and multi-GPU to keep consistency
         resume_flag = "--resume" if args_cli.resume else ""
         passthrough = " ".join(other_args)
-        
-        # Use a random master port to avoid EADDRINUSE (Address already in use) 
+
+        # Use a random master port to avoid EADDRINUSE (Address already in use)
         # when running multiple benchmarks or restarting quickly
         import random
+
         master_port = random.randint(20000, 29999)
 
         cmd = (
