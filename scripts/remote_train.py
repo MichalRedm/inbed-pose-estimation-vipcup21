@@ -69,22 +69,75 @@ def main():
         )
         gpu.run(f"cd /root/project && {env_setup} && {download_cmd}")
 
-        # --- Step 3: Run training (full cycle) ---
+        # --- Step 3: Run training with incremental checkpoint sync ---
         print("\nExecuting training on remote GPU...")
+        print("Checkpoints will be downloaded locally as they are saved.\n")
         cmd = (
             f"cd /root/project && {env_setup} && "
             "python3 -u scripts/train.py --data_root data/raw --resume"
         )
-        result = gpu.run(cmd)
 
-        if not result.ok():
+        # Track which checkpoints have already been downloaded
+        downloaded: set[str] = set()
+        os.makedirs("models", exist_ok=True)
+
+        def poll_and_download():
+            """Download any checkpoint not yet synced locally."""
+            result = gpu.run(
+                "ls /root/project/models/checkpoints/*.pth 2>/dev/null || true",
+                stream=False,
+            )
+            remote_files = [
+                f.strip()
+                for f in result.stdout.splitlines()
+                if f.strip().endswith(".pth")
+            ]
+            for remote_path in remote_files:
+                fname = remote_path.split("/")[-1]
+                if fname not in downloaded:
+                    print(f"\n[sync] Downloading {fname}...")
+                    gpu.download(remote_path, "models/checkpoints", recursive=False)
+                    downloaded.add(fname)
+                    print(f"[sync] {fname} saved to models/checkpoints/")
+
+        # Run training in background thread; poll checkpoints from main thread
+        import threading
+        import time
+
+        training_result: list = []
+
+        def run_training():
+            training_result.append(gpu.run(cmd))
+
+        training_thread = threading.Thread(target=run_training, daemon=True)
+        training_thread.start()
+
+        poll_interval = 30  # seconds between remote checkpoint checks
+        while training_thread.is_alive():
+            time.sleep(poll_interval)
+            try:
+                poll_and_download()
+            except Exception as exc:
+                print(f"[sync] Warning: checkpoint poll failed: {exc}")
+
+        training_thread.join()
+
+        # Final sync to catch any checkpoint saved in the last polling window
+        try:
+            poll_and_download()
+        except Exception as exc:
+            print(f"[sync] Warning: final checkpoint sync failed: {exc}")
+
+        result = training_result[0] if training_result else None
+        if result is None or not result.ok():
             print("\nTraining failed. Stderr:")
-            # Safely print stderr by ignoring/replacing characters terminal can't handle
-            safe_stderr = result.stderr.encode(
-                sys.stdout.encoding, errors="replace"
-            ).decode(sys.stdout.encoding)
+            safe_stderr = (
+                (result.stderr if result else "Unknown error")
+                .encode(sys.stdout.encoding, errors="replace")
+                .decode(sys.stdout.encoding)
+            )
             print(safe_stderr)
-            sys.exit(result.exit_code)
+            sys.exit(result.exit_code if result else 1)
 
     print("--- Remote Training Session Complete ---")
 
