@@ -66,15 +66,36 @@ def train():
         root=data_root,
         subjects=range(1, dataset_cfg.get("num_subjects_train", 30) + 1),
         modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
+        split="train",
+        image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
+    )
+    val_dataset = VIPCupDataset(
+        root=data_root,
+        subjects=range(71, 81),
+        modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
+        covers=["cover1", "cover2"],
+        split="valid",
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
     )
 
+    num_workers = 4 if os.name != "nt" else 0
     train_loader = DataLoader(
         train_dataset,
         batch_size=train_cfg.get("batch_size", 16),
         shuffle=True,
-        num_workers=4 if os.name != "nt" else 0,
+        num_workers=num_workers,
     )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=train_cfg.get("batch_size", 16),
+        shuffle=False,
+        num_workers=num_workers,
+    )
+    has_val = len(val_dataset) > 0
+    if has_val:
+        print(f"Validation samples: {len(val_dataset)}")
+    else:
+        print("No annotated validation samples found — skipping val loop.")
 
     # 5. Initialize Model
     model = get_pose_net(model_cfg).to(device)
@@ -135,7 +156,26 @@ def train():
             epoch_loss += loss.item()
             pbar.set_postfix(loss=loss.item())
 
-        epoch_loss /= len(train_loader)
+        epoch_loss /= max(len(train_loader), 1)
+
+        # 8b. Validation pass
+        val_loss = None
+        if has_val:
+            model.eval()
+            total_val_loss = 0.0
+            val_batches = 0
+            with torch.no_grad():
+                for batch in val_loader:
+                    images = batch["image"].to(device)
+                    targets = batch["target"]
+                    if targets is None:
+                        continue
+                    targets = targets.to(device)
+                    outputs = model(images)
+                    total_val_loss += criterion(outputs, targets).item()
+                    val_batches += 1
+            if val_batches > 0:
+                val_loss = total_val_loss / val_batches
 
         # Save history
         history_path = os.path.join(save_dir, "history.json")
@@ -144,9 +184,19 @@ def train():
             with open(history_path, "r") as f:
                 history = json.load(f)
 
-        history.append({"epoch": epoch + 1, "loss": epoch_loss})
+        entry = {"epoch": epoch + 1, "train_loss": epoch_loss}
+        if val_loss is not None:
+            entry["val_loss"] = val_loss
+        history.append(entry)
         with open(history_path, "w") as f:
             json.dump(history, f, indent=4)
+
+        if val_loss is not None:
+            print(
+                f"Epoch {epoch + 1}: train_loss={epoch_loss:.4f}  val_loss={val_loss:.4f}"
+            )
+        else:
+            print(f"Epoch {epoch + 1}: train_loss={epoch_loss:.4f}")
 
         # Save checkpoint
         if (epoch + 1) % 10 == 0:

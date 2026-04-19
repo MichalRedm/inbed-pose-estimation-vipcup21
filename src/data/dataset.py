@@ -17,10 +17,12 @@ class VIPCupDataset(Dataset):
         subjects=range(1, 31),
         modalities=["RGB", "IR"],
         covers=["uncover"],
+        split="train",
         transform=None,
         image_size=(256, 256),
     ):
         self.root = Path(root)
+        self.split = split  # "train" or "valid"
         self.subjects = subjects
         self.modalities = modalities
         self.covers = covers
@@ -33,12 +35,15 @@ class VIPCupDataset(Dataset):
 
     def _prepare_samples(self):
         samples = []
+        # Determine which top-level split folder to search first
+        split_order = (
+            ["valid", "train", ""] if self.split == "valid" else ["train", "valid", ""]
+        )
         for subject_id in self.subjects:
-            # Try different subject folder naming and nesting strategies
-            subject_names = [f"Subject_{subject_id:02d}", f"{subject_id:05d}"]
+            subject_names = [f"{subject_id:05d}", f"Subject_{subject_id:02d}"]
             subj_dir = None
             for sn in subject_names:
-                for nesting in ["train", "valid", "train/train", "valid/valid", ""]:
+                for nesting in split_order + [f"{s}/{s}" for s in split_order if s]:
                     potential = self.root / nesting / sn
                     if potential.exists() and any(potential.iterdir()):
                         subj_dir = potential
@@ -163,7 +168,9 @@ class VIPCupDataset(Dataset):
         scale_y = self.heatmap_size[1] / self.image_size[1]
 
         for i in range(num_joints):
-            if joints[2, i] == 0:  # Occulded or not labeled
+            # Dataset README: if_occluded == 0 means VISIBLE, != 0 means occluded.
+            # Only generate a heatmap for visible (non-occluded) joints.
+            if joints[2, i] != 0:
                 continue
 
             mu_x = int(joints[0, i] * scale_x + 0.5)
