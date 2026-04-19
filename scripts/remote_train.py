@@ -10,19 +10,17 @@ LD_LIBRARY_PATH / CUDA setup lives in ~/.bash_profile on the remote server,
 which is sourced automatically by the login shell (bash -l) used in every
 gpu.run() call.
 """
+
 import os
 import sys
 
 from dotenv import load_dotenv
 
-from src.utils import load_config
 from src.utils.remote_gpu import GPUManager
 
 
 def main():
     load_dotenv()
-    config = load_config()
-
     json_path = "gpu_connection.json"
     if not os.path.exists(json_path):
         print(f"Error: {json_path} not found.")
@@ -71,11 +69,11 @@ def main():
         )
         gpu.run(f"cd /root/project && {env_setup} && {download_cmd}")
 
-        # --- Step 3: Run training (smoke test: 2 epochs) ---
-        print("\nExecuting training smoke test (2 epochs) on remote GPU...")
+        # --- Step 3: Run training (full cycle) ---
+        print("\nExecuting training on remote GPU...")
         cmd = (
             f"cd /root/project && {env_setup} && "
-            "python3 -u scripts/train.py --data_root data/raw --epochs 2"
+            "python3 -u scripts/train.py --data_root data/raw"
         )
         result = gpu.run(cmd)
 
