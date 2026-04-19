@@ -350,7 +350,7 @@ class GPUSession:
 
     def download(self, remote_path: str, local_path: str, recursive: bool = True):
         """Download a file or directory from the remote GPU."""
-        # Fix: Only create parent directory, not the local_path itself! 
+        # Fix: Only create parent directory, not the local_path itself!
         # Otherwise scp always treats local_path as a destination directory.
         parent = os.path.dirname(local_path)
         if parent:
