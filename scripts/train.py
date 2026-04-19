@@ -8,6 +8,7 @@ from src.utils import load_config
 from src.data.dataset import VIPCupDataset
 from src.models.hrnet import get_pose_net
 
+
 def check_cuda():
     print(f"CUDA Available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
@@ -22,12 +23,19 @@ def train():
     train_cfg = config.get("training", {})
     model_cfg = config.get("model", {}).get("hrnet", {})
     dataset_cfg = config.get("dataset", {})
-    
+
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_root", type=str, default=dataset_cfg.get("root", "data/raw"))
-    parser.add_argument("--epochs", type=int, default=None,
-                        help="Override number of training epochs from config")
+    parser.add_argument(
+        "--data_root", type=str, default=dataset_cfg.get("root", "data/raw")
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=None,
+        help="Override number of training epochs from config",
+    )
     args, _ = parser.parse_known_args()
 
     data_root = args.data_root
@@ -107,7 +115,10 @@ def train():
             os.makedirs(train_cfg.get("save_dir", "models/checkpoints"), exist_ok=True)
             torch.save(
                 model.state_dict(),
-                os.path.join(train_cfg.get("save_dir", "models/checkpoints"), f"hrnet_epoch_{epoch+1}.pth")
+                os.path.join(
+                    train_cfg.get("save_dir", "models/checkpoints"),
+                    f"hrnet_epoch_{epoch + 1}.pth",
+                ),
             )
 
     print("Training Complete!")

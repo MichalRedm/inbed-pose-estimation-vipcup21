@@ -2,6 +2,7 @@
 Remote GPU verification script.
 Run via remote_train.py or directly via SSH to confirm CUDA is accessible.
 """
+
 import os
 import sys
 import subprocess
@@ -15,9 +16,13 @@ def main():
     # 1. System-level GPU check
     print("\n[1/4] nvidia-smi check:")
     result = subprocess.run(
-        ["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
-         "--format=csv,noheader"],
-        capture_output=True, text=True
+        [
+            "nvidia-smi",
+            "--query-gpu=name,memory.total,driver_version",
+            "--format=csv,noheader",
+        ],
+        capture_output=True,
+        text=True,
     )
     if result.returncode == 0:
         print(f"  ✅ GPU detected: {result.stdout.strip()}")
@@ -41,6 +46,7 @@ def main():
     print("\n[4/4] PyTorch CUDA check:")
     try:
         import torch
+
         print(f"  torch version   : {torch.__version__}")
         print(f"  CUDA available  : {torch.cuda.is_available()}")
         print(f"  CUDA compiled   : {torch.version.cuda}")
