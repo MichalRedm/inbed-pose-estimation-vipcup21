@@ -7,7 +7,10 @@ import json
 from tqdm import tqdm
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, DistributedSampler
+import torch.distributed as dist
+import random
+import numpy as np
 import sys
 from pathlib import Path
 
@@ -19,12 +22,23 @@ from src.data.dataset import VIPCupDataset, collate_skip_none
 from src.models.hrnet import get_pose_net
 
 
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # Ensure deterministic behavior for DDP weight initialization
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 def check_cuda():
-    print(f"CUDA Available: {torch.cuda.is_available()}")
-    if torch.cuda.is_available():
-        print(f"Device Name: {torch.cuda.get_device_name(0)}")
-    else:
-        print("WARNING: CUDA NOT AVAILABLE! Training on CPU will be extremely slow.")
+    if not dist.is_initialized() or dist.get_rank() == 0:
+        print(f"CUDA Available: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            print(f"Device Name: {torch.cuda.get_device_name(0)}")
+        else:
+            print("WARNING: CUDA NOT AVAILABLE! Training on CPU will be extremely slow.")
 
 
 def train():
@@ -62,10 +76,25 @@ def train():
         # For now, we focus on the local implementation
         pass
 
-    # 3. Setup Device
-    check_cuda()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    # 3. Setup Device & Distributed
+    set_seed(train_cfg.get("seed", 42))
+
+    # Determine if we are running in distributed mode (torchrun sets these env vars)
+    rank = int(os.environ.get("RANK", -1))
+    local_rank = int(os.environ.get("LOCAL_RANK", -1))
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
+    is_distributed = rank != -1
+
+    if is_distributed:
+        dist.init_process_group(backend="nccl")
+        torch.cuda.set_device(local_rank)
+        device = torch.device("cuda", local_rank)
+    else:
+        check_cuda()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if rank <= 0:
+        print(f"Using device: {device} (Distributed: {is_distributed}, World Size: {world_size})")
 
     # 4. Initialize Data
     train_dataset = VIPCupDataset(
@@ -85,12 +114,16 @@ def train():
     )
 
     num_workers = 4 if os.name != "nt" else 0
+    train_sampler = DistributedSampler(train_dataset) if is_distributed else None
+    val_sampler = DistributedSampler(val_dataset, shuffle=False) if is_distributed else None
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=train_cfg.get("batch_size", 16),
-        shuffle=True,
+        shuffle=(train_sampler is None),
         num_workers=num_workers,
         collate_fn=collate_skip_none,
+        sampler=train_sampler,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -98,15 +131,21 @@ def train():
         shuffle=False,
         num_workers=num_workers,
         collate_fn=collate_skip_none,
+        sampler=val_sampler,
     )
     has_val = len(val_dataset) > 0
-    if has_val:
-        print(f"Validation samples: {len(val_dataset)}")
-    else:
-        print("No annotated validation samples found — skipping val loop.")
+    if rank <= 0:
+        if has_val:
+            print(f"Validation samples: {len(val_dataset)}")
+        else:
+            print("No annotated validation samples found — skipping val loop.")
 
     # 5. Initialize Model
     model = get_pose_net(model_cfg).to(device)
+    if is_distributed:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[local_rank], output_device=local_rank
+        )
 
     # 6. Optimizer & Loss
     optimizer = optim.Adam(
@@ -137,8 +176,13 @@ def train():
     print(f"Starting training from epoch {start_epoch + 1} to {epochs}...")
 
     for epoch in range(start_epoch, epochs):
+        if is_distributed:
+            train_sampler.set_epoch(epoch)
+
         model.train()
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}")
+        # Only rank 0 shows progress bar
+        show_pbar = (rank <= 0)
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}", disable=not show_pbar)
         epoch_loss = 0
 
         for batch in pbar:
@@ -158,10 +202,13 @@ def train():
             loss.backward()
             optimizer.step()
 
-            epoch_loss += loss.item()
-            pbar.set_postfix(loss=loss.item())
-
         epoch_loss /= max(len(train_loader), 1)
+
+        # Synchronize loss across all processes in distributed mode
+        if is_distributed:
+            loss_tensor = torch.tensor([epoch_loss], device=device)
+            dist.all_reduce(loss_tensor, op=dist.ReduceOp.SUM)
+            epoch_loss = loss_tensor.item() / world_size
 
         # 8b. Validation pass
         val_loss = None
@@ -181,39 +228,51 @@ def train():
             if val_batches > 0:
                 val_loss = total_val_loss / val_batches
 
-        # Save history
-        history_path = os.path.join(save_dir, "history.json")
-        history = []
-        if os.path.exists(history_path):
-            with open(history_path, "r") as f:
-                history = json.load(f)
+            if is_distributed and val_loss is not None:
+                val_loss_tensor = torch.tensor([val_loss], device=device)
+                dist.all_reduce(val_loss_tensor, op=dist.ReduceOp.SUM)
+                val_loss = val_loss_tensor.item() / world_size
 
-        entry = {"epoch": epoch + 1, "train_loss": epoch_loss}
-        if val_loss is not None:
-            entry["val_loss"] = val_loss
-        history.append(entry)
-        with open(history_path, "w") as f:
-            json.dump(history, f, indent=4)
+        # Save history and checkpoint (only rank 0)
+        if rank <= 0:
+            history_path = os.path.join(save_dir, "history.json")
+            history = []
+            if os.path.exists(history_path):
+                with open(history_path, "r") as f:
+                    try:
+                        history = json.load(f)
+                    except json.JSONDecodeError:
+                        history = []
 
-        if val_loss is not None:
-            print(
-                f"Epoch {epoch + 1}: train_loss={epoch_loss:.4f}  val_loss={val_loss:.4f}"
-            )
-        else:
-            print(f"Epoch {epoch + 1}: train_loss={epoch_loss:.4f}")
+            entry = {"epoch": epoch + 1, "train_loss": epoch_loss}
+            if val_loss is not None:
+                entry["val_loss"] = val_loss
+            history.append(entry)
+            with open(history_path, "w") as f:
+                json.dump(history, f, indent=4)
 
-        # Save checkpoint
-        if (epoch + 1) % 10 == 0:
-            os.makedirs(train_cfg.get("save_dir", "models/checkpoints"), exist_ok=True)
-            torch.save(
-                model.state_dict(),
-                os.path.join(
-                    train_cfg.get("save_dir", "models/checkpoints"),
-                    f"hrnet_epoch_{epoch + 1}.pth",
-                ),
-            )
+            if val_loss is not None:
+                print(
+                    f"Epoch {epoch + 1}: train_loss={epoch_loss:.4f}  val_loss={val_loss:.4f}"
+                )
+            else:
+                print(f"Epoch {epoch + 1}: train_loss={epoch_loss:.4f}")
 
-    print("Training Complete!")
+            # Save checkpoint
+            if (epoch + 1) % 10 == 0:
+                os.makedirs(save_dir, exist_ok=True)
+                # Unwrap model if DDP
+                model_to_save = model.module if is_distributed else model
+                torch.save(
+                    model_to_save.state_dict(),
+                    os.path.join(save_dir, f"hrnet_epoch_{epoch + 1}.pth"),
+                )
+
+    if is_distributed:
+        dist.destroy_process_group()
+
+    if rank <= 0:
+        print("Training Complete!")
 
 
 if __name__ == "__main__":

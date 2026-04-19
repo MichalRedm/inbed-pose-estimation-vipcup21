@@ -21,10 +21,16 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils.remote_gpu import GPUManager
+import argparse
 
 
 def main():
     load_dotenv()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--max_gpus", type=int, default=None, help="Maximum number of GPUs to use")
+    parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
+    args_cli, other_args = parser.parse_known_args()
+
     json_path = "gpu_connection.json"
     if not os.path.exists(json_path):
         print(f"Error: {json_path} not found.")
@@ -74,11 +80,35 @@ def main():
         gpu.run(f"cd /root/project && {env_setup} && {download_cmd}")
 
         # --- Step 3: Run training with incremental checkpoint sync ---
+        print("\nChecking for multi-GPU setup...")
+        gpu_count_res = gpu.run("nvidia-smi -L | wc -l", stream=False)
+        try:
+            detected_gpus = int(gpu_count_res.stdout.strip())
+        except Exception:
+            detected_gpus = 1
+        
+        num_gpus = detected_gpus
+        if args_cli.max_gpus is not None:
+            num_gpus = min(num_gpus, args_cli.max_gpus)
+        
+        print(f"Detected GPUs: {detected_gpus}. Using: {num_gpus}")
+
         print("\nExecuting training on remote GPU...")
         print("Checkpoints will be downloaded locally as they are saved.\n")
+
+        # Use torchrun for both single and multi-GPU to keep consistency
+        resume_flag = "--resume" if args_cli.resume else ""
+        passthrough = " ".join(other_args)
+        
+        # Use a random master port to avoid EADDRINUSE (Address already in use) 
+        # when running multiple benchmarks or restarting quickly
+        import random
+        master_port = random.randint(20000, 29999)
+
         cmd = (
             f"cd /root/project && {env_setup} && "
-            "python3 -u scripts/train.py --data_root data/raw --resume"
+            f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
+            f"scripts/train.py --data_root data/raw {resume_flag} {passthrough}"
         )
 
         # Track which checkpoints have already been downloaded
