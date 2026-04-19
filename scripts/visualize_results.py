@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils import load_config
-from src.data.dataset import VIPCupDataset
+from src.data.dataset import VIPCupDataset, collate_skip_none
 from src.models.hrnet import get_pose_net
 
 
@@ -40,7 +40,9 @@ def visualize_samples(checkpoint_path, num_samples=3):
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
     )
 
-    loader = DataLoader(dataset, batch_size=1, shuffle=True)
+    loader = DataLoader(
+        dataset, batch_size=1, shuffle=True, collate_fn=collate_skip_none
+    )
 
     # 4. Generate Visualizations
     os.makedirs("results", exist_ok=True)
@@ -48,6 +50,8 @@ def visualize_samples(checkpoint_path, num_samples=3):
     count = 0
     with torch.no_grad():
         for batch in loader:
+            if batch is None:
+                continue
             if count >= num_samples:
                 break
 

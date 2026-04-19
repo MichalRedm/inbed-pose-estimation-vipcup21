@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils import load_config
-from src.data.dataset import VIPCupDataset
+from src.data.dataset import VIPCupDataset, collate_skip_none
 from src.models.hrnet import get_pose_net
 
 # Leeds Sports Pose joint indices (matches dataset README order)
@@ -138,7 +138,11 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5):
         return
 
     val_loader = DataLoader(
-        val_dataset, batch_size=batch_size, shuffle=False, num_workers=0
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
+        collate_fn=collate_skip_none,
     )
     print(f"Validation samples: {len(val_dataset)}")
 
@@ -147,6 +151,8 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5):
 
     with torch.no_grad():
         for batch in val_loader:
+            if batch is None:
+                continue
             images = batch["image"].to(device)
             joints = batch["joints"]  # (B, 3, 14) tensor or None
 
