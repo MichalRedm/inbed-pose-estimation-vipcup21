@@ -114,14 +114,34 @@ def main():
             f"scripts/train.py --data_root data/raw {resume_flag} {passthrough}"
         )
 
+        # --- Step 4: Smart Cleanup & State Tracking ---
+        if not args_cli.resume:
+            print("[clean] Starting fresh run, wiping remote checkpoints...")
+            gpu.run("rm -rf /root/project/models/checkpoints/* || true", stream=False)
+        else:
+            print("[resume] Resuming, preserving remote checkpoints...")
+
         # Track which checkpoints have already been downloaded
         downloaded: set[str] = set()
-        os.makedirs("models", exist_ok=True)
+        os.makedirs("models/checkpoints", exist_ok=True)
 
-        def poll_and_download():
+        # Initial snapshot: mark existing remote checkpoints as 'downloaded'
+        # so we don't pull down old data at the start.
+        print("Taking initial snapshot of remote checkpoints...")
+        res = gpu.run(
+            "ls /root/project/models/checkpoints/*.pth 2>/dev/null || true",
+            stream=False,
+        )
+        for f in res.stdout.splitlines():
+            fname = f.strip().split("/")[-1]
+            if fname.endswith(".pth"):
+                downloaded.add(fname)
+        print(f"Ignored {len(downloaded)} existing remote checkpoints.")
+
+        def poll_and_download(session):
             """Download any checkpoint not yet synced locally."""
             # 1. Sync .pth checkpoints
-            result = gpu.run(
+            result = session.run(
                 "ls /root/project/models/checkpoints/*.pth 2>/dev/null || true",
                 stream=False,
             )
@@ -134,17 +154,19 @@ def main():
                 fname = remote_path.split("/")[-1]
                 if fname not in downloaded:
                     print(f"\n[sync] Downloading {fname}...")
-                    gpu.download(remote_path, "models/checkpoints", recursive=False)
+                    session.download(remote_path, "models/checkpoints", recursive=False)
                     downloaded.add(fname)
                     print(f"[sync] {fname} saved to models/checkpoints/")
 
             # 2. Sync history.json
-            gpu.run(
+            session.run(
                 "if [ -f /root/project/models/checkpoints/history.json ]; then cp /root/project/models/checkpoints/history.json /tmp/history_sync.json; fi",
                 stream=False,
             )
             try:
-                gpu.download(
+                # We only download history if it exists; no need to print 'Downloaded' every time
+                # if nothing changed (though SCP always downloads).
+                session.download(
                     "/tmp/history_sync.json",
                     "models/checkpoints/history.json",
                     recursive=False,
@@ -164,21 +186,34 @@ def main():
         training_thread = threading.Thread(target=run_training, daemon=True)
         training_thread.start()
 
-        poll_interval = 30  # seconds between remote checkpoint checks
-        while training_thread.is_alive():
-            time.sleep(poll_interval)
+
+        def run_polling():
+            # Open a second session for background polling to avoid thread safety issues
+            # with the primary training session.
             try:
-                poll_and_download()
-            except Exception as exc:
-                print(f"[sync] Warning: checkpoint poll failed: {exc}")
+                with mgr.use(backend_name) as poll_session:
+                    # Sync initial history if it exists
+                    poll_and_download(poll_session)
+
+                    poll_interval = 30  # seconds between remote checkpoint checks
+                    while training_thread.is_alive():
+                        time.sleep(poll_interval)
+                        try:
+                            poll_and_download(poll_session)
+                        except Exception as exc:
+                            print(f"[sync] Warning: checkpoint poll failed: {exc}")
+
+                    # Final sync to catch any checkpoint saved in the last polling window
+                    poll_and_download(poll_session)
+            except Exception as e:
+                print(f"[sync] Background poller crashed: {e}")
+
+        # Start background poller thread
+        poller_thread = threading.Thread(target=run_polling, daemon=True)
+        poller_thread.start()
 
         training_thread.join()
-
-        # Final sync to catch any checkpoint saved in the last polling window
-        try:
-            poll_and_download()
-        except Exception as exc:
-            print(f"[sync] Warning: final checkpoint sync failed: {exc}")
+        poller_thread.join(timeout=60)
 
         result = training_result[0] if training_result else None
         if result is None or not result.ok():
