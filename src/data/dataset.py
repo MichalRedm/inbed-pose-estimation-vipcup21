@@ -1,9 +1,21 @@
 import torch
 import numpy as np
 import scipy.io as sio
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, default_collate
 from pathlib import Path
 from PIL import Image
+
+
+def collate_skip_none(batch):
+    """
+    Custom collate_fn that drops samples missing a target heatmap.
+    Required because unannotated samples (covered subjects without labels)
+    return target=None, which PyTorch's default collate cannot handle.
+    """
+    batch = [item for item in batch if item.get("target") is not None]
+    if not batch:
+        return None
+    return default_collate(batch)
 
 
 class VIPCupDataset(Dataset):

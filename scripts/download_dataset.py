@@ -1,5 +1,10 @@
 import argparse
 from pathlib import Path
+import sys
+
+# Add project root to sys.path to allow importing src
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from src.utils import load_config
 
 

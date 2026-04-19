@@ -8,8 +8,14 @@ from tqdm import tqdm
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+import sys
+from pathlib import Path
+
+# Add project root to sys.path to allow importing src
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from src.utils import load_config
-from src.data.dataset import VIPCupDataset
+from src.data.dataset import VIPCupDataset, collate_skip_none
 from src.models.hrnet import get_pose_net
 
 
@@ -84,12 +90,14 @@ def train():
         batch_size=train_cfg.get("batch_size", 16),
         shuffle=True,
         num_workers=num_workers,
+        collate_fn=collate_skip_none,
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=train_cfg.get("batch_size", 16),
         shuffle=False,
         num_workers=num_workers,
+        collate_fn=collate_skip_none,
     )
     has_val = len(val_dataset) > 0
     if has_val:
@@ -134,13 +142,10 @@ def train():
         epoch_loss = 0
 
         for batch in pbar:
-            images = batch["image"].to(device)
-            targets = batch["target"]
-
-            if targets is None:
+            if batch is None:  # entire batch had no annotations
                 continue
-
-            targets = targets.to(device)
+            images = batch["image"].to(device)
+            targets = batch["target"].to(device)
 
             # Forward pass
             outputs = model(images)
@@ -166,11 +171,10 @@ def train():
             val_batches = 0
             with torch.no_grad():
                 for batch in val_loader:
-                    images = batch["image"].to(device)
-                    targets = batch["target"]
-                    if targets is None:
+                    if batch is None:  # entire batch had no annotations
                         continue
-                    targets = targets.to(device)
+                    images = batch["image"].to(device)
+                    targets = batch["target"].to(device)
                     outputs = model(images)
                     total_val_loss += criterion(outputs, targets).item()
                     val_batches += 1

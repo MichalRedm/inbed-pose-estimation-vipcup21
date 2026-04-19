@@ -1,4 +1,9 @@
 import os
+import sys
+from pathlib import Path
+
+# Add project root to sys.path to allow importing src
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils.remote_gpu import GPUManager
 
