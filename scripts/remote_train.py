@@ -87,6 +87,7 @@ def main():
 
         def poll_and_download():
             """Download any checkpoint not yet synced locally."""
+            # 1. Sync .pth checkpoints
             result = gpu.run(
                 "ls /root/project/models/checkpoints/*.pth 2>/dev/null || true",
                 stream=False,
@@ -103,6 +104,20 @@ def main():
                     gpu.download(remote_path, "models/checkpoints", recursive=False)
                     downloaded.add(fname)
                     print(f"[sync] {fname} saved to models/checkpoints/")
+
+            # 2. Sync history.json
+            gpu.run(
+                "if [ -f /root/project/models/checkpoints/history.json ]; then cp /root/project/models/checkpoints/history.json /tmp/history_sync.json; fi",
+                stream=False,
+            )
+            try:
+                gpu.download(
+                    "/tmp/history_sync.json",
+                    "models/checkpoints/history.json",
+                    recursive=False,
+                )
+            except Exception:
+                pass  # might not exist yet
 
         # Run training in background thread; poll checkpoints from main thread
         import threading
