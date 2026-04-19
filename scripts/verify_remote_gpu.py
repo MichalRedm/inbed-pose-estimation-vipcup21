@@ -2,8 +2,10 @@ import argparse
 import sys
 import os
 
-# Add root to path so we can import src
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from pathlib import Path
+
+# Add project root to sys.path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
     from src.utils.remote_gpu import GPUManager

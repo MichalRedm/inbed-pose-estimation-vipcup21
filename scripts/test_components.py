@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# Add project root to sys.path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import torch
 from src.data.dataset import VIPCupDataset
 from src.models.hrnet import get_pose_net

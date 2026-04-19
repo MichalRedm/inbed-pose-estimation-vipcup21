@@ -1,7 +1,15 @@
 import os
+import sys
 import torch
+import argparse
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
+
+from pathlib import Path
+
+# Add project root to sys.path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from src.utils import load_config
 from src.data.dataset import VIPCupDataset
 from src.models.hrnet import get_pose_net
@@ -81,8 +89,6 @@ def visualize_samples(checkpoint_path, num_samples=3):
 
 
 if __name__ == "__main__":
-    import argparse
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--checkpoint", type=str, default="models/checkpoints/hrnet_epoch_100.pth"

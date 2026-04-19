@@ -16,7 +16,10 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 
-sys.path.insert(0, ".")
+from pathlib import Path
+
+# Add project root to sys.path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils import load_config
 from src.data.dataset import VIPCupDataset

@@ -6,6 +6,10 @@ Run via remote_train.py or directly via SSH to confirm CUDA is accessible.
 import os
 import sys
 import subprocess
+from pathlib import Path
+
+# Add project root to sys.path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 def main():
