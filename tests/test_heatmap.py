@@ -49,7 +49,9 @@ def test_visibility_semantics():
     occluded_joints[1, :] = 64
     occluded_joints[2, :] = 1
     hm_occluded = dataset._generate_heatmaps(occluded_joints)
-    assert hm_occluded.sum() > 0, "Occluded joints (under cover) must produce heatmaps for training"
+    assert hm_occluded.sum() > 0, (
+        "Occluded joints (under cover) must produce heatmaps for training"
+    )
 
     # 3. Out of view joints (if_occluded == 2)
     missing_joints = torch.zeros((3, 14))
@@ -57,7 +59,9 @@ def test_visibility_semantics():
     missing_joints[1, :] = 64
     missing_joints[2, :] = 2
     hm_missing = dataset._generate_heatmaps(missing_joints)
-    assert hm_missing.sum() == 0, "Missing/Out-of-view joints must produce all-zero heatmaps"
+    assert hm_missing.sum() == 0, (
+        "Missing/Out-of-view joints must produce all-zero heatmaps"
+    )
 
 
 if __name__ == "__main__":
