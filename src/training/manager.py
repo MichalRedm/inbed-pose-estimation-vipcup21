@@ -75,7 +75,10 @@ class TrainingManager:
                     cmd.extend(["--epochs", str(config_overrides["epochs"])])
                 if "batch_size" in config_overrides:
                     cmd.extend(["--batch_size", str(config_overrides["batch_size"])])
+                if config_overrides.get("resume"):
+                    cmd.append("--resume")
 
+            print(f"  Executing training command: {' '.join(cmd)}")
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -102,14 +105,22 @@ class TrainingManager:
                     # Update status message with current log line (truncated if too long)
                     self.status_message = line[:120] + "..." if len(line) > 123 else line
 
-                    # Parse progress: "Epoch 1/10"
+                    # Parse initial message: "Starting training for 10 epochs (from epoch 31)..."
+                    start_match = re.search(r"Starting training for (\d+) epochs \(from epoch (\d+)\)", line)
+                    if start_match:
+                        count = int(start_match.group(1))
+                        start = int(start_match.group(2))
+                        self.total_epochs = start + count - 1
+                        self.current_epoch = start - 1
+                    
+                    # Parse progress: "Epoch 1/10" or "Epoch 31/40"
                     epoch_match = re.search(r"Epoch (\d+)/(\d+)", line)
                     if epoch_match:
                         current = int(epoch_match.group(1))
                         total = int(epoch_match.group(2))
                         self.current_epoch = current
                         self.total_epochs = total
-                        self.progress = current / total
+                        self.progress = current / total if total > 0 else 0
                     
                     # Parse loss: "train_loss=0.1234"
                     loss_match = re.search(r"train_loss=([0-9.]+)", line)

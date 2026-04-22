@@ -199,17 +199,18 @@ def train():
     # 8. Training Loop
     epochs = args.epochs if args.epochs is not None else train_cfg.get("epochs", 10)
     if rank <= 0:
-        print(f"Starting training from epoch {start_epoch + 1} to {epochs}...")
+        print(f"Starting training for {epochs} epochs (from epoch {start_epoch + 1})...")
 
-    for epoch in range(start_epoch, epochs):
+    for epoch in range(start_epoch, start_epoch + epochs):
         if is_distributed:
             train_sampler.set_epoch(epoch)
 
         model.train()
         # Only rank 0 shows progress bar
         show_pbar = rank <= 0
+        total_target_epochs = start_epoch + epochs
         pbar = tqdm(
-            train_loader, desc=f"Epoch {epoch + 1}/{epochs}", disable=not show_pbar
+            train_loader, desc=f"Epoch {epoch + 1}/{total_target_epochs}", disable=not show_pbar
         )
         epoch_loss = 0
 
