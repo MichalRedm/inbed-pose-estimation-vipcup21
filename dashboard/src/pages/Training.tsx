@@ -15,9 +15,7 @@ import {
   Tooltip, 
   ResponsiveContainer 
 } from 'recharts';
-import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:8000';
+import { getTrainingStatus, startTraining, stopTraining } from '../services/api';
 
 interface TrainingStatus {
   is_running: boolean;
@@ -41,8 +39,8 @@ const Training: React.FC = () => {
 
   const fetchStatus = React.useCallback(async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/training/status`);
-      setStatus(response.data);
+      const data = await getTrainingStatus();
+      setStatus(data);
     } catch (error) {
       console.error('Failed to fetch status:', error);
     }
@@ -65,7 +63,7 @@ const Training: React.FC = () => {
 
   const handleStart = async () => {
     try {
-      await axios.post(`${API_BASE_URL}/training/start`, {
+      await startTraining({
         training: {
           lr: config.lr,
           epochs: config.epochs,
@@ -82,7 +80,7 @@ const Training: React.FC = () => {
 
   const handleStop = async () => {
     try {
-      await axios.post(`${API_BASE_URL}/training/stop`);
+      await stopTraining();
       fetchStatus();
     } catch {
       alert('Failed to stop training');
