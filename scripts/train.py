@@ -138,7 +138,11 @@ def train():
         DistributedSampler(val_dataset, shuffle=False) if is_distributed else None
     )
 
-    batch_size = args.batch_size if args.batch_size is not None else train_cfg.get("batch_size", 16)
+    batch_size = (
+        args.batch_size
+        if args.batch_size is not None
+        else train_cfg.get("batch_size", 16)
+    )
 
     train_loader = DataLoader(
         train_dataset,
@@ -199,9 +203,13 @@ def train():
     # 8. Training Loop
     epochs = args.epochs if args.epochs is not None else train_cfg.get("epochs", 10)
     if rank <= 0:
-        print(f"Starting training for {epochs} epochs (from epoch {start_epoch + 1})...")
+        print(
+            f"Starting training for {epochs} epochs (from epoch {start_epoch + 1})..."
+        )
 
     for epoch in range(start_epoch, start_epoch + epochs):
+        if rank <= 0:
+            print(f"--- Epoch {epoch + 1}/{start_epoch + epochs} ---")
         if is_distributed:
             train_sampler.set_epoch(epoch)
 
@@ -210,7 +218,9 @@ def train():
         show_pbar = rank <= 0
         total_target_epochs = start_epoch + epochs
         pbar = tqdm(
-            train_loader, desc=f"Epoch {epoch + 1}/{total_target_epochs}", disable=not show_pbar
+            train_loader,
+            desc=f"Epoch {epoch + 1}/{total_target_epochs}",
+            disable=not show_pbar,
         )
         epoch_loss = 0
 
