@@ -50,10 +50,23 @@ app.add_middleware(
 # Root & Health Endpoints
 @app.get("/")
 async def root():
+    gpu_info = {"available": torch.cuda.is_available()}
+    if gpu_info["available"]:
+        gpu_info["name"] = torch.cuda.get_device_name(0)
+        try:
+            free, total = torch.cuda.mem_get_info(0)
+            gpu_info["memory"] = {
+                "free": free / (1024**3),
+                "total": total / (1024**3),
+                "used": (total - free) / (1024**3),
+            }
+        except Exception:
+            pass
+
     return {
         "status": "online",
         "version": "1.0.0",
-        "gpu_available": torch.cuda.is_available(),
+        "gpu": gpu_info,
     }
 
 

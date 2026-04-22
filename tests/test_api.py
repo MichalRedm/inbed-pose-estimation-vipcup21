@@ -13,7 +13,8 @@ def test_root():
     data = response.json()
     assert data["status"] == "online"
     assert "version" in data
-    assert "gpu_available" in data
+    assert "gpu" in data
+    assert "available" in data["gpu"]
 
 
 def test_predict_no_file():
