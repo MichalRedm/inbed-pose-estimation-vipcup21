@@ -178,7 +178,7 @@ class CloudflaredProxy:
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,  # Capture stderr for debugging
-            text=True
+            text=True,
         )
         # Wait until the local port is accepting connections
         import socket
@@ -199,11 +199,11 @@ class CloudflaredProxy:
                     return  # ready
             except OSError:
                 time.sleep(0.5)
-        
+
         # If we reached here, it timed out
         if self._proc.poll() is None:
             self._proc.terminate()
-        
+
         raise TimeoutError(
             f"cloudflared proxy on port {self.local_port} did not start "
             f"within {timeout}s. Is cloudflared installed and in PATH?"
@@ -389,6 +389,7 @@ class GPUSession:
             exclude = [
                 ".git",
                 ".venv",
+                "dashboard",
                 "data",
                 "__pycache__",
                 ".pytest_cache",
