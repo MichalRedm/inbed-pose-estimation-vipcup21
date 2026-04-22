@@ -5,16 +5,17 @@ from PIL import Image
 import numpy as np
 from pathlib import Path
 import sys
-from fastapi.middleware.cors import CORSMiddleware
-from src.training.manager import training_manager
-from pydantic import BaseModel
 import json
 import subprocess
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # Add project root to sys.path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
+from src.training.manager import training_manager
 from src.utils import load_config, decode_heatmaps, LSP_JOINT_NAMES  # noqa: E402
 from src.models.hrnet import get_pose_net  # noqa: E402
 
