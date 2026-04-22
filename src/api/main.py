@@ -44,6 +44,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Root & Health Endpoints
+@app.get("/")
+async def root():
+    return {
+        "status": "online",
+        "version": "1.0.0",
+        "gpu_available": torch.cuda.is_available()
+    }
+
 # Configuration Endpoints
 @app.get("/config/gpu")
 async def get_gpu_config():

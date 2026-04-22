@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
+import axios from 'axios';
 import { 
   LayoutDashboard, 
   Activity, 
@@ -9,7 +10,26 @@ import {
   Box 
 } from 'lucide-react';
 
+const API_BASE_URL = 'http://localhost:8000';
+
 const Sidebar: React.FC = () => {
+  const [isOnline, setIsOnline] = useState<boolean>(false);
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        await axios.get(API_BASE_URL);
+        setIsOnline(true);
+      } catch (error) {
+        setIsOnline(false);
+      }
+    };
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   const navItems = [
     { name: 'Overview', path: '/', icon: LayoutDashboard },
     { name: 'Training', path: '/training', icon: Activity },
@@ -40,8 +60,13 @@ const Sidebar: React.FC = () => {
       </nav>
       <div className="sidebar-footer">
         <div className="status-indicator">
-          <div className="dot online"></div>
-          <span className="micro-label text-uppercase">Backend Online</span>
+          <div className={`dot ${isOnline ? 'online' : 'offline'}`} style={{ 
+            backgroundColor: isOnline ? 'var(--accent-lime)' : 'var(--accent-pink)',
+            boxShadow: isOnline ? '0 0 8px var(--accent-lime)' : '0 0 8px var(--accent-pink)'
+          }}></div>
+          <span className="micro-label text-uppercase" style={{ color: isOnline ? 'var(--text-primary)' : 'var(--accent-pink)' }}>
+            {isOnline ? 'Backend Online' : 'Backend Offline'}
+          </span>
         </div>
       </div>
     </aside>
