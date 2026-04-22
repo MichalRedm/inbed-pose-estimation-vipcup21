@@ -5,6 +5,11 @@ from PIL import Image
 import numpy as np
 from pathlib import Path
 import sys
+from fastapi.middleware.cors import CORSMiddleware
+from src.training.manager import training_manager
+from pydantic import BaseModel
+import json
+import subprocess
 
 # Add project root to sys.path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
@@ -13,17 +18,12 @@ sys.path.insert(0, str(project_root))
 from src.utils import load_config, decode_heatmaps, LSP_JOINT_NAMES  # noqa: E402
 from src.models.hrnet import get_pose_net  # noqa: E402
 
-from fastapi.middleware.cors import CORSMiddleware
-from src.training.manager import training_manager
-from pydantic import BaseModel
-import json
-import subprocess
-
 app = FastAPI(
     title="In-Bed Pose Estimation API",
     description="API for predicting 14 human joints from in-bed images (RGB or IR).",
     version="1.0.0",
 )
+
 
 class GPUConfig(BaseModel):
     type: str
@@ -35,6 +35,7 @@ class GPUConfig(BaseModel):
     ssh_config_alias: str = ""
     proxy_command: str = ""
 
+
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
@@ -44,14 +45,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Root & Health Endpoints
 @app.get("/")
 async def root():
     return {
         "status": "online",
         "version": "1.0.0",
-        "gpu_available": torch.cuda.is_available()
+        "gpu_available": torch.cuda.is_available(),
     }
+
 
 # Configuration Endpoints
 @app.get("/config/gpu")
@@ -60,23 +63,24 @@ async def get_gpu_config():
     paths = [
         project_root / "gpu_connection.json",
         Path("gpu_connection.json"),
-        Path(__file__).parent.parent.parent / "gpu_connection.json"
+        Path(__file__).parent.parent.parent / "gpu_connection.json",
     ]
-    
+
     json_path = None
     for p in paths:
         if p.exists():
             json_path = p
             break
-            
+
     if not json_path:
         return {}
-        
+
     try:
         with open(json_path, "r") as f:
             return json.load(f)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read config: {str(e)}")
+
 
 @app.post("/config/gpu")
 async def save_gpu_config(config: GPUConfig):
@@ -89,47 +93,59 @@ async def save_gpu_config(config: GPUConfig):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
 
+
 @app.post("/gpu/verify")
 def verify_gpu():
     # Run the verification script and capture output
     # Note: Using 'def' instead of 'async def' so FastAPI runs this in a threadpool
     # and doesn't block the event loop during the long SSH connection attempt.
     json_path = project_root / "gpu_connection.json"
-    
+
     if not json_path.exists():
         return {
-            "success": False, 
-            "stdout": "", 
-            "stderr": f"Config file not found at {json_path}. Please save your configuration first."
+            "success": False,
+            "stdout": "",
+            "stderr": f"Config file not found at {json_path}. Please save your configuration first.",
         }
 
     try:
         # Pass explicit paths to the script
         script_path = project_root / "scripts" / "verify_remote_gpu.py"
-        
+
         result = subprocess.run(
             [sys.executable, str(script_path), "--json", str(json_path)],
             capture_output=True,
             text=True,
-            timeout=90  # Increased timeout for slow SSH handshakes
+            timeout=90,  # Increased timeout for slow SSH handshakes
         )
         return {
             "success": result.returncode == 0,
             "stdout": result.stdout,
-            "stderr": result.stderr
+            "stderr": result.stderr,
         }
     except subprocess.TimeoutExpired:
-        return {"success": False, "stdout": "", "stderr": "Verification timed out after 90 seconds. Check if Kaggle is still running and cloudflared is installed."}
+        return {
+            "success": False,
+            "stdout": "",
+            "stderr": "Verification timed out after 90 seconds. Check if Kaggle is still running and cloudflared is installed.",
+        }
     except Exception as e:
-        return {"success": False, "stdout": "", "stderr": f"Internal server error: {str(e)}"}
+        return {
+            "success": False,
+            "stdout": "",
+            "stderr": f"Internal server error: {str(e)}",
+        }
+
 
 # Global model container
 
 model_container = {}
 
+
 @app.get("/training/status")
 async def get_training_status():
     return training_manager.get_status()
+
 
 @app.post("/training/start")
 async def start_training(config: dict = None):
@@ -138,6 +154,7 @@ async def start_training(config: dict = None):
         raise HTTPException(status_code=400, detail=message)
     return {"message": message}
 
+
 @app.post("/training/stop")
 async def stop_training():
     success, message = training_manager.stop_training()
@@ -145,24 +162,24 @@ async def stop_training():
         raise HTTPException(status_code=400, detail=message)
     return {"message": message}
 
+
 @app.get("/models")
 async def list_models():
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
     if not checkpoint_dir.exists():
         return {"models": []}
-    
+
     checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
     return {
         "models": [
             {
                 "name": cp.name,
                 "path": str(cp.relative_to(project_root)),
-                "size_mb": cp.stat().st_size / (1024 * 1024)
+                "size_mb": cp.stat().st_size / (1024 * 1024),
             }
             for cp in checkpoints
         ]
     }
-
 
 
 @app.on_event("startup")
@@ -194,8 +211,6 @@ async def startup_event():
 
     # Check for remote training dependencies
     try:
-        import paramiko
-        import scp
         print("Remote training dependencies (paramiko, scp) found.")
     except ImportError:
         print("WARNING: Remote training dependencies (paramiko, scp) not found.")
@@ -204,11 +219,6 @@ async def startup_event():
     model_container["model"] = model
     model_container["device"] = device
     model_container["image_size"] = image_size
-
-
-@app.get("/")
-async def root():
-    return {"message": "In-Bed Pose Estimation API is running."}
 
 
 @app.post("/predict")
