@@ -154,7 +154,8 @@ cython_debug/
 
 # Custom for this project
 # Project-specific ignores
-.agents/
+# .agents/ is now tracked
+
 /data/
 /docs/
 *.ipynb
