@@ -156,3 +156,34 @@ The API returns the predicted (x, y) coordinates for all 14 joints.
 
 ## 📜 License
 This project is for academic/research purposes associated with the IEEE VIP Cup 2021.
+## ML Dashboard
+
+A professional React-based dashboard for monitoring training and visualizing inference results.
+
+### Features
+- **Training Monitor**: Real-time loss history charts, progress tracking, and hyperparameter control.
+- **Inference Visualizer**: Upload images and visualize predicted 14-joint poses on a canvas.
+- **Model Management**: List and select trained model checkpoints.
+- **Modern Design**: Sentry-inspired dark mode UI with premium aesthetics.
+
+### Setup & Running
+
+1. **Start Backend API**:
+   ```bash
+   python src/api/main.py
+   ```
+
+2. **Start Dashboard**:
+   ```bash
+   cd dashboard
+   npm install
+   npm run dev
+   ```
+   The dashboard will be available at `http://localhost:5173`.
+
+### Technology Stack
+- **Frontend**: React, TypeScript, Vite.
+- **Styling**: Vanilla CSS with CSS Variables.
+- **Visualizations**: Recharts, HTML5 Canvas.
+- **Icons**: Lucide React.
+- **API**: Axios, FastAPI (Backend).

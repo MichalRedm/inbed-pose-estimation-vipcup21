@@ -1,0 +1,35 @@
+name: Dashboard CI
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'dashboard/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'dashboard/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18
+        cache: 'npm'
+        cache-dependency-path: dashboard/package-lock.json
+
+    - name: Install dependencies
+      run: |
+        cd dashboard
+        npm install
+
+    - name: Build dashboard
+      run: |
+        cd dashboard
+        npm run build
