@@ -13,3 +13,6 @@ tqdm
 scikit-learn
 opencv-python
 tensorboard
+fastapi
+uvicorn
+python-multipart
