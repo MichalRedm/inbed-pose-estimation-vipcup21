@@ -1,12 +1,10 @@
 import threading
-import time
+import subprocess
+import sys
+import re
+from pathlib import Path
 from typing import Dict, List, Optional
-import torch
-from src.training.trainer import PoseTrainer
 from src.utils import load_config
-from src.models.hrnet import get_pose_net
-from src.data.dataset import VIPCupDataset
-from torch.utils.data import DataLoader
 
 class TrainingManager:
     def __init__(self):
@@ -27,6 +25,8 @@ class TrainingManager:
         self._stop_event.clear()
         self.loss_history = []
         self.progress = 0.0
+        self.current_epoch = 0
+        self.total_epochs = 0
         
         self._thread = threading.Thread(target=self._run_training, args=(config_overrides,))
         self._thread.start()
@@ -53,23 +53,8 @@ class TrainingManager:
     def _run_training(self, config_overrides):
         try:
             self.status_message = "Initializing..."
-            config = load_config()
-            if config_overrides:
-                # Basic merge
-                for k, v in config_overrides.items():
-                    if isinstance(v, dict) and k in config:
-                        config[k].update(v)
-                    else:
-                        config[k] = v
-            
-            is_remote = config_overrides.get("remote", False) if config_overrides else False
-            
-            import subprocess
-            import sys
-            from pathlib import Path
-            import re
-            
             project_root = Path(__file__).parent.parent.parent
+            is_remote = config_overrides.get("remote", False) if config_overrides else False
             
             if is_remote:
                 self.status_message = "Starting remote training..."
@@ -77,15 +62,15 @@ class TrainingManager:
             else:
                 self.status_message = "Starting local training..."
                 cmd = [sys.executable, str(project_root / "scripts" / "train.py")]
-                
-                # Pass overrides as CLI args
-                if config_overrides:
-                    if "lr" in config_overrides:
-                        cmd.extend(["--lr", str(config_overrides["lr"])])
-                    if "epochs" in config_overrides:
-                        cmd.extend(["--epochs", str(config_overrides["epochs"])])
-                    if "batch_size" in config_overrides:
-                        cmd.extend(["--batch_size", str(config_overrides["batch_size"])])
+            
+            # Pass overrides as CLI args (works for both local and remote scripts)
+            if config_overrides:
+                if "lr" in config_overrides:
+                    cmd.extend(["--lr", str(config_overrides["lr"])])
+                if "epochs" in config_overrides:
+                    cmd.extend(["--epochs", str(config_overrides["epochs"])])
+                if "batch_size" in config_overrides:
+                    cmd.extend(["--batch_size", str(config_overrides["batch_size"])])
 
             process = subprocess.Popen(
                 cmd,
@@ -104,12 +89,8 @@ class TrainingManager:
                 
                 line = line.strip()
                 if line:
-                    # Update status message with current log line
-                    # But filter out tqdm junk if possible, or just show it
-                    if len(line) > 100:
-                        self.status_message = line[:97] + "..."
-                    else:
-                        self.status_message = line
+                    # Update status message with current log line (truncated if too long)
+                    self.status_message = line[:120] + "..." if len(line) > 123 else line
 
                     # Parse progress: "Epoch 1/10"
                     epoch_match = re.search(r"Epoch (\d+)/(\d+)", line)
@@ -124,7 +105,9 @@ class TrainingManager:
                     loss_match = re.search(r"train_loss=([0-9.]+)", line)
                     if loss_match:
                         loss = float(loss_match.group(1))
-                        self.loss_history.append(loss)
+                        # Avoid duplicate loss entries for the same epoch if logged multiple times
+                        if not self.loss_history or self.loss_history[-1] != loss:
+                            self.loss_history.append(loss)
             
             process.wait()
             if not self._stop_event.is_set():
@@ -138,6 +121,5 @@ class TrainingManager:
             self.status_message = f"Error: {str(e)}"
         finally:
             self.is_running = False
-
 
 training_manager = TrainingManager()
