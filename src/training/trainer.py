@@ -8,6 +8,7 @@ from tqdm import tqdm
 import os
 import json
 
+
 class PoseTrainer:
     """
     Handles the training and evaluation loop for pose estimation.
@@ -32,7 +33,7 @@ class PoseTrainer:
         for batch in pbar:
             if batch is None:
                 continue
-            
+
             images = batch["image"].to(self.device)
             targets = batch["target"].to(self.device)
 
@@ -56,23 +57,28 @@ class PoseTrainer:
     def fit(self, train_loader, val_loader=None):
         print(f"Starting training on {self.device}...")
         history_path = os.path.join(self.save_dir, "history.json")
-        
+
         for epoch in range(self.epochs):
             train_loss = self.train_epoch(train_loader, epoch)
             val_loss = None
-            
+
             if val_loader:
                 val_loss = self.evaluate(val_loader)
-                print(f"Epoch {epoch + 1}: train_loss={train_loss:.4f} val_loss={val_loss:.4f}")
+                print(
+                    f"Epoch {epoch + 1}: train_loss={train_loss:.4f} val_loss={val_loss:.4f}"
+                )
             else:
                 print(f"Epoch {epoch + 1}: train_loss={train_loss:.4f}")
 
             # Update history
             self._update_history(history_path, epoch + 1, train_loss, val_loss)
-            
+
             # Save periodic checkpoint
             if (epoch + 1) % 10 == 0:
-                torch.save(self.model.state_dict(), os.path.join(self.save_dir, f"hrnet_epoch_{epoch + 1}.pth"))
+                torch.save(
+                    self.model.state_dict(),
+                    os.path.join(self.save_dir, f"hrnet_epoch_{epoch + 1}.pth"),
+                )
 
     def _update_history(self, path, epoch, train_loss, val_loss):
         history = []
@@ -82,12 +88,12 @@ class PoseTrainer:
                     history = json.load(f)
             except:
                 history = []
-        
+
         entry = {"epoch": epoch, "train_loss": train_loss}
         if val_loss is not None:
             entry["val_loss"] = val_loss
         history.append(entry)
-        
+
         with open(path, "w") as f:
             json.dump(history, f, indent=4)
 
