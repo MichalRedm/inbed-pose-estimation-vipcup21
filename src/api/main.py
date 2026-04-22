@@ -13,14 +13,63 @@ sys.path.insert(0, str(project_root))
 from src.utils import load_config, decode_heatmaps, LSP_JOINT_NAMES  # noqa: E402
 from src.models.hrnet import get_pose_net  # noqa: E402
 
+from fastapi.middleware.cors import CORSMiddleware
+from src.training.manager import training_manager
+
 app = FastAPI(
     title="In-Bed Pose Estimation API",
     description="API for predicting 14 human joints from in-bed images (RGB or IR).",
     version="1.0.0",
 )
 
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify the actual origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Global model container
 model_container = {}
+
+@app.get("/training/status")
+async def get_training_status():
+    return training_manager.get_status()
+
+@app.post("/training/start")
+async def start_training(config: dict = None):
+    success, message = training_manager.start_training(config)
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+    return {"message": message}
+
+@app.post("/training/stop")
+async def stop_training():
+    success, message = training_manager.stop_training()
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+    return {"message": message}
+
+@app.get("/models")
+async def list_models():
+    checkpoint_dir = Path(project_root) / "models" / "checkpoints"
+    if not checkpoint_dir.exists():
+        return {"models": []}
+    
+    checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
+    return {
+        "models": [
+            {
+                "name": cp.name,
+                "path": str(cp.relative_to(project_root)),
+                "size_mb": cp.stat().st_size / (1024 * 1024)
+            }
+            for cp in checkpoints
+        ]
+    }
+
 
 
 @app.on_event("startup")
