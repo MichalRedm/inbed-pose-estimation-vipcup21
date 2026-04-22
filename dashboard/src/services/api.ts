@@ -15,7 +15,27 @@ export const predictPose = async (file: File) => {
   return response.data;
 };
 
-export const getStatus = async () => {
+export const getSystemInfo = async () => {
   const response = await axios.get(`${API_BASE_URL}/`);
+  return response.data;
+};
+
+export const getTrainingStatus = async () => {
+  const response = await axios.get(`${API_BASE_URL}/training/status`);
+  return response.data;
+};
+
+export const getModels = async () => {
+  const response = await axios.get(`${API_BASE_URL}/models`);
+  return response.data;
+};
+
+export const startTraining = async (config: Record<string, unknown>) => {
+  const response = await axios.post(`${API_BASE_URL}/training/start`, config);
+  return response.data;
+};
+
+export const stopTraining = async () => {
+  const response = await axios.post(`${API_BASE_URL}/training/stop`);
   return response.data;
 };
