@@ -2,13 +2,14 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import Overview from './pages/Overview';
+import Training from './pages/Training';
+import Inference from './pages/Inference';
+import Models from './pages/Models';
 
-// Placeholder components for other pages
-const Training = () => <div><h1 className="text-uppercase">Training Monitor</h1></div>;
-const Inference = () => <div><h1 className="text-uppercase">Model Inference</h1></div>;
-const Models = () => <div><h1 className="text-uppercase">Model Management</h1></div>;
+// Placeholder components for remaining pages
 const Dataset = () => <div><h1 className="text-uppercase">Dataset Explorer</h1></div>;
 const Settings = () => <div><h1 className="text-uppercase">Settings</h1></div>;
+
 
 const App: React.FC = () => {
   return (

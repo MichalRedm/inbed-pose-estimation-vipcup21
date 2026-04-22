@@ -313,3 +313,232 @@ button {
   font-size: 0.9rem;
 }
 
+/* Inference Page */
+.inference-grid {
+  display: grid;
+  grid-template-columns: 1fr 350px;
+  gap: 24px;
+  margin-top: 32px;
+}
+
+.upload-section {
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  border-radius: 12px;
+}
+
+.dropzone {
+  flex: 1;
+  border: 2px dashed var(--border-purple);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+  transition: var(--transition-normal);
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dropzone:hover {
+  border-color: var(--accent-primary);
+  background-color: var(--glass-dark);
+}
+
+.dropzone.has-file {
+  border-style: solid;
+}
+
+.dropzone input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 5;
+}
+
+.upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.preview-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-preview {
+  max-width: 100%;
+  max-height: 500px;
+  border-radius: 8px;
+}
+
+.pose-canvas {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.upload-actions {
+  margin-top: 24px;
+}
+
+.results-section {
+  padding: 24px;
+  border-radius: 12px;
+  height: fit-content;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.results-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-purple);
+}
+
+.results-table td {
+  padding: 12px 0;
+  font-size: 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  text-align: center;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Training Page */
+.training-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+  margin-top: 32px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.chart-wrapper {
+  padding: 0 10px 10px 0;
+}
+
+.progress-card {
+  padding: 24px;
+  border-radius: 12px;
+}
+
+.progress-bar-container {
+  height: 8px;
+  background-color: var(--bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 16px 0;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-lime));
+  transition: width 0.3s ease;
+}
+
+.status-footer {
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.controls-card {
+  padding: 24px;
+  border-radius: 12px;
+}
+
+.config-section {
+  border-top: 1px solid var(--border-purple);
+  padding-top: 24px;
+}
+
+.input-field {
+  margin-bottom: 16px;
+}
+
+.input-field label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.input-field input {
+  width: 100%;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-purple);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-family: var(--font-ui);
+  outline: none;
+}
+
+.input-field input:focus {
+  border-color: var(--accent-primary);
+}
+
+.logs-card {
+  padding: 20px;
+  border-radius: 12px;
+}
+
+.logs-viewer {
+  background-color: #0d0915;
+  border-radius: 8px;
+  padding: 16px;
+  height: 250px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.log-entry {
+  margin-bottom: 4px;
+}
+
+.log-time {
+  color: var(--accent-pink);
+  margin-right: 8px;
+}
+
+
+
