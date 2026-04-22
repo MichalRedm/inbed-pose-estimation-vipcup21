@@ -30,6 +30,7 @@ const Settings: React.FC = () => {
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{ success: boolean; stdout: string; stderr: string } | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -68,12 +69,22 @@ const Settings: React.FC = () => {
 
   const fetchConfig = async () => {
     try {
+      setBackendError(null);
       const response = await axios.get(`${API_BASE_URL}/config/gpu`);
-      if (response.data && response.data.type) {
-        setConfig({ ...config, ...response.data });
+      console.log('Fetched GPU Config:', response.data);
+      if (response.data && Object.keys(response.data).length > 0) {
+        setConfig(prev => {
+          const updated = { ...prev, ...response.data };
+          // Ensure host is set if tunnel_hostname is present (for UI convenience)
+          if (!updated.host && updated.tunnel_hostname) {
+            updated.host = updated.tunnel_hostname;
+          }
+          return updated;
+        });
       }
     } catch (error) {
       console.error('Failed to fetch GPU config:', error);
+      setBackendError('Backend unreachable. Ensure the FastAPI server is running on port 8000.');
     } finally {
       setLoading(false);
     }
@@ -134,6 +145,23 @@ const Settings: React.FC = () => {
         <h1 className="text-uppercase">System Settings</h1>
         <p className="text-secondary">Configure remote GPU connections and environment variables.</p>
       </div>
+
+      {backendError && (
+        <div className="glass" style={{ 
+          marginTop: '20px', 
+          padding: '16px', 
+          borderRadius: '8px', 
+          border: '1px solid var(--accent-pink)', 
+          background: 'rgba(255, 61, 113, 0.1)',
+          color: 'var(--accent-pink)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px'
+        }}>
+          <XCircle size={20} />
+          <span>{backendError}</span>
+        </div>
+      )}
 
       <div className="settings-grid" style={{ marginTop: '32px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
         <div className="glass card" style={{ padding: '32px' }}>

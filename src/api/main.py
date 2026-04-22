@@ -47,9 +47,22 @@ app.add_middleware(
 # Configuration Endpoints
 @app.get("/config/gpu")
 async def get_gpu_config():
-    json_path = project_root / "gpu_connection.json"
-    if not json_path.exists():
+    # Try multiple common locations for the config file
+    paths = [
+        project_root / "gpu_connection.json",
+        Path("gpu_connection.json"),
+        Path(__file__).parent.parent.parent / "gpu_connection.json"
+    ]
+    
+    json_path = None
+    for p in paths:
+        if p.exists():
+            json_path = p
+            break
+            
+    if not json_path:
         return {}
+        
     try:
         with open(json_path, "r") as f:
             return json.load(f)
@@ -58,6 +71,7 @@ async def get_gpu_config():
 
 @app.post("/config/gpu")
 async def save_gpu_config(config: GPUConfig):
+    # Prefer saving to the root of the project
     json_path = project_root / "gpu_connection.json"
     try:
         with open(json_path, "w") as f:
