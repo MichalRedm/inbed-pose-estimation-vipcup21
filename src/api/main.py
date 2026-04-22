@@ -66,14 +66,28 @@ async def save_gpu_config(config: GPUConfig):
         raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
 
 @app.post("/gpu/verify")
-async def verify_gpu():
+def verify_gpu():
     # Run the verification script and capture output
+    # Note: Using 'def' instead of 'async def' so FastAPI runs this in a threadpool
+    # and doesn't block the event loop during the long SSH connection attempt.
+    json_path = project_root / "gpu_connection.json"
+    
+    if not json_path.exists():
+        return {
+            "success": False, 
+            "stdout": "", 
+            "stderr": f"Config file not found at {json_path}. Please save your configuration first."
+        }
+
     try:
+        # Pass explicit paths to the script
+        script_path = project_root / "scripts" / "verify_remote_gpu.py"
+        
         result = subprocess.run(
-            [sys.executable, str(project_root / "scripts" / "verify_remote_gpu.py")],
+            [sys.executable, str(script_path), "--json", str(json_path)],
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=90  # Increased timeout for slow SSH handshakes
         )
         return {
             "success": result.returncode == 0,
@@ -81,9 +95,9 @@ async def verify_gpu():
             "stderr": result.stderr
         }
     except subprocess.TimeoutExpired:
-        return {"success": False, "stdout": "", "stderr": "Verification timed out"}
+        return {"success": False, "stdout": "", "stderr": "Verification timed out after 90 seconds. Check if Kaggle is still running and cloudflared is installed."}
     except Exception as e:
-        return {"success": False, "stdout": "", "stderr": str(e)}
+        return {"success": False, "stdout": "", "stderr": f"Internal server error: {str(e)}"}
 
 # Global model container
 
@@ -153,6 +167,15 @@ async def startup_event():
         model.load_state_dict(torch.load(latest_checkpoint, map_location=device))
 
     model.eval()
+
+    # Check for remote training dependencies
+    try:
+        import paramiko
+        import scp
+        print("Remote training dependencies (paramiko, scp) found.")
+    except ImportError:
+        print("WARNING: Remote training dependencies (paramiko, scp) not found.")
+        print("Run 'pip install paramiko scp' to enable remote GPU support.")
 
     model_container["model"] = model
     model_container["device"] = device

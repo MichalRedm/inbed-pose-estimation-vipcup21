@@ -92,6 +92,10 @@ const Settings: React.FC = () => {
     setVerifying(true);
     setVerifyResult(null);
     try {
+      // Important: Save current config to backend before verifying, 
+      // as the verification script reads from the disk file.
+      await axios.post(`${API_BASE_URL}/config/gpu`, config);
+      
       const response = await axios.post(`${API_BASE_URL}/gpu/verify`);
       setVerifyResult(response.data);
     } catch (error) {
