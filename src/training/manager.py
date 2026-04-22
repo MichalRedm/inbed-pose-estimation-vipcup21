@@ -5,7 +5,6 @@ import re
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
-from src.utils import load_config
 
 
 class TrainingManager:
