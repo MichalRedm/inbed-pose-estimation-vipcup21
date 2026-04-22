@@ -228,6 +228,7 @@ def main():
     print("--- Remote Training Session Complete ---")
 
 
+if __name__ == "__main__":
     try:
         main()
     except Exception as e:
@@ -235,6 +236,8 @@ def main():
         if "10054" in str(e) or "banner" in str(e).lower():
             print("\nPRO TIP: This usually means your Cloudflare tunnel is broken.")
             print("1. Check if the Kaggle notebook is still running.")
-            print("2. Ensure you have the LATEST 'tunnel_hostname' in gpu_connection.json.")
+            print(
+                "2. Ensure you have the LATEST 'tunnel_hostname' in gpu_connection.json."
+            )
             print("3. Use the dashboard Settings tab to 'Verify Connection'.")
         sys.exit(1)
