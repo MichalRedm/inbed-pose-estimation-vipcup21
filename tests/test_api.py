@@ -10,7 +10,10 @@ client = TestClient(app)
 def test_root():
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {"message": "In-Bed Pose Estimation API is running."}
+    data = response.json()
+    assert data["status"] == "online"
+    assert "version" in data
+    assert "gpu_available" in data
 
 
 def test_predict_no_file():
