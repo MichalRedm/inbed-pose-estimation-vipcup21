@@ -1,6 +1,7 @@
 # In-Bed Human Pose Estimation (IEEE VIP Cup 2021)
 
 [![Python CI](https://github.com/MichalRedm/inbed-pose-estimation-vipcup21/actions/workflows/ci.yml/badge.svg)](https://github.com/MichalRedm/inbed-pose-estimation-vipcup21/actions/workflows/ci.yml)
+[![Dashboard CI](https://github.com/MichalRedm/inbed-pose-estimation-vipcup21/actions/workflows/dashboard-ci.yml/badge.svg)](https://github.com/MichalRedm/inbed-pose-estimation-vipcup21/actions/workflows/dashboard-ci.yml)
 
 A professional machine learning repository for multi-modal in-bed human pose estimation. This project is based on the **IEEE VIP Cup 2021** challenge and utilizes the **SLP (Simultaneously-collected Multimodal Lying Pose)** dataset.
 
