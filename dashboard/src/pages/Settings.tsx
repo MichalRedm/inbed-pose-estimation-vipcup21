@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Shield, CheckCircle, XCircle, RefreshCw, Save } from 'lucide-react';
+import { Server, Shield, CheckCircle, XCircle, RefreshCw, Save, Upload } from 'lucide-react';
 import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:8000';
@@ -28,6 +28,37 @@ const Settings: React.FC = () => {
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{ success: boolean; stdout: string; stderr: string } | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const parsed = JSON.parse(content);
+        
+        // Map common Kaggle JSON fields to our internal state
+        const newConfig = {
+          ...config,
+          type: parsed.type || (parsed.tunnel_hostname ? 'cloudflare_tunnel' : 'ssh'),
+          tunnel_hostname: parsed.tunnel_hostname || '',
+          host: parsed.host || parsed.tunnel_hostname || '',
+          ssh_user: parsed.ssh_user || 'root',
+          port: parsed.port || 22,
+          gpu: parsed.gpu || '',
+          ssh_config_alias: parsed.ssh_config_alias || ''
+        };
+        
+        setConfig(newConfig);
+      } catch (err) {
+        alert('Failed to parse JSON file. Ensure it is a valid gpu_connection.json.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
 
   useEffect(() => {
     fetchConfig();
@@ -85,9 +116,26 @@ const Settings: React.FC = () => {
 
       <div className="settings-grid" style={{ marginTop: '32px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
         <div className="glass card" style={{ padding: '32px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-            <Server size={24} color="var(--accent-primary)" />
-            <h2 className="text-uppercase" style={{ fontSize: '1.2rem', margin: 0 }}>Remote GPU Config</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Server size={24} color="var(--accent-primary)" />
+              <h2 className="text-uppercase" style={{ fontSize: '1.2rem', margin: 0 }}>Remote GPU Config</h2>
+            </div>
+            <label className="glass" style={{ 
+              padding: '8px 12px', 
+              borderRadius: '8px', 
+              fontSize: '0.75rem', 
+              cursor: 'pointer', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px',
+              border: '1px solid var(--border-light)',
+              color: 'var(--text-secondary)'
+            }}>
+              <Upload size={14} />
+              IMPORT JSON
+              <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
+            </label>
           </div>
 
           <div className="form-group" style={{ marginBottom: '20px' }}>

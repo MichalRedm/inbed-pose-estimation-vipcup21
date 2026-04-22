@@ -5,7 +5,8 @@ import {
   Settings, 
   Activity,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  Server
 } from 'lucide-react';
 import { 
   LineChart, 
