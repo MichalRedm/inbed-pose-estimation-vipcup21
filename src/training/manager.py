@@ -64,84 +64,75 @@ class TrainingManager:
             
             is_remote = config_overrides.get("remote", False) if config_overrides else False
             
+            import subprocess
+            import sys
+            from pathlib import Path
+            import re
+            
+            project_root = Path(__file__).parent.parent.parent
+            
             if is_remote:
                 self.status_message = "Starting remote training..."
-                import subprocess
-                import sys
-                from pathlib import Path
-                
-                project_root = Path(__file__).parent.parent.parent
-                
-                # Command to run remote training
                 cmd = [sys.executable, str(project_root / "scripts" / "remote_train.py")]
-                
-                # Add any training overrides as passthrough args if needed
-                # For now, just basic run
-                
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    cwd=str(project_root)
-                )
-                
-                for line in process.stdout:
-                    if self._stop_event.is_set():
-                        process.terminate()
-                        self.status_message = "Stopping remote training..."
-                        break
-                    
-                    line = line.strip()
-                    if line:
-                        self.status_message = line
-                        # Try to parse epoch progress if visible in logs
-                        if "Epoch" in line and "/" in line:
-                            try:
-                                # Very basic parsing: "Epoch 1/10"
-                                parts = line.split("Epoch")[-1].split("/")[0].strip()
-                                current = int(parts)
-                                total = int(line.split("/")[-1].split()[0].strip())
-                                self.current_epoch = current
-                                self.total_epochs = total
-                                self.progress = current / total
-                            except:
-                                pass
-                
-                process.wait()
-                if not self._stop_event.is_set():
-                    self.status_message = "Remote training finished" if process.returncode == 0 else f"Remote training failed (exit {process.returncode})"
-                
             else:
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                self.status_message = "Starting local training..."
+                cmd = [sys.executable, str(project_root / "scripts" / "train.py")]
                 
-                # Simplified setup for demonstration
-                self.status_message = "Loading model..."
-                model_cfg = config.get("model", {}).get("hrnet", {})
-                model = get_pose_net(model_cfg).to(device)
+                # Pass overrides as CLI args
+                if config_overrides:
+                    if "lr" in config_overrides:
+                        cmd.extend(["--lr", str(config_overrides["lr"])])
+                    if "epochs" in config_overrides:
+                        cmd.extend(["--epochs", str(config_overrides["epochs"])])
+                    if "batch_size" in config_overrides:
+                        cmd.extend(["--batch_size", str(config_overrides["batch_size"])])
+
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=str(project_root)
+            )
+            
+            for line in process.stdout:
+                if self._stop_event.is_set():
+                    process.terminate()
+                    self.status_message = "Stopping training..."
+                    break
                 
-                optimizer = torch.optim.Adam(model.parameters(), lr=config.get("training", {}).get("lr", 0.001))
-                criterion = torch.nn.MSELoss()
-                
-                trainer = PoseTrainer(model, optimizer, criterion, device, config)
-                self.total_epochs = trainer.epochs
-                
-                self.status_message = "Training..."
-                for epoch in range(self.total_epochs):
-                    if self._stop_event.is_set():
-                        self.status_message = "Stopped by user"
-                        break
+                line = line.strip()
+                if line:
+                    # Update status message with current log line
+                    # But filter out tqdm junk if possible, or just show it
+                    if len(line) > 100:
+                        self.status_message = line[:97] + "..."
+                    else:
+                        self.status_message = line
+
+                    # Parse progress: "Epoch 1/10"
+                    epoch_match = re.search(r"Epoch (\d+)/(\d+)", line)
+                    if epoch_match:
+                        current = int(epoch_match.group(1))
+                        total = int(epoch_match.group(2))
+                        self.current_epoch = current
+                        self.total_epochs = total
+                        self.progress = current / total
                     
-                    self.current_epoch = epoch + 1
-                    # Simulate an epoch
-                    time.sleep(1) 
-                    fake_loss = 0.5 * (0.9 ** epoch) + (time.time() % 0.1)
-                    self.loss_history.append(fake_loss)
-                    self.progress = (epoch + 1) / self.total_epochs
-                
-                if not self._stop_event.is_set():
+                    # Parse loss: "train_loss=0.1234"
+                    loss_match = re.search(r"train_loss=([0-9.]+)", line)
+                    if loss_match:
+                        loss = float(loss_match.group(1))
+                        self.loss_history.append(loss)
+            
+            process.wait()
+            if not self._stop_event.is_set():
+                if process.returncode == 0:
                     self.status_message = "Finished"
+                    self.progress = 1.0
+                else:
+                    self.status_message = f"Failed (exit {process.returncode})"
                 
         except Exception as e:
             self.status_message = f"Error: {str(e)}"

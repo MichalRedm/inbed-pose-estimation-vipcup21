@@ -61,6 +61,18 @@ def train():
         help="Override number of training epochs from config",
     )
     parser.add_argument(
+        "--lr",
+        type=float,
+        default=None,
+        help="Override learning rate from config",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=None,
+        help="Override batch size from config",
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Resume training from the latest checkpoint in save_dir",
@@ -126,9 +138,11 @@ def train():
         DistributedSampler(val_dataset, shuffle=False) if is_distributed else None
     )
 
+    batch_size = args.batch_size if args.batch_size is not None else train_cfg.get("batch_size", 16)
+
     train_loader = DataLoader(
         train_dataset,
-        batch_size=train_cfg.get("batch_size", 16),
+        batch_size=batch_size,
         shuffle=(train_sampler is None),
         num_workers=num_workers,
         collate_fn=collate_skip_none,
@@ -136,7 +150,7 @@ def train():
     )
     val_loader = DataLoader(
         val_dataset,
-        batch_size=train_cfg.get("batch_size", 16),
+        batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         collate_fn=collate_skip_none,
@@ -157,9 +171,10 @@ def train():
         )
 
     # 6. Optimizer & Loss
+    lr = args.lr if args.lr is not None else train_cfg.get("lr", 0.0001)
     optimizer = optim.Adam(
         model.parameters(),
-        lr=train_cfg.get("lr", 0.0001),
+        lr=lr,
         weight_decay=train_cfg.get("weight_decay", 0.0001),
     )
     criterion = nn.MSELoss()  # Heatmap loss
