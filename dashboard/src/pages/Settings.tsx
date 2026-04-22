@@ -12,6 +12,7 @@ interface GPUConfig {
   port: number;
   gpu: string;
   ssh_config_alias: string;
+  proxy_command: string;
 }
 
 const Settings: React.FC = () => {
@@ -22,7 +23,8 @@ const Settings: React.FC = () => {
     ssh_user: 'root',
     port: 22,
     gpu: '',
-    ssh_config_alias: ''
+    ssh_config_alias: '',
+    proxy_command: ''
   });
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
@@ -40,15 +42,15 @@ const Settings: React.FC = () => {
         const parsed = JSON.parse(content);
         
         // Map common Kaggle JSON fields to our internal state
-        const newConfig = {
-          ...config,
+        const newConfig: GPUConfig = {
           type: parsed.type || (parsed.tunnel_hostname ? 'cloudflare_tunnel' : 'ssh'),
           tunnel_hostname: parsed.tunnel_hostname || '',
           host: parsed.host || parsed.tunnel_hostname || '',
           ssh_user: parsed.ssh_user || 'root',
           port: parsed.port || 22,
           gpu: parsed.gpu || '',
-          ssh_config_alias: parsed.ssh_config_alias || ''
+          ssh_config_alias: parsed.ssh_config_alias || '',
+          proxy_command: parsed.proxy_command || ''
         };
         
         setConfig(newConfig);
@@ -80,7 +82,15 @@ const Settings: React.FC = () => {
   const handleSave = async () => {
     setSaveStatus('saving');
     try {
-      await axios.post(`${API_BASE_URL}/config/gpu`, config);
+      // Prepare config for saving - ensure proxy_command is correct for cloudflare
+      const configToSave = { ...config };
+      if (config.type === 'cloudflare_tunnel' && config.tunnel_hostname) {
+        configToSave.proxy_command = `cloudflared access tcp --hostname ${config.tunnel_hostname}`;
+      } else if (config.type === 'ssh') {
+        configToSave.proxy_command = '';
+      }
+
+      await axios.post(`${API_BASE_URL}/config/gpu`, configToSave);
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (error) {
@@ -94,7 +104,14 @@ const Settings: React.FC = () => {
     try {
       // Important: Save current config to backend before verifying, 
       // as the verification script reads from the disk file.
-      await axios.post(`${API_BASE_URL}/config/gpu`, config);
+      const configToSave = { ...config };
+      if (config.type === 'cloudflare_tunnel' && config.tunnel_hostname) {
+        configToSave.proxy_command = `cloudflared access tcp --hostname ${config.tunnel_hostname}`;
+      } else if (config.type === 'ssh') {
+        configToSave.proxy_command = '';
+      }
+      
+      await axios.post(`${API_BASE_URL}/config/gpu`, configToSave);
       
       const response = await axios.post(`${API_BASE_URL}/gpu/verify`);
       setVerifyResult(response.data);

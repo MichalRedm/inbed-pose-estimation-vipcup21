@@ -33,6 +33,7 @@ class GPUConfig(BaseModel):
     port: int = 22
     gpu: str = ""
     ssh_config_alias: str = ""
+    proxy_command: str = ""
 
 # Enable CORS
 app.add_middleware(
