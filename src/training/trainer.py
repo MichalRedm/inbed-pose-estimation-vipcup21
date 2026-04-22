@@ -2,9 +2,6 @@ import torch
 from tqdm import tqdm
 
 
-import torch
-import torch.nn as nn
-from tqdm import tqdm
 import os
 import json
 
@@ -86,7 +83,8 @@ class PoseTrainer:
             try:
                 with open(path, "r") as f:
                     history = json.load(f)
-            except:
+            except Exception as e:
+                print(f"Error loading history: {e}")
                 history = []
 
         entry = {"epoch": epoch, "train_loss": train_loss}
