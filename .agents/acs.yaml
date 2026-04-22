@@ -1,0 +1,12 @@
+name: "In-Bed Pose Estimation VIP Cup 2021"
+version: "1.0"
+description: "A professional ML repository for multi-modal in-bed human pose estimation with HRNet and Domain Adaptation."
+layers:
+  rules: "./rules"
+  context: "./context"
+  skills: "./skills"
+  commands: "./commands"
+  permissions: "./permissions"
+metadata:
+  primary_agent: "Antigravity"
+  objective: "Refactor to clean package structure and implement robust training pipeline."
