@@ -12,6 +12,7 @@ This repository implements a high-resolution pose estimation pipeline using **HR
 - **Professional Structure**: Modularized `src` package for data, models, training, and utilities.
 - **Multi-Modal Support**: Seamlessly handle RGB and IR modalities.
 - **Robust CI/CD**: Automated linting, formatting, and unit testing via GitHub Actions.
+- **Inference API**: FastAPI-based server for real-time human pose estimation from images.
 - **Remote Training support**: Modular utilities for managing training on remote GPU backends.
 - **ACS Compliant**: Uses the Agentic Collaboration Standard for persistent project context.
 
@@ -118,6 +119,24 @@ python -m pytest tests/
 
 ---
 
+## ⚡ Inference API
+
+The project includes a FastAPI-based server to serve the trained model.
+
+### 1. Start the API
+```bash
+python scripts/run_api.py --port 8000
+```
+
+### 2. Make a Prediction
+You can send an image to the `/predict` endpoint:
+```bash
+curl -X POST "http://localhost:8000/predict" -H "accept: application/json" -H "Content-Type: multipart/form-data" -F "file=@path/to/your/image.jpg"
+```
+The API returns the predicted (x, y) coordinates for all 14 joints.
+
+---
+
 ## 📂 Project Structure
 ```text
 .
@@ -128,6 +147,7 @@ python -m pytest tests/
 ├── src/              # Core source code
 │   ├── data/         # PyTorch Datasets/Dataloaders
 │   ├── models/       # Model architectures (HRNet)
+│   ├── api/          # FastAPI application
 │   ├── training/     # Trainer classes and loss functions
 │   └── utils/        # Shared utilities
 ├── tests/            # Unit testing suite
