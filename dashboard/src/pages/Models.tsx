@@ -58,7 +58,7 @@ const Models: React.FC = () => {
               </div>
               <div className="model-actions" style={{ marginTop: '24px', display: 'flex', gap: '12px' }}>
                 <button className="btn-primary" style={{ flex: 1, padding: '8px', fontSize: '0.75rem' }}>
-                  <CheckCircle size={14} style={{ marginRight: '6px' }} />
+                  <CheckCircle size={14} />
                   Activate
                 </button>
                 <button className="icon-btn glass" style={{ padding: '8px', borderRadius: '8px' }}>

@@ -159,7 +159,7 @@ const Inference: React.FC = () => {
                 </tbody>
               </table>
               <button className="btn-primary" style={{ marginTop: '24px', width: '100%' }}>
-                <Download size={18} style={{ marginRight: '8px' }} />
+                <Download size={18} />
                 Export Results
               </button>
             </div>

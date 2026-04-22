@@ -191,12 +191,12 @@ const Training: React.FC = () => {
               {status?.is_running ? (
 
                 <button className="btn-primary" onClick={handleStop} style={{ width: '100%', background: 'var(--accent-pink)', borderColor: '#8a4d4d' }}>
-                  <Square size={18} fill="currentColor" style={{ marginRight: '8px' }} />
+                  <Square size={18} fill="currentColor" />
                   Stop Training
                 </button>
               ) : (
                 <button className="btn-lime" onClick={handleStart} style={{ width: '100%' }}>
-                  <Play size={18} fill="currentColor" style={{ marginRight: '8px' }} />
+                  <Play size={18} fill="currentColor" />
                   Start Training
                 </button>
               )}

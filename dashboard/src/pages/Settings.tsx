@@ -268,7 +268,7 @@ const Settings: React.FC = () => {
               onClick={handleSave}
               disabled={saveStatus === 'saving'}
             >
-              <Save size={18} style={{ marginRight: '8px' }} />
+              <Save size={18} />
               {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'success' ? 'Saved!' : 'Save Config'}
             </button>
             <button 
@@ -277,7 +277,7 @@ const Settings: React.FC = () => {
               onClick={handleVerify}
               disabled={verifying}
             >
-              <RefreshCw size={18} style={{ marginRight: '8px', animation: verifying ? 'spin 1s linear infinite' : 'none' }} />
+              <RefreshCw size={18} style={{ animation: verifying ? 'spin 1s linear infinite' : 'none' }} />
               {verifying ? 'Verifying...' : 'Verify Connection'}
             </button>
           </div>
