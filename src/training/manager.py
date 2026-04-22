@@ -13,6 +13,7 @@ class TrainingManager:
         self.current_epoch = 0
         self.total_epochs = 0
         self.loss_history: List[float] = []
+        self.log_history: List[str] = []
         self.status_message = "Idle"
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -24,6 +25,7 @@ class TrainingManager:
         self.is_running = True
         self._stop_event.clear()
         self.loss_history = []
+        self.log_history = []
         self.progress = 0.0
         self.current_epoch = 0
         self.total_epochs = 0
@@ -47,6 +49,7 @@ class TrainingManager:
             "current_epoch": self.current_epoch,
             "total_epochs": self.total_epochs,
             "loss_history": self.loss_history,
+            "log_history": self.log_history,
             "status_message": self.status_message
         }
 
@@ -89,6 +92,12 @@ class TrainingManager:
                 
                 line = line.strip()
                 if line:
+                    # Add to log history with timestamp
+                    timestamp = time.strftime("%H:%M:%S")
+                    self.log_history.append(f"[{timestamp}] {line}")
+                    if len(self.log_history) > 1000:
+                        self.log_history.pop(0)
+
                     # Update status message with current log line (truncated if too long)
                     self.status_message = line[:120] + "..." if len(line) > 123 else line
 

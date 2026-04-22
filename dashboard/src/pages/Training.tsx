@@ -27,11 +27,13 @@ interface TrainingStatus {
   current_epoch: number;
   total_epochs: number;
   loss_history: number[];
+  log_history: string[];
   status_message: string;
 }
 
 const Training: React.FC = () => {
   const [status, setStatus] = useState<TrainingStatus | null>(null);
+  const logsEndRef = React.useRef<HTMLDivElement>(null);
   const [config, setConfig] = useState({
     lr: 0.001,
     epochs: 10,
@@ -53,6 +55,11 @@ const Training: React.FC = () => {
     const interval = setInterval(fetchStatus, 2000);
     return () => clearInterval(interval);
   }, []);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [status?.log_history]);
 
   const handleStart = async () => {
     try {
@@ -227,18 +234,13 @@ const Training: React.FC = () => {
           
           <div className="glass card logs-card" style={{ marginTop: '24px' }}>
             <h3 className="text-uppercase micro-label" style={{ marginBottom: '12px' }}>Live Logs</h3>
-            <div className="logs-viewer">
-              <div className="log-entry">
-                <span className="log-time">[15:04:22]</span> Initializing training pipeline...
-              </div>
-              <div className="log-entry">
-                <span className="log-time">[15:04:23]</span> Model loaded successfully.
-              </div>
-              {status?.loss_history.map((loss, i) => (
-                <div className="log-entry" key={i}>
-                  <span className="log-time">[{15 + i}:00:00]</span> Epoch {i+1} - Loss: {loss.toFixed(4)}
+            <div className="logs-viewer" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+              {status?.log_history.map((log, i) => (
+                <div className="log-entry" key={i} style={{ fontSize: '0.8rem', fontFamily: 'monospace', marginBottom: '4px' }}>
+                  {log}
                 </div>
               ))}
+              <div ref={logsEndRef} />
             </div>
           </div>
         </div>
