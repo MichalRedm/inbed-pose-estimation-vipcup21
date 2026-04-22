@@ -173,23 +173,37 @@ class CloudflaredProxy:
             "--listener",
             f"127.0.0.1:{self.local_port}",
         ]
+        print(f"  Starting cloudflared tunnel: {' '.join(cmd)}")
         self._proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,  # Capture stderr for debugging
+            text=True
         )
         # Wait until the local port is accepting connections
         import socket
 
         deadline = time.time() + timeout
         while time.time() < deadline:
+            # Check if process crashed
+            if self._proc.poll() is not None:
+                err = self._proc.stderr.read() if self._proc.stderr else "Unknown error"
+                raise RuntimeError(f"cloudflared exited unexpectedly: {err}")
+
             try:
                 with socket.create_connection(
                     ("127.0.0.1", self.local_port), timeout=1
                 ):
+                    # Give it a tiny bit more time to stabilize
+                    time.sleep(0.5)
                     return  # ready
             except OSError:
                 time.sleep(0.5)
+        
+        # If we reached here, it timed out
+        if self._proc.poll() is None:
+            self._proc.terminate()
+        
         raise TimeoutError(
             f"cloudflared proxy on port {self.local_port} did not start "
             f"within {timeout}s. Is cloudflared installed and in PATH?"
