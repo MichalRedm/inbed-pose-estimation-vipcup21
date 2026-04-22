@@ -29,7 +29,7 @@ interface TrainingStatus {
 
 const Training: React.FC = () => {
   const [status, setStatus] = useState<TrainingStatus | null>(null);
-  const logsEndRef = React.useRef<HTMLDivElement>(null);
+  const logsContainerRef = React.useRef<HTMLDivElement>(null);
   const [config, setConfig] = useState({
     lr: 0.001,
     epochs: 10,
@@ -56,9 +56,20 @@ const Training: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
-  // Auto-scroll logs
+  // Auto-scroll logs only if user is already at the bottom
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = logsContainerRef.current;
+    if (container) {
+      const threshold = 100; // px
+      const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + threshold;
+      
+      if (isAtBottom) {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: 'auto'
+        });
+      }
+    }
   }, [status?.log_history]);
 
   const handleStart = async () => {
@@ -234,13 +245,16 @@ const Training: React.FC = () => {
           
           <div className="glass card logs-card" style={{ marginTop: '24px' }}>
             <h3 className="text-uppercase micro-label" style={{ marginBottom: '12px' }}>Live Logs</h3>
-            <div className="logs-viewer" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+            <div 
+              className="logs-viewer" 
+              ref={logsContainerRef}
+              style={{ maxHeight: '300px', overflowY: 'auto' }}
+            >
               {status?.log_history.map((log, i) => (
                 <div className="log-entry" key={i} style={{ fontSize: '0.8rem', fontFamily: 'monospace', marginBottom: '4px' }}>
                   {log}
                 </div>
               ))}
-              <div ref={logsEndRef} />
             </div>
           </div>
         </div>
