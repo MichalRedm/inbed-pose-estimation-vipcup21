@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, FileText, Download, Trash2, CheckCircle } from 'lucide-react';
+import { Box, Download, Trash2, CheckCircle } from 'lucide-react';
 import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:8000';
@@ -14,18 +14,18 @@ const Models: React.FC = () => {
   const [models, setModels] = useState<ModelCheckpoint[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchModels = async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/models`);
-      setModels(response.data.models);
-    } catch (error) {
-      console.error('Failed to fetch models:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/models`);
+        setModels(response.data.models);
+      } catch (error) {
+        console.error('Failed to fetch models:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchModels();
   }, []);
 

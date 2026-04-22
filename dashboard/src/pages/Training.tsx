@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Play, 
   Square, 
-  Settings, 
   Activity,
-  ChevronRight,
   RefreshCw,
   Server
 } from 'lucide-react';
@@ -41,20 +39,24 @@ const Training: React.FC = () => {
     remote: false
   });
 
-  const fetchStatus = async () => {
+  const fetchStatus = React.useCallback(async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/training/status`);
       setStatus(response.data);
     } catch (error) {
       console.error('Failed to fetch status:', error);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchStatus();
+    const initialize = async () => {
+      await fetchStatus();
+    };
+    
+    initialize();
     const interval = setInterval(fetchStatus, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchStatus]);
 
   // Auto-scroll logs
   useEffect(() => {
@@ -72,7 +74,7 @@ const Training: React.FC = () => {
         remote: config.remote
       });
       fetchStatus();
-    } catch (error) {
+    } catch {
       alert('Failed to start training');
     }
   };
@@ -82,7 +84,7 @@ const Training: React.FC = () => {
     try {
       await axios.post(`${API_BASE_URL}/training/stop`);
       fetchStatus();
-    } catch (error) {
+    } catch {
       alert('Failed to stop training');
     }
   };

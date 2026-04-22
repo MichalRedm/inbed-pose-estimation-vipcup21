@@ -47,55 +47,39 @@ const Inference: React.FC = () => {
   };
 
   useEffect(() => {
+    const drawPose = () => {
+      const canvas = canvasRef.current;
+      const img = imageRef.current;
+      if (!canvas || !img || !result) return;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Set canvas size to match displayed image size
+      canvas.width = img.clientWidth;
+      canvas.height = img.clientHeight;
+
+      const scaleX = canvas.width / result.original_size.width;
+      const scaleY = canvas.height / result.original_size.height;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw joints
+      result.predictions.forEach((pred) => {
+        ctx.beginPath();
+        ctx.arc(pred.x * scaleX, pred.y * scaleY, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = 'var(--accent-lime)';
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+    };
+
     if (result && canvasRef.current && imageRef.current) {
       drawPose();
     }
   }, [result]);
-
-  const drawPose = () => {
-    const canvas = canvasRef.current;
-    const img = imageRef.current;
-    if (!canvas || !img || !result) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Set canvas size to match displayed image size
-    canvas.width = img.clientWidth;
-    canvas.height = img.clientHeight;
-
-    const scaleX = canvas.width / result.original_size.width;
-    const scaleY = canvas.height / result.original_size.height;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw joints
-    result.predictions.forEach((pred) => {
-      ctx.beginPath();
-      ctx.arc(pred.x * scaleX, pred.y * scaleY, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = 'var(--accent-lime)';
-      ctx.fill();
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    });
-
-    // Define skeleton connections (standard LSP/MPII 14 joints)
-    const connections = [
-      [0, 1], [1, 2], // Right leg
-      [3, 4], [4, 5], // Left leg
-      [2, 3], // Hips
-      [2, 6], [3, 6], // Pelvis to thorax (approx)
-      [6, 7], [7, 8], // Spine/Neck/Head
-      [7, 9], [9, 10], [10, 11], // Right arm
-      [7, 12], [12, 13], [13, 14] // Left arm (if 14 joints, wait LSP has 14)
-    ];
-    
-    // LSP 14 joints usually: 
-    // 0: R_Ankle, 1: R_Knee, 2: R_Hip, 3: L_Hip, 4: L_Knee, 5: L_Ankle, 
-    // 6: Pelvis, 7: Thorax, 8: Neck, 9: Head, 10: R_Wrist, 11: R_Elbow, 12: R_Shoulder, 13: L_Shoulder, 14: L_Elbow, 15: L_Wrist
-    // Wait, let's check src/utils/pose.py for LSP_JOINT_NAMES if possible.
-  };
 
   return (
     <div className="inference-page">

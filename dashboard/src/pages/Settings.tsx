@@ -55,7 +55,7 @@ const Settings: React.FC = () => {
         };
         
         setConfig(newConfig);
-      } catch (err) {
+      } catch {
         alert('Failed to parse JSON file. Ensure it is a valid gpu_connection.json.');
       }
     };
@@ -63,11 +63,7 @@ const Settings: React.FC = () => {
   };
 
 
-  useEffect(() => {
-    fetchConfig();
-  }, []);
-
-  const fetchConfig = async () => {
+  const fetchConfig = React.useCallback(async () => {
     try {
       setBackendError(null);
       const response = await axios.get(`${API_BASE_URL}/config/gpu`);
@@ -82,13 +78,20 @@ const Settings: React.FC = () => {
           return updated;
         });
       }
-    } catch (error) {
-      console.error('Failed to fetch GPU config:', error);
+    } catch {
+      console.error('Failed to fetch GPU config');
       setBackendError('Backend unreachable. Ensure the FastAPI server is running on port 8000.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const load = async () => {
+      await fetchConfig();
+    };
+    load();
+  }, [fetchConfig]);
 
   const handleSave = async () => {
     setSaveStatus('saving');
@@ -104,7 +107,7 @@ const Settings: React.FC = () => {
       await axios.post(`${API_BASE_URL}/config/gpu`, configToSave);
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), 3000);
-    } catch (error) {
+    } catch {
       setSaveStatus('error');
     }
   };
@@ -126,7 +129,7 @@ const Settings: React.FC = () => {
       
       const response = await axios.post(`${API_BASE_URL}/gpu/verify`);
       setVerifyResult(response.data);
-    } catch (error) {
+    } catch {
       setVerifyResult({
         success: false,
         stdout: '',

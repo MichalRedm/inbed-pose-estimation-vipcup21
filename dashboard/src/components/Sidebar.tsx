@@ -20,7 +20,7 @@ const Sidebar: React.FC = () => {
       try {
         await axios.get(API_BASE_URL);
         setIsOnline(true);
-      } catch (error) {
+      } catch {
         setIsOnline(false);
       }
     };
