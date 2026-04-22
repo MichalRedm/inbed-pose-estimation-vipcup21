@@ -62,41 +62,91 @@ class TrainingManager:
                     else:
                         config[k] = v
             
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            is_remote = config_overrides.get("remote", False) if config_overrides else False
             
-            # Simplified setup for demonstration
-            # In a real app, you'd load the full dataset
-            self.status_message = "Loading model..."
-            model_cfg = config.get("model", {}).get("hrnet", {})
-            model = get_pose_net(model_cfg).to(device)
-            
-            optimizer = torch.optim.Adam(model.parameters(), lr=config.get("training", {}).get("lr", 0.001))
-            criterion = torch.nn.MSELoss()
-            
-            trainer = PoseTrainer(model, optimizer, criterion, device, config)
-            self.total_epochs = trainer.epochs
-            
-            self.status_message = "Training..."
-            # Mocking training loop for now to avoid needing the full dataset for the dashboard demo
-            # If the user wants real training, they should have data
-            for epoch in range(self.total_epochs):
-                if self._stop_event.is_set():
-                    self.status_message = "Stopped by user"
-                    break
+            if is_remote:
+                self.status_message = "Starting remote training..."
+                import subprocess
+                import sys
+                from pathlib import Path
                 
-                self.current_epoch = epoch + 1
-                # Simulate an epoch
-                time.sleep(1) 
-                fake_loss = 0.5 * (0.9 ** epoch) + (time.time() % 0.1)
-                self.loss_history.append(fake_loss)
-                self.progress = (epoch + 1) / self.total_epochs
-            
-            if not self._stop_event.is_set():
-                self.status_message = "Finished"
+                project_root = Path(__file__).parent.parent.parent
+                
+                # Command to run remote training
+                cmd = [sys.executable, str(project_root / "scripts" / "remote_train.py")]
+                
+                # Add any training overrides as passthrough args if needed
+                # For now, just basic run
+                
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    cwd=str(project_root)
+                )
+                
+                for line in process.stdout:
+                    if self._stop_event.is_set():
+                        process.terminate()
+                        self.status_message = "Stopping remote training..."
+                        break
+                    
+                    line = line.strip()
+                    if line:
+                        self.status_message = line
+                        # Try to parse epoch progress if visible in logs
+                        if "Epoch" in line and "/" in line:
+                            try:
+                                # Very basic parsing: "Epoch 1/10"
+                                parts = line.split("Epoch")[-1].split("/")[0].strip()
+                                current = int(parts)
+                                total = int(line.split("/")[-1].split()[0].strip())
+                                self.current_epoch = current
+                                self.total_epochs = total
+                                self.progress = current / total
+                            except:
+                                pass
+                
+                process.wait()
+                if not self._stop_event.is_set():
+                    self.status_message = "Remote training finished" if process.returncode == 0 else f"Remote training failed (exit {process.returncode})"
+                
+            else:
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                
+                # Simplified setup for demonstration
+                self.status_message = "Loading model..."
+                model_cfg = config.get("model", {}).get("hrnet", {})
+                model = get_pose_net(model_cfg).to(device)
+                
+                optimizer = torch.optim.Adam(model.parameters(), lr=config.get("training", {}).get("lr", 0.001))
+                criterion = torch.nn.MSELoss()
+                
+                trainer = PoseTrainer(model, optimizer, criterion, device, config)
+                self.total_epochs = trainer.epochs
+                
+                self.status_message = "Training..."
+                for epoch in range(self.total_epochs):
+                    if self._stop_event.is_set():
+                        self.status_message = "Stopped by user"
+                        break
+                    
+                    self.current_epoch = epoch + 1
+                    # Simulate an epoch
+                    time.sleep(1) 
+                    fake_loss = 0.5 * (0.9 ** epoch) + (time.time() % 0.1)
+                    self.loss_history.append(fake_loss)
+                    self.progress = (epoch + 1) / self.total_epochs
+                
+                if not self._stop_event.is_set():
+                    self.status_message = "Finished"
                 
         except Exception as e:
             self.status_message = f"Error: {str(e)}"
         finally:
             self.is_running = False
+
 
 training_manager = TrainingManager()

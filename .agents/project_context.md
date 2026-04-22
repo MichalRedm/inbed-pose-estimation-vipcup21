@@ -13,7 +13,8 @@ Implement a professional React-based ML Dashboard for training monitoring and in
 - [x] Implemented Training Logic (`scripts/train.py`).
 - [x] Cleaned up legacy files and updated `.gitignore`.
 - [x] Implemented Inference API (FastAPI) and runner script.
-- [x] Implementing ML Dashboard (React + Vite).
+- [x] Implemented ML Dashboard (React + Vite) with training monitor and inference visualizer.
+- [x] Added Remote GPU Configuration and Training support via Dashboard.
 
 
 ## Critical Secrets Required

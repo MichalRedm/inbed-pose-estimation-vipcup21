@@ -34,7 +34,8 @@ const Training: React.FC = () => {
   const [config, setConfig] = useState({
     lr: 0.001,
     epochs: 10,
-    batch_size: 32
+    batch_size: 32,
+    remote: false
   });
 
   const fetchStatus = async () => {
@@ -59,13 +60,15 @@ const Training: React.FC = () => {
           lr: config.lr,
           epochs: config.epochs,
           batch_size: config.batch_size
-        }
+        },
+        remote: config.remote
       });
       fetchStatus();
     } catch (error) {
       alert('Failed to start training');
     }
   };
+
 
   const handleStop = async () => {
     try {
@@ -151,8 +154,34 @@ const Training: React.FC = () => {
         <div className="side-controls">
           <div className="glass card controls-card">
             <h3 className="text-uppercase micro-label" style={{ marginBottom: '20px' }}>Controls</h3>
-            <div className="control-group">
+            <div className="control-group" style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Server size={18} color="var(--accent-primary)" />
+                  <span style={{ fontSize: '0.85rem' }}>Remote Training</span>
+                </div>
+                <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '40px', height: '20px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.remote}
+                    onChange={(e) => setConfig({...config, remote: e.target.checked})}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span className="slider" style={{ 
+                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, 
+                    backgroundColor: config.remote ? 'var(--accent-primary)' : '#555', 
+                    transition: '.4s', borderRadius: '20px' 
+                  }}>
+                    <span style={{ 
+                      position: 'absolute', height: '16px', width: '16px', left: config.remote ? '22px' : '2px', 
+                      bottom: '2px', backgroundColor: 'white', transition: '.4s', borderRadius: '50%' 
+                    }}></span>
+                  </span>
+                </label>
+              </div>
+
               {status?.is_running ? (
+
                 <button className="btn-primary" onClick={handleStop} style={{ width: '100%', background: 'var(--accent-pink)', borderColor: '#8a4d4d' }}>
                   <Square size={18} fill="currentColor" style={{ marginRight: '8px' }} />
                   Stop Training

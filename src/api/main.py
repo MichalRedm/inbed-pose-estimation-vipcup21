@@ -15,12 +15,24 @@ from src.models.hrnet import get_pose_net  # noqa: E402
 
 from fastapi.middleware.cors import CORSMiddleware
 from src.training.manager import training_manager
+from pydantic import BaseModel
+import json
+import subprocess
 
 app = FastAPI(
     title="In-Bed Pose Estimation API",
     description="API for predicting 14 human joints from in-bed images (RGB or IR).",
     version="1.0.0",
 )
+
+class GPUConfig(BaseModel):
+    type: str
+    tunnel_hostname: str = ""
+    host: str = ""
+    ssh_user: str = "root"
+    port: int = 22
+    gpu: str = ""
+    ssh_config_alias: str = ""
 
 # Enable CORS
 app.add_middleware(
@@ -31,7 +43,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Configuration Endpoints
+@app.get("/config/gpu")
+async def get_gpu_config():
+    json_path = project_root / "gpu_connection.json"
+    if not json_path.exists():
+        return {}
+    try:
+        with open(json_path, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read config: {str(e)}")
+
+@app.post("/config/gpu")
+async def save_gpu_config(config: GPUConfig):
+    json_path = project_root / "gpu_connection.json"
+    try:
+        with open(json_path, "w") as f:
+            json.dump(config.dict(), f, indent=2)
+        return {"message": "Configuration saved successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
+
+@app.post("/gpu/verify")
+async def verify_gpu():
+    # Run the verification script and capture output
+    try:
+        result = subprocess.run(
+            [sys.executable, str(project_root / "scripts" / "verify_remote_gpu.py")],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        return {
+            "success": result.returncode == 0,
+            "stdout": result.stdout,
+            "stderr": result.stderr
+        }
+    except subprocess.TimeoutExpired:
+        return {"success": False, "stdout": "", "stderr": "Verification timed out"}
+    except Exception as e:
+        return {"success": False, "stdout": "", "stderr": str(e)}
+
 # Global model container
+
 model_container = {}
 
 @app.get("/training/status")

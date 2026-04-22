@@ -5,10 +5,11 @@ import Overview from './pages/Overview';
 import Training from './pages/Training';
 import Inference from './pages/Inference';
 import Models from './pages/Models';
+import Settings from './pages/Settings';
 
 // Placeholder components for remaining pages
 const Dataset = () => <div><h1 className="text-uppercase">Dataset Explorer</h1></div>;
-const Settings = () => <div><h1 className="text-uppercase">Settings</h1></div>;
+
 
 
 const App: React.FC = () => {
