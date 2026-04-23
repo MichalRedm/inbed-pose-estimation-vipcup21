@@ -14,6 +14,26 @@ interface InferenceResult {
   predictions: Prediction[];
 }
 
+const SKELETON_CONNECTIONS = [
+  [13, 12], // Head - Thorax
+  [12, 8],  [12, 9], // Thorax - Shoulders
+  [8, 7],   [7, 6],  // Right Arm
+  [9, 10],  [10, 11], // Left Arm
+  [8, 2],   [9, 3],  // Torso
+  [2, 3],            // Pelvis
+  [2, 1],   [1, 0],  // Right Leg
+  [3, 4],   [4, 5]   // Left Leg
+];
+
+const JOINT_COLORS: Record<number, string> = {
+  13: '#fa7faa', // Head
+  12: '#ffb287', // Thorax
+  8: '#c2ef4e', 7: '#c2ef4e', 6: '#c2ef4e', // Right arm
+  9: '#6a5fc1', 10: '#6a5fc1', 11: '#6a5fc1', // Left arm
+  2: '#fa7faa', 1: '#fa7faa', 0: '#fa7faa', // Right leg
+  3: '#6a5fc1', 4: '#6a5fc1', 5: '#6a5fc1' // Left leg
+};
+
 const Inference: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -66,13 +86,31 @@ const Inference: React.FC = () => {
                       viewBox={`0 0 ${result.original_size.width} ${result.original_size.height}`}
                       preserveAspectRatio="xMidYMid meet"
                     >
+                      {/* Connections */}
+                      {SKELETON_CONNECTIONS.map(([idx1, idx2], i) => {
+                        const j1 = result.predictions[idx1];
+                        const j2 = result.predictions[idx2];
+                        if (!j1 || !j2) return null;
+                        return (
+                          <line
+                            key={`line-${i}`}
+                            x1={j1.x} y1={j1.y}
+                            x2={j2.x} y2={j2.y}
+                            stroke="white"
+                            strokeWidth={result.original_size.width / 300}
+                            strokeOpacity="0.5"
+                          />
+                        );
+                      })}
+
+                      {/* Joints */}
                       {result.predictions.map((pred, i) => (
                         <g key={i}>
                           <circle
                             cx={pred.x}
                             cy={pred.y}
-                            r={result.original_size.width / 100} // Dynamic radius based on image size
-                            fill="var(--accent-lime)"
+                            r={result.original_size.width / 100}
+                            fill={JOINT_COLORS[i] || 'var(--accent-lime)'}
                             stroke="white"
                             strokeWidth={result.original_size.width / 400}
                           />
