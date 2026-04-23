@@ -514,7 +514,7 @@ const Dataset: React.FC = () => {
               <div className="modal-image-wrapper">
                 <img
                   src={`http://localhost:8000/dataset/image/${split}/${selectedSample.id}`}
-                  alt={selectedSample.id}
+                  alt={String(selectedSample.id)}
                 />
                 {selectedSample.joints && (
                   <JointOverlay
