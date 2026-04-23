@@ -163,9 +163,16 @@ const Training: React.FC = () => {
             <div className="progress-bar-container">
               <div className="progress-bar" style={{ width: `${(status?.progress || 0) * 100}%` }}></div>
             </div>
-            <div className="status-footer">
-              <span className="text-secondary">{status?.status_message || 'Idle'}</span>
-              {status?.is_running && <RefreshCw size={14} className="spin" style={{ marginLeft: '8px' }} />}
+            <div className="status-footer" style={{ justifyContent: 'space-between', padding: '4px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span className="text-secondary" style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
+                  {status?.status_message || 'Idle'}
+                </span>
+                {status?.is_running && <RefreshCw size={14} className="spin" style={{ marginLeft: '12px', color: 'var(--accent-lime)' }} />}
+              </div>
+              {status?.is_running && (
+                <span className="micro-label" style={{ color: 'var(--accent-primary)' }}>LIVE TRACKING</span>
+              )}
             </div>
           </div>
         </div>
@@ -250,11 +257,24 @@ const Training: React.FC = () => {
               ref={logsContainerRef}
               style={{ maxHeight: '300px', overflowY: 'auto' }}
             >
-              {status?.log_history.map((log, i) => (
-                <div className="log-entry" key={i} style={{ fontSize: '0.8rem', fontFamily: 'monospace', marginBottom: '4px' }}>
-                  {log}
-                </div>
-              ))}
+              {status?.log_history
+                .filter(log => !log.includes('|') || !log.includes('%')) // Filter out noisy tqdm lines
+                .map((log, i) => {
+                  const timeMatch = log.match(/^\[(.*?)\] (.*)/);
+                  if (timeMatch) {
+                    return (
+                      <div className="log-entry" key={i}>
+                        <span className="log-time">{timeMatch[1]}</span>
+                        <span className="log-text">{timeMatch[2]}</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="log-entry" key={i}>
+                      {log}
+                    </div>
+                  );
+                })}
             </div>
           </div>
         </div>

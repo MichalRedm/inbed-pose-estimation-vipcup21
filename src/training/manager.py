@@ -110,12 +110,31 @@ class TrainingManager:
                     if len(self.log_history) > 1000:
                         self.log_history.pop(0)
 
-                    # Update status message with current log line (truncated if too long)
-                    self.status_message = (
-                        line[:120] + "..." if len(line) > 123 else line
-                    )
+                    # --- Meaningful Status Extraction ---
 
-                    # Parse initial message: "Starting training for 10 epochs (from epoch 31)..."
+                    # 1. Initialization Stages
+                    if "Using device:" in line:
+                        device_name = (
+                            line.split("Using device:")[1].split("(")[0].strip()
+                        )
+                        self.status_message = f"Initialized on {device_name}"
+                        continue
+
+                    if "Validation samples:" in line:
+                        count = line.split("Validation samples:")[1].strip()
+                        self.status_message = (
+                            f"Dataset loaded: {count} validation samples"
+                        )
+                        continue
+
+                    if "Loading checkpoint:" in line:
+                        ckpt = (
+                            line.split("Loading checkpoint:")[1].strip().split("/")[-1]
+                        )
+                        self.status_message = f"Resuming from {ckpt}"
+                        continue
+
+                    # 2. Parse initial message: "Starting training for 10 epochs (from epoch 31)..."
                     start_match = re.search(
                         r"Starting training for (\d+) epochs \(from epoch (\d+)\)", line
                     )
@@ -124,8 +143,10 @@ class TrainingManager:
                         start = int(start_match.group(2))
                         self.total_epochs = start + count - 1
                         self.current_epoch = start - 1
+                        self.status_message = f"Session started: {count} epochs"
+                        continue
 
-                    # Parse progress: "Epoch 1/10" or "--- Epoch 31/40 ---"
+                    # 3. Parse Epoch progress: "--- Epoch 31/40 ---"
                     epoch_match = re.search(r"(?:--- )?Epoch (\d+)/(\d+)", line)
                     if epoch_match:
                         current = int(epoch_match.group(1))
@@ -133,14 +154,61 @@ class TrainingManager:
                         self.current_epoch = current
                         self.total_epochs = total
                         self.progress = current / total if total > 0 else 0
+                        self.status_message = f"Starting Epoch {current}..."  # "Epoch n / m" is in header, so just show start
+                        continue
 
-                    # Parse loss: "train_loss=0.1234"
-                    loss_match = re.search(r"train_loss=([0-9.]+)", line)
+                    # 4. Parse batch progress from tqdm: "Epoch 1/10:  20%|██        | 20/100 [00:10<00:40,  2.00it/s]"
+                    tqdm_match = re.search(
+                        r"Epoch \d+/\d+:\s+(\d+)%\|.*\| (\d+)/(\d+)", line
+                    )
+                    if tqdm_match:
+                        pct = tqdm_match.group(1)
+                        curr_batch = tqdm_match.group(2)
+                        total_batches = tqdm_match.group(3)
+                        # More concise during training
+                        self.status_message = (
+                            f"Progress: {pct}% (Batch {curr_batch}/{total_batches})"
+                        )
+                        continue
+
+                    # 5. Parse loss: "train_loss=0.1234" or "Epoch 1: train_loss=0.1234  val_loss=0.5678"
+                    loss_match = re.search(
+                        r"train_loss=([0-9.]+)(?:\s+val_loss=([0-9.]+))?", line
+                    )
                     if loss_match:
-                        loss = float(loss_match.group(1))
-                        # Avoid duplicate loss entries for the same epoch if logged multiple times
-                        if not self.loss_history or self.loss_history[-1] != loss:
-                            self.loss_history.append(loss)
+                        train_loss = float(loss_match.group(1))
+                        val_loss = loss_match.group(2)
+
+                        msg = f"Last loss: {train_loss:.4f}"
+                        if val_loss:
+                            msg += f" | Val: {float(val_loss):.4f}"
+                        self.status_message = msg
+
+                        if not self.loss_history or self.loss_history[-1] != train_loss:
+                            self.loss_history.append(train_loss)
+                        continue
+
+                    # 6. Remote Sync & Prep
+                    if "[sync] Downloading" in line:
+                        fname = line.split("Downloading ")[1].split("...")[0]
+                        self.status_message = f"Syncing {fname}..."
+                        continue
+
+                    if "Verifying GPU" in line:
+                        self.status_message = "Verifying remote GPU..."
+                        continue
+
+                    if "Ensuring data" in line:
+                        self.status_message = "Preparing remote dataset..."
+                        continue
+
+                    # Default fallback for other interesting lines
+                    if not any(
+                        x in line for x in ["|", "it/s", "s/it"]
+                    ):  # Filter out noisy tqdm updates
+                        self.status_message = (
+                            line[:120] + "..." if len(line) > 123 else line
+                        )
 
             process.wait()
             if not self._stop_event.is_set():
