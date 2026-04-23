@@ -243,7 +243,7 @@ const Evaluation: React.FC = () => {
                         }}
                         itemStyle={{ color: 'var(--accent-lime)', fontSize: '0.9rem' }}
                         labelStyle={{ color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '4px' }}
-                        formatter={(value: any) => [`${parseFloat(value).toFixed(2)} %`, 'PCK']}
+                        formatter={(value: string | number) => [`${Number(value).toFixed(2)} %`, 'PCK']}
                       />
                       <Bar dataKey="pck" radius={[0, 4, 4, 0]}>
                         {pckData.map((entry, index) => (
@@ -276,7 +276,7 @@ const Evaluation: React.FC = () => {
                         }}
                         itemStyle={{ color: 'var(--accent-pink)', fontSize: '0.9rem' }}
                         labelStyle={{ color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '4px' }}
-                        formatter={(value: any) => [`${parseFloat(value).toFixed(2)} px`, 'Error']}
+                        formatter={(value: string | number) => [`${Number(value).toFixed(2)} px`, 'Error']}
                       />
                       <Bar dataKey="error" fill="var(--accent-pink)" radius={[4, 4, 0, 0]} />
                     </BarChart>
