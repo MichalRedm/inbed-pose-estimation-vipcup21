@@ -50,6 +50,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+EVALUATION_CACHE_FILE = project_root / "models" / "evaluation_cache.json"
+
+
+def load_evaluation_cache():
+    if EVALUATION_CACHE_FILE.exists():
+        try:
+            with open(EVALUATION_CACHE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_evaluation_cache(cache):
+    EVALUATION_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(EVALUATION_CACHE_FILE, "w") as f:
+        json.dump(cache, f, indent=4)
+
 
 # Root & Health Endpoints
 @app.get("/")
@@ -184,7 +202,21 @@ async def stop_training():
 
 
 @app.post("/evaluate")
-async def evaluate_model(split: str = "val", checkpoint: str = None):
+async def evaluate_model(
+    split: str = "val", checkpoint: str = None, force: bool = False
+):
+    # Normalize split name
+    if split == "valid":
+        split = "val"
+
+    # Load cache
+    cache = load_evaluation_cache()
+    checkpoint_key = checkpoint if checkpoint else "best_model.pth"
+
+    # Check if results are cached
+    if not force and checkpoint_key in cache and split in cache[checkpoint_key]:
+        return cache[checkpoint_key][split]
+
     # Load model with specific checkpoint if provided
     device = model_container["device"]
     model = model_container["model"]
@@ -192,36 +224,48 @@ async def evaluate_model(split: str = "val", checkpoint: str = None):
     if checkpoint:
         checkpoint_path = project_root / "models" / "checkpoints" / checkpoint
         if not checkpoint_path.exists():
-            raise HTTPException(status_code=404, detail="Checkpoint not found")
-        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+            raise HTTPException(status_code=404, detail=f"Checkpoint {checkpoint} not found")
+        model.load_state_dict(torch.load(checkpoint_path, map_location=device, weights_only=True))
 
+    # Get dataset
     ds = dataset_container.get(split)
-    if not ds and split == "valid":
-        ds = dataset_container.get("val")
+    if not ds and split == "val":
+        # Check if we have any dataset at all
+        ds = list(dataset_container.values())[0] if dataset_container else None
 
     if not ds:
-        # Try to initialize if not present (e.g. if config changed)
-        # For simplicity, we assume they are initialized in startup
         raise HTTPException(status_code=404, detail=f"Dataset split {split} not found")
 
-    loader = DataLoader(ds, batch_size=8, shuffle=False, collate_fn=collate_skip_none)
+    loader = DataLoader(
+        ds, batch_size=8, shuffle=False, num_workers=0, collate_fn=collate_skip_none
+    )
 
-    criterion = torch.nn.MSELoss()
-    config = load_config()
-    trainer = PoseTrainer(model, None, criterion, device, config)
-
+    trainer = PoseTrainer(model, device=device)
     metrics = trainer.evaluate(loader)
 
-    # Add joint names to per-joint metrics for frontend
+    # Format per-joint metrics for display if they exist
     if "per_joint_error" in metrics:
         metrics["per_joint_metrics"] = [
-            {
-                "name": LSP_JOINT_NAMES[i],
-                "error": metrics["per_joint_error"][i],
-                "pck": metrics["per_joint_pck"][i],
-            }
-            for i in range(len(LSP_JOINT_NAMES))
+            {"name": name, "pck": float(pck) * 100, "error": float(error)}
+            for name, pck, error in zip(
+                LSP_JOINT_NAMES, metrics["per_joint_pck"], metrics["per_joint_error"]
+            )
         ]
+
+        # Clean up numpy arrays for JSON serialization
+        del metrics["per_joint_pck"]
+        del metrics["per_joint_error"]
+
+    # Convert other metrics to float for JSON
+    for key in ["loss", "mpjpe", "pck"]:
+        if key in metrics:
+            metrics[key] = float(metrics[key])
+
+    # Save to cache
+    if checkpoint_key not in cache:
+        cache[checkpoint_key] = {}
+    cache[checkpoint_key][split] = metrics
+    save_evaluation_cache(cache)
 
     return metrics
 

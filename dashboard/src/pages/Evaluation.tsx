@@ -58,25 +58,37 @@ const Evaluation: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchModels = async () => {
+    const fetchInitialData = async () => {
+      setIsLoading(true);
       try {
         const data = await getModels();
         setModels(data.models);
         if (data.models.length > 0) {
-          setSelectedModel(data.models[data.models.length - 1].name);
+          const latestModel = data.models[data.models.length - 1].name;
+          setSelectedModel(latestModel);
+          
+          // Try to load cached results for the latest model
+          try {
+            const evalRes = await evaluateModel(selectedSplit, latestModel, false);
+            setResults(evalRes);
+          } catch (e) {
+            console.log('No cached results available yet');
+          }
         }
       } catch (err) {
-        console.error('Failed to fetch models:', err);
+        console.error('Failed to fetch initial evaluation data:', err);
+      } finally {
+        setIsLoading(false);
       }
     };
-    fetchModels();
+    fetchInitialData();
   }, []);
 
-  const handleEvaluate = async () => {
+  const handleEvaluate = async (force: boolean = true) => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await evaluateModel(selectedSplit, selectedModel);
+      const data = await evaluateModel(selectedSplit, selectedModel, force);
       setResults(data);
     } catch (err) {
       console.error('Evaluation failed:', err);
