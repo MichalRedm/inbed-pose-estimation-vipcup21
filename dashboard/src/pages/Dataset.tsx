@@ -106,32 +106,61 @@ const JointOverlay = ({ joints, width, height }: { joints: number[][], width: nu
   );
 };
 
+// --- Types ---
+
+interface DatasetStats {
+  total: number;
+  train: number;
+  valid: number;
+  modalities: string[];
+  covers: string[];
+}
+
+interface DatasetSample {
+  id: string;
+  index: number;
+  modality: string;
+  cover: string;
+  subject: number;
+  image_path: string;
+  has_joints: boolean;
+  joints?: number[][];
+}
+
+interface SampleDetail {
+  id: number;
+  split: string;
+  subject: number;
+  modality: string;
+  cover: string;
+  filename: string;
+  image_path: string;
+  width: number;
+  height: number;
+  joints: number[][] | null;
+}
+
 // --- Main Component ---
 
 const Dataset: React.FC = () => {
-  const [stats, setStats] = useState<any>(null);
-  const [samples, setSamples] = useState<any[]>([]);
+  const [stats, setStats] = useState<DatasetStats | null>(null);
+  const [samples, setSamples] = useState<DatasetSample[]>([]);
   const [split, setSplit] = useState('train');
   const [modality, setModality] = useState('all');
   const [cover, setCover] = useState('all');
-  const [selectedSample, setSelectedSample] = useState<any>(null);
+  const [selectedSample, setSelectedSample] = useState<SampleDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchStats();
-    fetchSamples();
-  }, [split, modality, cover]);
-
-  const fetchStats = async () => {
+  const fetchStats = React.useCallback(async () => {
     try {
       const data = await getDatasetStats();
       setStats(data);
     } catch (err) {
       console.error('Failed to fetch stats', err);
     }
-  };
+  }, []);
 
-  const fetchSamples = async () => {
+  const fetchSamples = React.useCallback(async () => {
     setLoading(true);
     try {
       const data = await getSamples({
@@ -146,9 +175,17 @@ const Dataset: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [split, modality, cover]);
 
-  const handleOpenSample = async (sample: any) => {
+  useEffect(() => {
+    const load = async () => {
+      await fetchStats();
+      await fetchSamples();
+    };
+    load();
+  }, [fetchStats, fetchSamples]);
+
+  const handleOpenSample = async (sample: DatasetSample) => {
     try {
       const detail = await getSampleDetail(split, sample.index);
       setSelectedSample(detail);
@@ -412,7 +449,7 @@ const Dataset: React.FC = () => {
               onChange={(e) => setModality(e.target.value)}
             >
               <option value="all">All Modalities</option>
-              {stats?.modalities?.map((m: string) => (
+              {stats?.modalities?.map((m) => (
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
@@ -422,7 +459,7 @@ const Dataset: React.FC = () => {
               onChange={(e) => setCover(e.target.value)}
             >
               <option value="all">All Covers</option>
-              {stats?.covers?.map((c: string) => (
+              {stats?.covers?.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
@@ -533,7 +570,7 @@ const Dataset: React.FC = () => {
                   fontFamily: 'var(--font-mono)'
                 }}>
                   {selectedSample.joints ? (
-                    selectedSample.joints.map((j: any, i: number) => (
+                    selectedSample.joints.map((j, i) => (
                       <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                         <span style={{ color: 'var(--text-secondary)' }}>{JOINT_NAMES[i] || `J${i}`}</span>
                         <span style={{ color: 'var(--accent-lime)' }}>
