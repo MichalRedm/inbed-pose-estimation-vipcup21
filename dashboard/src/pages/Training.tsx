@@ -111,7 +111,7 @@ const Training: React.FC = () => {
       </div>
 
       <div className="training-grid">
-        <div className="main-stats">
+        <div className="main-stats flex-column">
           <div className="glass card chart-container">
             <div className="card-header">
               <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-lime)' }}>Loss History</h3>
@@ -155,7 +155,7 @@ const Training: React.FC = () => {
             </div>
           </div>
 
-          <div className="glass card progress-card" style={{ marginTop: '24px' }}>
+          <div className="glass card progress-card">
             <div className="card-header">
               <h3 className="text-uppercase micro-label">Overall Progress</h3>
               <span className="text-secondary">{status?.current_epoch || 0} / {status?.total_epochs || 0} Epochs</span>
@@ -177,7 +177,7 @@ const Training: React.FC = () => {
           </div>
         </div>
 
-        <div className="side-controls">
+        <div className="side-controls flex-column">
           <div className="glass card controls-card">
             <h3 className="text-uppercase micro-label" style={{ marginBottom: '20px' }}>Controls</h3>
             <div className="control-group" style={{ marginBottom: '24px' }}>
@@ -250,7 +250,7 @@ const Training: React.FC = () => {
             </div>
           </div>
           
-          <div className="glass card logs-card" style={{ marginTop: '24px' }}>
+          <div className="glass card logs-card">
             <h3 className="text-uppercase micro-label" style={{ marginBottom: '12px' }}>Live Logs</h3>
             <div 
               className="logs-viewer" 

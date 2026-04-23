@@ -167,7 +167,7 @@ const Settings: React.FC = () => {
       )}
 
       <div className="settings-grid" style={{ marginTop: '32px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
-        <div className="glass card" style={{ padding: '32px' }}>
+        <div className="glass card">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <Server size={24} color="var(--accent-primary)" />
@@ -286,7 +286,7 @@ const Settings: React.FC = () => {
           </div>
         </div>
 
-        <div className="glass card" style={{ padding: '32px', display: 'flex', flexDirection: 'column' }}>
+        <div className="glass card">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
             <Shield size={24} color="var(--accent-pink)" />
             <h2 className="text-uppercase" style={{ fontSize: '1.2rem', margin: 0 }}>Connection Status</h2>

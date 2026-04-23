@@ -73,7 +73,7 @@ const Overview: React.FC = () => {
       <div className="grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px' }}>
         
         {/* Training / Latest Model Card */}
-        <div className="glass card" style={{ padding: '24px', borderRadius: '12px', borderLeft: '4px solid var(--accent-lime)' }}>
+        <div className="glass card" style={{ borderLeft: '4px solid var(--accent-lime)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
             <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-lime)' }}>
               {trainingStatus?.is_running ? 'Active Training' : 'Latest Checkpoint'}
@@ -120,7 +120,7 @@ const Overview: React.FC = () => {
         </div>
 
         {/* System Status Card */}
-        <div className="glass card" style={{ padding: '24px', borderRadius: '12px', borderLeft: '4px solid var(--accent-pink)' }}>
+        <div className="glass card" style={{ borderLeft: '4px solid var(--accent-pink)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
             <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-pink)' }}>System Status</h3>
             {systemInfo?.gpu.available ? (

@@ -198,7 +198,7 @@ async def evaluate_model(split: str = "val", checkpoint: str = None):
     ds = dataset_container.get(split)
     if not ds and split == "valid":
         ds = dataset_container.get("val")
-    
+
     if not ds:
         # Try to initialize if not present (e.g. if config changed)
         # For simplicity, we assume they are initialized in startup

@@ -104,6 +104,19 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.card {
+  padding: 24px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.flex-column {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
 button.glass {
   display: inline-flex;
   align-items: center;
@@ -345,7 +358,7 @@ button.glass:hover {
 .upload-section {
   display: flex;
   flex-direction: column;
-  padding: 24px;
+  /* Padding inherited from .card */
   border-radius: 12px;
 }
 
@@ -432,7 +445,7 @@ button.glass:hover {
 }
 
 .results-section {
-  padding: 24px;
+  /* Padding inherited from .card */
   border-radius: 12px;
   height: fit-content;
 }
@@ -493,8 +506,7 @@ button.glass:hover {
 }
 
 .progress-card {
-  padding: 24px;
-  border-radius: 12px;
+  /* Padding inherited from .card */
 }
 
 .progress-bar-container {
@@ -518,8 +530,7 @@ button.glass:hover {
 }
 
 .controls-card {
-  padding: 24px;
-  border-radius: 12px;
+  /* Padding inherited from .card */
 }
 
 .config-section {
@@ -554,8 +565,7 @@ button.glass:hover {
 }
 
 .logs-card {
-  padding: 20px;
-  border-radius: 12px;
+  /* Padding inherited from .card */
 }
 
 .logs-viewer {

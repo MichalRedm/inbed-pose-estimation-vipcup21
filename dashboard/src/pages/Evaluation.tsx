@@ -94,7 +94,7 @@ const Evaluation: React.FC = () => {
       </div>
 
       <div className="evaluation-grid">
-        <div className="controls-column">
+        <div className="controls-column flex-column">
           <div className="glass card controls-card">
             <div className="card-header">
               <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-primary)' }}>Configuration</h3>
@@ -166,7 +166,7 @@ const Evaluation: React.FC = () => {
           </div>
 
           {results && (
-            <div className="glass card summary-card" style={{ marginTop: '24px' }}>
+            <div className="glass card summary-card">
               <h3 className="text-uppercase micro-label" style={{ marginBottom: '20px' }}>Global Metrics</h3>
               
               <div className="metric-row" style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
@@ -190,7 +190,7 @@ const Evaluation: React.FC = () => {
 
         <div className="results-column">
           {results ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div className="flex-column">
               <div className="glass card chart-container">
                 <div className="card-header">
                   <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-lime)' }}>PCK per Joint (%)</h3>
