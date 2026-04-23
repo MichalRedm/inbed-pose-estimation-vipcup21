@@ -1,388 +1,551 @@
 import React, { useState, useEffect } from 'react';
-import { getDatasetStats, getSamples, getDatasetImageUrl, getSampleDetail } from '../services/api';
-import { 
-  Database, 
-  Image as ImageIcon, 
-  Users, 
-  Layers, 
-  Filter, 
-  ChevronLeft, 
-  ChevronRight, 
+import {
+  Database,
+  Filter,
+  Maximize2,
+  Image as ImageIcon,
+  Activity,
+  User,
+  Layers,
   X
 } from 'lucide-react';
+import { getDatasetStats, getSamples, getSampleDetail } from '../services/api';
 
-interface DatasetStats {
-  train: {
-    total: number;
-    modalities: Record<string, number>;
-    covers: Record<string, number>;
-    subject_count: number;
-  };
-  val: {
-    total: number;
-    modalities: Record<string, number>;
-    covers: Record<string, number>;
-    subject_count: number;
-  };
-}
+// --- Constants & Skeleton Config ---
 
-interface Sample {
-  id: number;
-  subject: number;
-  modality: string;
-  cover: string;
-  filename: string;
-  has_joints: boolean;
-}
+const SKELETON_CONNECTIONS = [
+  [13, 12], // Head - Thorax
+  [12, 8],  // Thorax - R-Shoulder
+  [8, 7],   // R-Shoulder - R-Elbow
+  [7, 6],   // R-Elbow - R-Wrist
+  [12, 9],  // Thorax - L-Shoulder
+  [9, 10],  // L-Shoulder - L-Elbow
+  [10, 11], // L-Elbow - L-Wrist
+  [8, 2],   // R-Shoulder - R-Hip
+  [9, 3],   // L-Shoulder - L-Hip
+  [2, 3],   // R-Hip - L-Hip
+  [2, 1],   // R-Hip - R-Knee
+  [1, 0],   // R-Knee - R-Ankle
+  [3, 4],   // L-Hip - L-Knee
+  [4, 5]    // L-Knee - L-Ankle
+];
 
-interface Joint {
-  name: string;
-  x: number;
-  y: number;
-  visible: boolean;
-}
+const JOINT_COLORS: Record<number, string> = {
+  13: '#fa7faa', // Head
+  12: '#ffb287', // Thorax
+  8: '#c2ef4e', 7: '#c2ef4e', 6: '#c2ef4e', // Right arm
+  9: '#6a5fc1', 10: '#6a5fc1', 11: '#6a5fc1', // Left arm
+  2: '#fa7faa', 1: '#fa7faa', 0: '#fa7faa', // Right leg
+  3: '#6a5fc1', 4: '#6a5fc1', 5: '#6a5fc1' // Left leg
+};
 
-interface SampleDetail extends Sample {
-  joints?: Joint[];
-  split: string;
-  width: number;
-  height: number;
-}
+const JOINT_NAMES = [
+  'R-Ankle', 'R-Knee', 'R-Hip', 'L-Hip', 'L-Knee', 'L-Ankle',
+  'R-Wrist', 'R-Elbow', 'R-Shoulder', 'L-Shoulder', 'L-Elbow', 'L-Wrist',
+  'Thorax', 'Head'
+];
+
+// --- Sub-components ---
+
+const JointOverlay = ({ joints, width, height }: { joints: number[][], width: number, height: number }) => {
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none'
+      }}
+    >
+      {/* Lines */}
+      {SKELETON_CONNECTIONS.map(([idx1, idx2], i) => {
+        const j1 = joints[idx1];
+        const j2 = joints[idx2];
+        if (!j1 || !j2 || isNaN(j1[0]) || isNaN(j1[1]) || isNaN(j2[0]) || isNaN(j2[1])) return null;
+        return (
+          <line
+            key={`line-${i}`}
+            x1={j1[0]} y1={j1[1]}
+            x2={j2[0]} y2={j2[1]}
+            stroke="white"
+            strokeWidth="2"
+            strokeOpacity="0.4"
+          />
+        );
+      })}
+
+      {/* Joints */}
+      {joints.map((joint, idx) => {
+        if (!joint || isNaN(joint[0]) || isNaN(joint[1])) return null;
+        return (
+          <g key={`joint-${idx}`}>
+            <circle
+              cx={joint[0]}
+              cy={joint[1]}
+              r="4"
+              fill={JOINT_COLORS[idx] || '#ffffff'}
+              stroke="white"
+              strokeWidth="1"
+            />
+            <text
+              x={joint[0] + 6}
+              y={joint[1] + 4}
+              fill="white"
+              fontSize="10"
+              style={{ textShadow: '1px 1px 2px black' }}
+            >
+              {JOINT_NAMES[idx]}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
+// --- Main Component ---
 
 const Dataset: React.FC = () => {
-  const [stats, setStats] = useState<DatasetStats | null>(null);
-  const [samples, setSamples] = useState<Sample[]>([]);
-  const [totalSamples, setTotalSamples] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
+  const [stats, setStats] = useState<any>(null);
+  const [samples, setSamples] = useState<any[]>([]);
   const [split, setSplit] = useState('train');
-  const [modality, setModality] = useState<string>('');
-  const [cover, setCover] = useState<string>('');
-  const [selectedSample, setSelectedSample] = useState<SampleDetail | null>(null);
-  const [showModal, setShowModal] = useState(false);
+  const [modality, setModality] = useState('all');
+  const [cover, setCover] = useState('all');
+  const [selectedSample, setSelectedSample] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let isMounted = true;
-    const loadStats = async () => {
-      try {
-        const data = await getDatasetStats();
-        if (isMounted) setStats(data);
-      } catch (error) {
-        console.error('Failed to fetch dataset stats:', error);
-      }
-    };
-    loadStats();
-    return () => { isMounted = false; };
-  }, []);
+    fetchStats();
+    fetchSamples();
+  }, [split, modality, cover]);
 
-  useEffect(() => {
-    let isMounted = true;
-    const loadSamples = async () => {
-      setLoading(true);
-      try {
-        const data = await getSamples({
-          split,
-          page,
-          limit: 12,
-          modality: modality || undefined,
-          cover: cover || undefined,
-        });
-        if (isMounted) {
-          setSamples(data.samples);
-          setTotalSamples(data.total);
-        }
-      } catch (error) {
-        console.error('Failed to fetch samples:', error);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-    loadSamples();
-    return () => { isMounted = false; };
-  }, [split, page, modality, cover]);
-
-  const handleSampleClick = async (sample: Sample) => {
+  const fetchStats = async () => {
     try {
-      const detail = await getSampleDetail(split, sample.id);
-      setSelectedSample(detail);
-      setShowModal(true);
-    } catch (error) {
-      console.error('Failed to fetch sample detail:', error);
+      const data = await getDatasetStats();
+      setStats(data);
+    } catch (err) {
+      console.error('Failed to fetch stats', err);
     }
   };
 
-  const totalPages = Math.ceil(totalSamples / 12);
+  const fetchSamples = async () => {
+    setLoading(true);
+    try {
+      const data = await getSamples({
+        split,
+        modality: modality === 'all' ? undefined : modality,
+        cover: cover === 'all' ? undefined : cover,
+        limit: 12
+      });
+      setSamples(data.samples || []);
+    } catch (err) {
+      console.error('Failed to fetch samples', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenSample = async (sample: any) => {
+    try {
+      const detail = await getSampleDetail(split, sample.index);
+      setSelectedSample(detail);
+    } catch (err) {
+      console.error('Failed to fetch sample detail', err);
+    }
+  };
 
   return (
-    <div className="dataset-page">
-      <div className="page-header" style={{ marginBottom: '32px' }}>
-        <h1 className="text-uppercase" style={{ marginBottom: '8px' }}>Dataset Explorer</h1>
-        <p style={{ color: 'var(--text-secondary)' }}>
-          Browse and visualize the Simultaneously-collected Multimodal Lying Pose (SLP) dataset.
-        </p>
+    <div className="page-container">
+      {/* Local Styles for Dataset Page */}
+      <style>{`
+        .dataset-header {
+          margin-bottom: 32px;
+        }
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 20px;
+          margin-bottom: 40px;
+        }
+        .stat-card {
+          padding: 20px;
+          border-radius: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .stat-value {
+          font-size: 2rem;
+          font-weight: 700;
+          font-family: var(--font-display);
+        }
+        .filters-bar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 24px;
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+        .filter-group {
+          display: flex;
+          gap: 8px;
+        }
+        .filter-btn {
+          padding: 8px 16px;
+          border-radius: 8px;
+          font-size: 0.85rem;
+          font-weight: 600;
+          background: var(--bg-secondary);
+          color: var(--text-secondary);
+          border: 1px solid var(--border-purple);
+          cursor: pointer;
+        }
+        .filter-btn.active {
+          background: var(--accent-vibrant);
+          color: white;
+          border-color: var(--accent-primary);
+        }
+        
+        /* FIXED: Added .select-custom styling */
+        .select-custom {
+          padding: 8px 32px 8px 16px;
+          border-radius: 8px;
+          font-size: 0.85rem;
+          font-weight: 600;
+          background-color: var(--bg-secondary);
+          color: var(--text-secondary);
+          border: 1px solid var(--border-purple);
+          cursor: pointer;
+          appearance: none;
+          /* Custom SVG arrow */
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a0a0b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 12px center;
+          background-size: 14px;
+        }
+        .select-custom:focus {
+          outline: none;
+          border-color: var(--accent-primary);
+        }
+        .select-custom option {
+          background-color: #1a1a24; /* Dark fallback for dropdown list */
+          color: white;
+        }
+
+        .samples-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+          gap: 24px;
+        }
+        .sample-card {
+          border-radius: 12px;
+          overflow: hidden;
+          transition: transform 0.2s ease;
+          cursor: pointer;
+        }
+        .sample-card:hover {
+          transform: translateY(-4px);
+        }
+        .image-container {
+          position: relative;
+          aspect-ratio: 4/5;
+          background: #111;
+        }
+        .sample-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        .sample-info {
+          padding: 16px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .sample-meta {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .modality-badge {
+          font-size: 0.7rem;
+          padding: 2px 6px;
+          border-radius: 4px;
+          background: var(--accent-primary);
+          width: fit-content;
+          color: white;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.85);
+          backdrop-filter: blur(8px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 20px;
+        }
+        .modal-container {
+          width: 100%;
+          max-width: 1100px;
+          max-height: 90vh;
+          border-radius: 16px;
+          overflow: hidden;
+          display: grid;
+          grid-template-columns: 1fr 320px;
+        }
+        .modal-main {
+          position: relative;
+          background: #000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+        }
+        .modal-image-wrapper {
+          position: relative;
+          max-width: 100%;
+          max-height: 100%;
+        }
+        .modal-image-wrapper img {
+          display: block;
+          max-width: 100%;
+          max-height: 80vh;
+          object-fit: contain;
+        }
+        .modal-sidebar {
+          padding: 32px;
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+          border-left: 1px solid var(--border-purple);
+          overflow-y: auto;
+          background: var(--bg-secondary);
+        }
+        .close-btn {
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--glass-white);
+          color: white;
+          z-index: 1010;
+          border: none;
+          cursor: pointer;
+        }
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+
+      <div className="dataset-header">
+        <h1>Dataset Explorer</h1>
+        <p style={{ color: 'var(--text-secondary)' }}>Explore SLP Dataset samples and ground-truth annotations.</p>
       </div>
 
-      {/* Stats Overview */}
-      <div className="grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '40px' }}>
-        <div className="glass card" style={{ padding: '20px', borderRadius: '12px', borderLeft: '4px solid var(--accent-primary)' }}>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(106, 95, 193, 0.2)' }}>
-              <Database size={20} color="var(--accent-primary)" />
-            </div>
-            <div>
-              <div className="micro-label text-uppercase">Total Samples</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700' }}>
-                {stats ? stats.train.total + stats.val.total : '...'}
-              </div>
-            </div>
-          </div>
+      {/* Stats Summary */}
+      <div className="stats-grid">
+        <div className="stat-card glass">
+          <span className="micro-label">Total Samples</span>
+          <span className="stat-value">{stats?.total?.toLocaleString() ?? '---'}</span>
+          <Database size={16} color="var(--accent-lime)" />
         </div>
-
-        <div className="glass card" style={{ padding: '20px', borderRadius: '12px', borderLeft: '4px solid var(--accent-lime)' }}>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(194, 239, 78, 0.2)' }}>
-              <Users size={20} color="var(--accent-lime)" />
-            </div>
-            <div>
-              <div className="micro-label text-uppercase">Subjects</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700' }}>
-                {stats ? stats.train.subject_count + stats.val.subject_count : '...'}
-              </div>
-            </div>
-          </div>
+        <div className="stat-card glass">
+          <span className="micro-label">Training Set</span>
+          <span className="stat-value">{stats?.train ?? '---'}</span>
+          <Layers size={16} color="var(--accent-coral)" />
         </div>
-
-        <div className="glass card" style={{ padding: '20px', borderRadius: '12px', borderLeft: '4px solid var(--accent-pink)' }}>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(250, 127, 170, 0.2)' }}>
-              <Layers size={20} color="var(--accent-pink)" />
-            </div>
-            <div>
-              <div className="micro-label text-uppercase">Modalities</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '600' }}>
-                {stats ? Object.keys(stats.train.modalities).join(', ') : '...'}
-              </div>
-            </div>
-          </div>
+        <div className="stat-card glass">
+          <span className="micro-label">Validation Set</span>
+          <span className="stat-value">{stats?.valid ?? '---'}</span>
+          <Activity size={16} color="var(--accent-pink)" />
+        </div>
+        <div className="stat-card glass">
+          <span className="micro-label">Modalities</span>
+          <span className="stat-value">{stats?.modalities?.length ?? '---'}</span>
+          <ImageIcon size={16} color="var(--accent-primary)" />
         </div>
       </div>
 
-      {/* Browser Section */}
-      <div className="glass" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--border-purple)' }}>
-        {/* Filters */}
-        <div style={{ padding: '20px', borderBottom: '1px solid var(--border-purple)', background: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <div style={{ display: 'flex', background: 'var(--bg-secondary)', borderRadius: '8px', padding: '4px' }}>
-              <button 
-                onClick={() => {setSplit('train'); setPage(1);}}
-                className={split === 'train' ? 'active-tab' : 'inactive-tab'}
-                style={{ padding: '6px 16px', borderRadius: '6px', fontSize: '0.85rem' }}
-              >
-                Train
-              </button>
-              <button 
-                onClick={() => {setSplit('val'); setPage(1);}}
-                className={split === 'val' ? 'active-tab' : 'inactive-tab'}
-                style={{ padding: '6px 16px', borderRadius: '6px', fontSize: '0.85rem' }}
-              >
-                Validation
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <Filter size={16} color="var(--text-secondary)" />
-              <select 
-                value={modality} 
-                onChange={(e) => {setModality(e.target.value); setPage(1);}}
-                style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-purple)', color: 'white', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}
-              >
-                <option value="">All Modalities</option>
-                <option value="RGB">RGB</option>
-                <option value="IR">IR</option>
-              </select>
-              <select 
-                value={cover} 
-                onChange={(e) => {setCover(e.target.value); setPage(1);}}
-                style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-purple)', color: 'white', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}
-              >
-                <option value="">All Covers</option>
-                <option value="uncover">Uncover</option>
-                <option value="cover1">Cover 1</option>
-                <option value="cover2">Cover 2</option>
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Page {page} of {totalPages || 1} ({totalSamples} samples)
-            </span>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              <button 
-                disabled={page === 1}
-                onClick={() => setPage(p => p - 1)}
-                className="icon-btn glass" 
-                style={{ width: '32px', height: '32px', borderRadius: '6px', opacity: page === 1 ? 0.5 : 1 }}
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <button 
-                disabled={page === totalPages || totalPages === 0}
-                onClick={() => setPage(p => p + 1)}
-                className="icon-btn glass" 
-                style={{ width: '32px', height: '32px', borderRadius: '6px', opacity: (page === totalPages || totalPages === 0) ? 0.5 : 1 }}
-              >
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          </div>
+      {/* Filters */}
+      <div className="filters-bar">
+        <div className="filter-group">
+          <button
+            className={`filter-btn ${split === 'train' ? 'active' : ''}`}
+            onClick={() => setSplit('train')}
+          >
+            Train
+          </button>
+          <button
+            className={`filter-btn ${split === 'val' ? 'active' : ''}`}
+            onClick={() => setSplit('val')}
+          >
+            Validation
+          </button>
         </div>
 
-        {/* Grid */}
-        <div style={{ padding: '24px', minHeight: '600px' }}>
-          {loading ? (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px', flexDirection: 'column', gap: '16px' }}>
-              <div className="spin" style={{ width: '40px', height: '40px', border: '4px solid var(--glass-white)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%' }}></div>
-              <p style={{ color: 'var(--text-secondary)' }}>Loading samples...</p>
-            </div>
-          ) : samples.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '20px' }}>
-              {samples.map((sample) => (
-                <div 
-                  key={sample.id} 
-                  className="sample-card"
-                  onClick={() => handleSampleClick(sample)}
-                  style={{ 
-                    background: 'var(--bg-secondary)', 
-                    borderRadius: '12px', 
-                    overflow: 'hidden', 
-                    border: '1px solid var(--border-purple)',
-                    cursor: 'pointer',
-                    transition: 'transform 0.2s ease, border-color 0.2s ease'
-                  }}
-                >
-                  <div style={{ height: '180px', background: '#000', position: 'relative', overflow: 'hidden' }}>
-                    <img 
-                      src={getDatasetImageUrl(split, sample.id)} 
-                      alt={sample.filename}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      loading="lazy"
-                    />
-                    <div style={{ position: 'absolute', top: '8px', right: '8px' }}>
-                      <span style={{ 
-                        padding: '4px 8px', 
-                        borderRadius: '4px', 
-                        fontSize: '0.7rem', 
-                        fontWeight: '700',
-                        background: sample.modality === 'RGB' ? 'var(--accent-primary)' : 'var(--accent-pink)',
-                        color: 'white',
-                        textTransform: 'uppercase'
-                      }}>
-                        {sample.modality}
-                      </span>
-                    </div>
-                  </div>
-                  <div style={{ padding: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>Subject {sample.subject}</span>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{sample.cover}</span>
-                    </div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {sample.filename}
-                    </div>
-                  </div>
-                </div>
+        <div className="filter-group">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '16px' }}>
+            <Filter size={16} />
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <select
+              className="glass select-custom"
+              value={modality}
+              onChange={(e) => setModality(e.target.value)}
+            >
+              <option value="all">All Modalities</option>
+              {stats?.modalities?.map((m: string) => (
+                <option key={m} value={m}>{m}</option>
               ))}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px', flexDirection: 'column', gap: '16px', color: 'var(--text-secondary)' }}>
-              <ImageIcon size={48} opacity={0.3} />
-              <p>No samples found matching the filters.</p>
-            </div>
-          )}
+            </select>
+            <select
+              className="glass select-custom"
+              value={cover}
+              onChange={(e) => setCover(e.target.value)}
+            >
+              <option value="all">All Covers</option>
+              {stats?.covers?.map((c: string) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* Modal */}
-      {showModal && selectedSample && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px' }}>
-          <div className="glass" style={{ width: '100%', maxWidth: '1000px', maxHeight: '90vh', borderRadius: '20px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-purple)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h2 style={{ fontSize: '1.2rem' }}>Sample Details</h2>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{selectedSample.filename}</p>
-              </div>
-              <button onClick={() => setShowModal(false)} className="icon-btn glass" style={{ width: '36px', height: '36px', borderRadius: '50%' }}>
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div style={{ flex: 1, overflow: 'auto', display: 'grid', gridTemplateColumns: '1fr 300px', gap: '0' }}>
-              <div style={{ background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', minHeight: '500px' }}>
-                <img 
-                  id="modal-image"
-                  src={getDatasetImageUrl(selectedSample.split, selectedSample.id)} 
-                  alt="Detail"
-                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+      {/* Samples Grid */}
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '100px' }}>
+          <Activity className="spin" size={48} color="var(--accent-primary)" />
+        </div>
+      ) : (
+        <div className="samples-grid">
+          {samples.map((sample) => (
+            <div
+              key={sample.id}
+              className="sample-card glass"
+              onClick={() => handleOpenSample(sample)}
+            >
+              <div className="image-container">
+                <img
+                  src={`http://localhost:8000/dataset/image/${split}/${sample.index}`}
+                  alt={sample.id}
+                  className="sample-img"
                 />
-                {/* Joints Overlay */}
-                <svg 
-                  viewBox={`0 0 ${selectedSample.width} ${selectedSample.height}`} 
-                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
-                  preserveAspectRatio="xMidYMid meet"
-                >
-                  {selectedSample.joints?.map((joint, i) => (
-                    joint.visible && (
-                      <g key={i}>
-                        <circle cx={joint.x} cy={joint.y} r="3" fill="var(--accent-lime)" />
-                        <text x={joint.x + 5} y={joint.y} fill="white" fontSize="6" style={{ textShadow: '0 0 2px black' }}>{joint.name}</text>
-                      </g>
-                    )
-                  ))}
-                </svg>
+                <div style={{ position: 'absolute', top: '12px', right: '12px' }}>
+                  <span className="modality-badge">{sample.modality}</span>
+                </div>
               </div>
-              
-              <div style={{ padding: '24px', background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border-purple)' }}>
-                <h3 className="text-uppercase micro-label" style={{ marginBottom: '16px', color: 'var(--accent-primary)' }}>Metadata</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '32px' }}>
+              <div className="sample-info">
+                <div className="sample-meta">
+                  <span style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{sample.id}</span>
+                  <span className="micro-label">Cover: {sample.cover}</span>
+                </div>
+                <Maximize2 size={16} color="var(--text-secondary)" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Detail Modal */}
+      {selectedSample && (
+        <div className="modal-overlay" onClick={() => setSelectedSample(null)}>
+          <button className="close-btn" onClick={() => setSelectedSample(null)}>
+            <X size={24} />
+          </button>
+
+          <div className="modal-container glass" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-main">
+              <div className="modal-image-wrapper">
+                <img
+                  src={`http://localhost:8000/dataset/image/${split}/${selectedSample.id}`}
+                  alt={selectedSample.id}
+                />
+                {selectedSample.joints && (
+                  <JointOverlay
+                    joints={selectedSample.joints}
+                    width={selectedSample.width}
+                    height={selectedSample.height}
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="modal-sidebar glass">
+              <div>
+                <h2 style={{ marginBottom: '8px' }}>Sample Detail</h2>
+                <div className="modality-badge" style={{ marginBottom: '16px' }}>{selectedSample.modality}</div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <User size={18} color="var(--accent-lime)" />
                   <div>
-                    <div className="micro-label">Subject</div>
-                    <div style={{ fontWeight: '600' }}>{selectedSample.subject}</div>
-                  </div>
-                  <div>
-                    <div className="micro-label">Split</div>
-                    <div style={{ fontWeight: '600', textTransform: 'capitalize' }}>{selectedSample.split}</div>
-                  </div>
-                  <div>
-                    <div className="micro-label">Modality</div>
-                    <div style={{ fontWeight: '600' }}>{selectedSample.modality}</div>
-                  </div>
-                  <div>
-                    <div className="micro-label">Cover</div>
-                    <div style={{ fontWeight: '600', textTransform: 'capitalize' }}>{selectedSample.cover}</div>
+                    <div className="micro-label">Sample ID</div>
+                    <div style={{ fontWeight: 600 }}>{selectedSample.id}</div>
                   </div>
                 </div>
 
-                <h3 className="text-uppercase micro-label" style={{ marginBottom: '16px', color: 'var(--accent-lime)' }}>Joints ({selectedSample.joints?.length || 0})</h3>
-                <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '8px' }}>
-                   {selectedSample.joints ? (
-                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                       <tbody>
-                         {selectedSample.joints.map((j, i) => (
-                           <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                             <td style={{ padding: '6px 0', color: 'var(--text-secondary)' }}>{j.name}</td>
-                             <td style={{ padding: '6px 0', textAlign: 'right' }}>
-                               <span style={{ color: j.visible ? 'var(--accent-lime)' : '#666' }}>
-                                 {j.visible ? `(${Math.round(j.x)}, ${Math.round(j.y)})` : 'Hidden'}
-                               </span>
-                             </td>
-                           </tr>
-                         ))}
-                       </tbody>
-                     </table>
-                   ) : (
-                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>No annotations available.</p>
-                   )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Layers size={18} color="var(--accent-coral)" />
+                  <div>
+                    <div className="micro-label">Cover Type</div>
+                    <div style={{ fontWeight: 600 }}>{selectedSample.cover}</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Maximize2 size={18} color="var(--accent-pink)" />
+                  <div>
+                    <div className="micro-label">Resolution</div>
+                    <div style={{ fontWeight: 600 }}>{selectedSample.width} × {selectedSample.height}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid var(--border-purple)' }}>
+                <div className="micro-label" style={{ marginBottom: '12px' }}>Joint Coordinates</div>
+                <div style={{
+                  background: 'var(--bg-secondary)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  fontSize: '0.75rem',
+                  maxHeight: '150px',
+                  overflowY: 'auto',
+                  fontFamily: 'var(--font-mono)'
+                }}>
+                  {selectedSample.joints ? (
+                    selectedSample.joints.map((j: any, i: number) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>{JOINT_NAMES[i] || `J${i}`}</span>
+                        <span style={{ color: 'var(--accent-lime)' }}>
+                          {Array.isArray(j) && j.length >= 2
+                            ? `${Math.round(j[0])}, ${Math.round(j[1])}`
+                            : 'N/A'}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>No annotations available</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -390,30 +553,6 @@ const Dataset: React.FC = () => {
         </div>
       )}
 
-      <style>{`
-        .active-tab {
-          background: var(--accent-vibrant);
-          color: white;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        }
-        .inactive-tab {
-          background: transparent;
-          color: var(--text-secondary);
-        }
-        .inactive-tab:hover {
-          color: white;
-          background: rgba(255,255,255,0.05);
-        }
-        .sample-card:hover {
-          transform: translateY(-4px);
-          border-color: var(--accent-primary) !important;
-          box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-        }
-        select:focus {
-          border-color: var(--accent-primary) !important;
-          outline: none;
-        }
-      `}</style>
     </div>
   );
 };

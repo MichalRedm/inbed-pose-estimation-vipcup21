@@ -200,33 +200,30 @@ async def list_models():
     }
 
 
-# Dataset Endpoints
 @app.get("/dataset/stats")
 async def get_dataset_stats():
-    stats = {}
-    for split in ["train", "val"]:
-        ds = dataset_container.get(split)
+    summary = {"total": 0, "train": 0, "valid": 0, "modalities": set(), "covers": set()}
+
+    # Map internal dictionary keys to the output JSON keys expected by the frontend
+    splits_mapping = [("train", "train"), ("val", "valid")]
+
+    for dict_key, json_key in splits_mapping:
+        ds = dataset_container.get(dict_key)
         if not ds:
-            stats[split] = {"total": 0}
             continue
 
-        modalities = {}
-        covers = {}
-        subjects = set()
+        count = len(ds)
+        summary[json_key] = count
+        summary["total"] += count
 
         for sample in ds.samples:
-            modalities[sample["modality"]] = modalities.get(sample["modality"], 0) + 1
-            covers[sample["cover"]] = covers.get(sample["cover"], 0) + 1
-            subjects.add(sample["subject"])
+            summary["modalities"].add(sample["modality"])
+            summary["covers"].add(sample["cover"])
 
-        stats[split] = {
-            "total": len(ds),
-            "modalities": modalities,
-            "covers": covers,
-            "subject_count": len(subjects),
-        }
+    summary["modalities"] = sorted(list(summary["modalities"]))
+    summary["covers"] = sorted(list(summary["covers"]))
 
-    return stats
+    return summary
 
 
 @app.get("/dataset/samples")
@@ -250,31 +247,33 @@ async def get_samples(
             continue
         if subject and sample["subject"] != subject:
             continue
-        
+
         # Add index to the sample info for later retrieval
         sample_info = sample.copy()
-        sample_info["id"] = i
-        # Remove absolute path for security/privacy, just keep filename or relative path
-        sample_info["filename"] = sample["image_path"].name
-        del sample_info["image_path"]
-        if "joints" in sample_info:
-            # Convert numpy joints to list if present, but we might want to skip joints in list view
-            del sample_info["joints"]
+        sample_info["index"] = i
+        sample_info["id"] = f"{split}_{i}"
+
+        # Keep image_path for the /dataset/image?path= endpoint
+        # or we can use the index-based one later
+        sample_info["image_path"] = str(sample["image_path"])
+
+        if "joints" in sample_info and sample_info["joints"] is not None:
+            sample_info["joints"] = sample_info["joints"][:2, :].T.tolist()
             sample_info["has_joints"] = True
         else:
             sample_info["has_joints"] = False
-            
+
         filtered_samples.append(sample_info)
 
     total = len(filtered_samples)
     start = (page - 1) * limit
     end = start + limit
-    
+
     return {
         "total": total,
         "page": page,
         "limit": limit,
-        "samples": filtered_samples[start:end]
+        "samples": filtered_samples[start:end],
     }
 
 
@@ -285,14 +284,17 @@ async def get_sample_detail(split: str, idx: int):
         raise HTTPException(status_code=404, detail="Sample not found")
 
     sample = ds.samples[idx]
-    
-    # Get original image size
+
+    # Get original image size with EXIF orientation handled
     try:
+        from PIL import ImageOps
+
         with Image.open(sample["image_path"]) as img:
+            img = ImageOps.exif_transpose(img)
             width, height = img.size
     except Exception:
-        width, height = 256, 256 # Fallback
-    
+        width, height = 256, 256  # Fallback
+
     res = {
         "id": idx,
         "split": split,
@@ -300,22 +302,13 @@ async def get_sample_detail(split: str, idx: int):
         "modality": sample["modality"],
         "cover": sample["cover"],
         "filename": sample["image_path"].name,
+        "image_path": str(sample["image_path"]),
         "width": width,
         "height": height,
+        "joints": sample["joints"][:2, :].T.tolist()
+        if "joints" in sample and sample["joints"] is not None
+        else None,
     }
-    
-    if sample["joints"] is not None:
-        # joints is (3, 14)
-        joints = sample["joints"]
-        res["joints"] = []
-        for i in range(joints.shape[1]):
-            res["joints"].append({
-                "name": LSP_JOINT_NAMES[i] if i < len(LSP_JOINT_NAMES) else f"Joint_{i}",
-                "x": float(joints[0, i]),
-                "y": float(joints[1, i]),
-                "visible": int(joints[2, i]) == 0 # 0 is visible in SLP
-            })
-            
     return res
 
 
@@ -324,7 +317,7 @@ async def get_dataset_image(split: str, idx: int):
     ds = dataset_container.get(split)
     if not ds or idx >= len(ds):
         raise HTTPException(status_code=404, detail="Sample not found")
-    
+
     sample = ds.samples[idx]
     return FileResponse(sample["image_path"])
 
@@ -373,19 +366,28 @@ async def startup_event():
         print(f"Initializing datasets from root: {root_path}")
         dataset_container["train"] = VIPCupDataset(
             root=root_path,
-            subjects=range(dataset_cfg.get("subjects_train", [1, 30])[0], dataset_cfg.get("subjects_train", [1, 30])[1] + 1),
+            subjects=range(
+                dataset_cfg.get("subjects_train", [1, 30])[0],
+                dataset_cfg.get("subjects_train", [1, 30])[1] + 1,
+            ),
             modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
             covers=["uncover", "cover1", "cover2"],
-            split="train"
+            split="train",
         )
         dataset_container["val"] = VIPCupDataset(
             root=root_path,
-            subjects=range(dataset_cfg.get("subjects_val", [81, 90])[0], dataset_cfg.get("subjects_val", [81, 90])[1] + 1),
+            # Set the range to cover all domain adaptation subjects (31 to 70)
+            subjects=range(
+                dataset_cfg.get("subjects_val", [31, 70])[0],
+                dataset_cfg.get("subjects_val", [31, 70])[1] + 1,
+            ),
             modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
             covers=["uncover", "cover1", "cover2"],
-            split="valid"
+            split="valid",
         )
-        print(f"Datasets initialized. Train: {len(dataset_container['train'])} samples, Val: {len(dataset_container['val'])} samples")
+        print(
+            f"Datasets initialized. Train: {len(dataset_container['train'])} samples, Val: {len(dataset_container['val'])} samples"
+        )
     except Exception as e:
         print(f"Error initializing datasets: {e}")
 
