@@ -224,8 +224,12 @@ async def evaluate_model(
     if checkpoint:
         checkpoint_path = project_root / "models" / "checkpoints" / checkpoint
         if not checkpoint_path.exists():
-            raise HTTPException(status_code=404, detail=f"Checkpoint {checkpoint} not found")
-        model.load_state_dict(torch.load(checkpoint_path, map_location=device, weights_only=True))
+            raise HTTPException(
+                status_code=404, detail=f"Checkpoint {checkpoint} not found"
+            )
+        model.load_state_dict(
+            torch.load(checkpoint_path, map_location=device, weights_only=True)
+        )
 
     # Get dataset
     ds = dataset_container.get(split)
