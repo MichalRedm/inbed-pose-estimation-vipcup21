@@ -71,7 +71,7 @@ const Evaluation: React.FC = () => {
           try {
             const evalRes = await evaluateModel(selectedSplit, latestModel, false);
             setResults(evalRes);
-          } catch (e) {
+          } catch {
             console.log('No cached results available yet');
           }
         }
@@ -82,7 +82,7 @@ const Evaluation: React.FC = () => {
       }
     };
     fetchInitialData();
-  }, []);
+  }, [selectedSplit]);
 
   const handleEvaluate = async (force: boolean = true) => {
     setIsLoading(true);
@@ -162,7 +162,7 @@ const Evaluation: React.FC = () => {
 
             <button 
               className="btn-primary" 
-              onClick={handleEvaluate} 
+              onClick={() => handleEvaluate(true)} 
               disabled={isLoading || !selectedModel}
               style={{ width: '100%', marginTop: '24px' }}
             >
@@ -243,7 +243,7 @@ const Evaluation: React.FC = () => {
                         }}
                         itemStyle={{ color: 'var(--accent-lime)', fontSize: '0.9rem' }}
                         labelStyle={{ color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '4px' }}
-                        formatter={(value: number) => [`${value.toFixed(2)} %`, 'PCK']}
+                        formatter={(value: any) => [`${parseFloat(value).toFixed(2)} %`, 'PCK']}
                       />
                       <Bar dataKey="pck" radius={[0, 4, 4, 0]}>
                         {pckData.map((entry, index) => (
@@ -276,7 +276,7 @@ const Evaluation: React.FC = () => {
                         }}
                         itemStyle={{ color: 'var(--accent-pink)', fontSize: '0.9rem' }}
                         labelStyle={{ color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '4px' }}
-                        formatter={(value: number) => [`${value.toFixed(2)} px`, 'Error']}
+                        formatter={(value: any) => [`${parseFloat(value).toFixed(2)} px`, 'Error']}
                       />
                       <Bar dataKey="error" fill="var(--accent-pink)" radius={[4, 4, 0, 0]} />
                     </BarChart>
