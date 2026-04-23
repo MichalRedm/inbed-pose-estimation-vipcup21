@@ -45,6 +45,8 @@ interface Joint {
 interface SampleDetail extends Sample {
   joints?: Joint[];
   split: string;
+  width: number;
+  height: number;
 }
 
 const Dataset: React.FC = () => {
@@ -325,7 +327,7 @@ const Dataset: React.FC = () => {
                 />
                 {/* Joints Overlay */}
                 <svg 
-                  viewBox="0 0 256 256" 
+                  viewBox={`0 0 ${selectedSample.width} ${selectedSample.height}`} 
                   style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
                   preserveAspectRatio="xMidYMid meet"
                 >

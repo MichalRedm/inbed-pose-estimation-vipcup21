@@ -285,8 +285,13 @@ async def get_sample_detail(split: str, idx: int):
         raise HTTPException(status_code=404, detail="Sample not found")
 
     sample = ds.samples[idx]
-    # Re-load sample using __getitem__ to get processed data if needed, 
-    # but here we just want the raw joints and metadata
+    
+    # Get original image size
+    try:
+        with Image.open(sample["image_path"]) as img:
+            width, height = img.size
+    except Exception:
+        width, height = 256, 256 # Fallback
     
     res = {
         "id": idx,
@@ -295,6 +300,8 @@ async def get_sample_detail(split: str, idx: int):
         "modality": sample["modality"],
         "cover": sample["cover"],
         "filename": sample["image_path"].name,
+        "width": width,
+        "height": height,
     }
     
     if sample["joints"] is not None:
