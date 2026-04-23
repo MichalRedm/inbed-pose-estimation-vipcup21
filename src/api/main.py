@@ -1,6 +1,7 @@
 import io
 import torch
 from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.responses import FileResponse
 from PIL import Image
 import numpy as np
 from pathlib import Path
@@ -18,6 +19,7 @@ if str(project_root) not in sys.path:
 from src.training.manager import training_manager  # noqa: E402
 from src.utils import load_config, decode_heatmaps, LSP_JOINT_NAMES  # noqa: E402
 from src.models.hrnet import get_pose_net  # noqa: E402
+from src.data.dataset import VIPCupDataset  # noqa: E402
 
 app = FastAPI(
     title="In-Bed Pose Estimation API",
@@ -153,7 +155,9 @@ def verify_gpu():
 
 # Global model container
 
+# Global containers
 model_container = {}
+dataset_container = {}
 
 
 @app.get("/training/status")
@@ -196,6 +200,128 @@ async def list_models():
     }
 
 
+# Dataset Endpoints
+@app.get("/dataset/stats")
+async def get_dataset_stats():
+    stats = {}
+    for split in ["train", "val"]:
+        ds = dataset_container.get(split)
+        if not ds:
+            stats[split] = {"total": 0}
+            continue
+
+        modalities = {}
+        covers = {}
+        subjects = set()
+
+        for sample in ds.samples:
+            modalities[sample["modality"]] = modalities.get(sample["modality"], 0) + 1
+            covers[sample["cover"]] = covers.get(sample["cover"], 0) + 1
+            subjects.add(sample["subject"])
+
+        stats[split] = {
+            "total": len(ds),
+            "modalities": modalities,
+            "covers": covers,
+            "subject_count": len(subjects),
+        }
+
+    return stats
+
+
+@app.get("/dataset/samples")
+async def get_samples(
+    split: str = "train",
+    page: int = 1,
+    limit: int = 20,
+    modality: str = None,
+    cover: str = None,
+    subject: int = None,
+):
+    ds = dataset_container.get(split)
+    if not ds:
+        raise HTTPException(status_code=404, detail=f"Split {split} not found")
+
+    filtered_samples = []
+    for i, sample in enumerate(ds.samples):
+        if modality and sample["modality"] != modality:
+            continue
+        if cover and sample["cover"] != cover:
+            continue
+        if subject and sample["subject"] != subject:
+            continue
+        
+        # Add index to the sample info for later retrieval
+        sample_info = sample.copy()
+        sample_info["id"] = i
+        # Remove absolute path for security/privacy, just keep filename or relative path
+        sample_info["filename"] = sample["image_path"].name
+        del sample_info["image_path"]
+        if "joints" in sample_info:
+            # Convert numpy joints to list if present, but we might want to skip joints in list view
+            del sample_info["joints"]
+            sample_info["has_joints"] = True
+        else:
+            sample_info["has_joints"] = False
+            
+        filtered_samples.append(sample_info)
+
+    total = len(filtered_samples)
+    start = (page - 1) * limit
+    end = start + limit
+    
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "samples": filtered_samples[start:end]
+    }
+
+
+@app.get("/dataset/sample/{split}/{idx}")
+async def get_sample_detail(split: str, idx: int):
+    ds = dataset_container.get(split)
+    if not ds or idx >= len(ds):
+        raise HTTPException(status_code=404, detail="Sample not found")
+
+    sample = ds.samples[idx]
+    # Re-load sample using __getitem__ to get processed data if needed, 
+    # but here we just want the raw joints and metadata
+    
+    res = {
+        "id": idx,
+        "split": split,
+        "subject": sample["subject"],
+        "modality": sample["modality"],
+        "cover": sample["cover"],
+        "filename": sample["image_path"].name,
+    }
+    
+    if sample["joints"] is not None:
+        # joints is (3, 14)
+        joints = sample["joints"]
+        res["joints"] = []
+        for i in range(joints.shape[1]):
+            res["joints"].append({
+                "name": LSP_JOINT_NAMES[i] if i < len(LSP_JOINT_NAMES) else f"Joint_{i}",
+                "x": float(joints[0, i]),
+                "y": float(joints[1, i]),
+                "visible": int(joints[2, i]) == 0 # 0 is visible in SLP
+            })
+            
+    return res
+
+
+@app.get("/dataset/image/{split}/{idx}")
+async def get_dataset_image(split: str, idx: int):
+    ds = dataset_container.get(split)
+    if not ds or idx >= len(ds):
+        raise HTTPException(status_code=404, detail="Sample not found")
+    
+    sample = ds.samples[idx]
+    return FileResponse(sample["image_path"])
+
+
 @app.on_event("startup")
 async def startup_event():
     config = load_config()
@@ -233,6 +359,28 @@ async def startup_event():
     model_container["model"] = model
     model_container["device"] = device
     model_container["image_size"] = image_size
+
+    # Initialize datasets
+    try:
+        root_path = project_root / dataset_cfg.get("root", "data/raw")
+        print(f"Initializing datasets from root: {root_path}")
+        dataset_container["train"] = VIPCupDataset(
+            root=root_path,
+            subjects=range(dataset_cfg.get("subjects_train", [1, 30])[0], dataset_cfg.get("subjects_train", [1, 30])[1] + 1),
+            modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
+            covers=["uncover", "cover1", "cover2"],
+            split="train"
+        )
+        dataset_container["val"] = VIPCupDataset(
+            root=root_path,
+            subjects=range(dataset_cfg.get("subjects_val", [81, 90])[0], dataset_cfg.get("subjects_val", [81, 90])[1] + 1),
+            modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
+            covers=["uncover", "cover1", "cover2"],
+            split="valid"
+        )
+        print(f"Datasets initialized. Train: {len(dataset_container['train'])} samples, Val: {len(dataset_container['val'])} samples")
+    except Exception as e:
+        print(f"Error initializing datasets: {e}")
 
 
 @app.post("/predict")

@@ -6,9 +6,7 @@ import Training from './pages/Training';
 import Inference from './pages/Inference';
 import Models from './pages/Models';
 import Settings from './pages/Settings';
-
-// Placeholder components for remaining pages
-const Dataset = () => <div><h1 className="text-uppercase">Dataset Explorer</h1></div>;
+import Dataset from './pages/Dataset';
 
 
 

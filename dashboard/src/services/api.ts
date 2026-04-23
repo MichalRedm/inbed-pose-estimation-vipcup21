@@ -39,3 +39,29 @@ export const stopTraining = async () => {
   const response = await axios.post(`${API_BASE_URL}/training/stop`);
   return response.data;
 };
+
+export const getDatasetStats = async () => {
+  const response = await axios.get(`${API_BASE_URL}/dataset/stats`);
+  return response.data;
+};
+
+export const getSamples = async (params: {
+  split?: string;
+  page?: number;
+  limit?: number;
+  modality?: string;
+  cover?: string;
+  subject?: number;
+}) => {
+  const response = await axios.get(`${API_BASE_URL}/dataset/samples`, { params });
+  return response.data;
+};
+
+export const getSampleDetail = async (split: string, idx: number) => {
+  const response = await axios.get(`${API_BASE_URL}/dataset/sample/${split}/${idx}`);
+  return response.data;
+};
+
+export const getDatasetImageUrl = (split: string, idx: number) => {
+  return `${API_BASE_URL}/dataset/image/${split}/${idx}`;
+};
