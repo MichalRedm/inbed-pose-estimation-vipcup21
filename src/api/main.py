@@ -184,7 +184,7 @@ async def stop_training():
 
 
 @app.post("/evaluate")
-async def evaluate_model(split: str = "valid", checkpoint: str = None):
+async def evaluate_model(split: str = "val", checkpoint: str = None):
     # Load model with specific checkpoint if provided
     device = model_container["device"]
     model = model_container["model"]
@@ -196,6 +196,9 @@ async def evaluate_model(split: str = "valid", checkpoint: str = None):
         model.load_state_dict(torch.load(checkpoint_path, map_location=device))
 
     ds = dataset_container.get(split)
+    if not ds and split == "valid":
+        ds = dataset_container.get("val")
+    
     if not ds:
         # Try to initialize if not present (e.g. if config changed)
         # For simplicity, we assume they are initialized in startup
@@ -416,7 +419,7 @@ async def startup_event():
             covers=["uncover", "cover1", "cover2"],
             split="train",
         )
-        dataset_container["val"] = VIPCupDataset(
+        val_ds = VIPCupDataset(
             root=root_path,
             # Set the range to cover all domain adaptation subjects (31 to 70)
             subjects=range(
@@ -427,8 +430,10 @@ async def startup_event():
             covers=["uncover", "cover1", "cover2"],
             split="valid",
         )
+        dataset_container["val"] = val_ds
+        dataset_container["valid"] = val_ds
         print(
-            f"Datasets initialized. Train: {len(dataset_container['train'])} samples, Val: {len(dataset_container['val'])} samples"
+            f"Datasets initialized. Train: {len(dataset_container['train'])} samples, Val: {len(val_ds)} samples"
         )
     except Exception as e:
         print(f"Error initializing datasets: {e}")

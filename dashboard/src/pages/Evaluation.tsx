@@ -42,7 +42,7 @@ interface EvaluationResults {
 const Evaluation: React.FC = () => {
   const [models, setModels] = useState<Model[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
-  const [selectedSplit, setSelectedSplit] = useState<string>('valid');
+  const [selectedSplit, setSelectedSplit] = useState<string>('val');
   const [results, setResults] = useState<EvaluationResults | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,8 +129,8 @@ const Evaluation: React.FC = () => {
                   Train
                 </button>
                 <button 
-                  className={`btn-tab ${selectedSplit === 'valid' ? 'active' : ''}`}
-                  onClick={() => setSelectedSplit('valid')}
+                  className={`btn-tab ${selectedSplit === 'val' ? 'active' : ''}`}
+                  onClick={() => setSelectedSplit('val')}
                   style={{ flex: 1 }}
                 >
                   Validation
@@ -201,7 +201,7 @@ const Evaluation: React.FC = () => {
                     <BarChart data={pckData} layout="vertical" margin={{ left: 10, right: 30 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" horizontal={true} vertical={false} />
                       <XAxis type="number" domain={[0, 100]} stroke="var(--text-secondary)" fontSize={11} />
-                      <YAxis type="category" dataKey="name" stroke="var(--text-secondary)" fontSize={11} width={80} />
+                      <YAxis type="category" dataKey="name" stroke="var(--text-secondary)" fontSize={11} width={100} interval={0} />
                       <Tooltip 
                         cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                         contentStyle={{ 
@@ -226,11 +226,11 @@ const Evaluation: React.FC = () => {
                   <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-pink)' }}>MPJPE per Joint (px)</h3>
                   <BarChart3 size={18} color="var(--accent-pink)" />
                 </div>
-                <div className="chart-wrapper" style={{ height: '300px', marginTop: '20px' }}>
+                <div className="chart-wrapper" style={{ height: '350px', marginTop: '20px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={errorData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" vertical={false} />
-                      <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={10} tick={{ angle: -45, textAnchor: 'end' }} height={60} />
+                      <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={10} tick={{ angle: -45, textAnchor: 'end' }} height={80} interval={0} />
                       <YAxis stroke="var(--text-secondary)" fontSize={11} />
                       <Tooltip 
                         cursor={{ fill: 'rgba(255,255,255,0.05)' }}
