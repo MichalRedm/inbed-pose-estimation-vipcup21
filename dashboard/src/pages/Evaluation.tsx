@@ -6,7 +6,8 @@ import {
   Play,
   Box,
   Layers,
-  Search
+  Search,
+  Info
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -38,6 +39,15 @@ interface EvaluationResults {
   pck: number;
   per_joint_metrics: PerJointMetric[];
 }
+
+const InfoTooltip = ({ text }: { text: string }) => (
+  <div className="tooltip-container">
+    <Info size={14} className="info-icon" />
+    <div className="tooltip-content glass">
+      {text}
+    </div>
+  </div>
+);
 
 const Evaluation: React.FC = () => {
   const [models, setModels] = useState<Model[]>([]);
@@ -171,17 +181,26 @@ const Evaluation: React.FC = () => {
               
               <div className="metric-row" style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
                 <div className="metric-item" style={{ flex: 1 }}>
-                  <span className="text-secondary micro-label" style={{ display: 'block' }}>MPJPE</span>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span className="text-secondary micro-label">MPJPE</span>
+                    <InfoTooltip text="Mean Per Joint Position Error. Average Euclidean distance between predicted and ground truth joints (in pixels)." />
+                  </div>
                   <div className="metric-value" style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{results.mpjpe.toFixed(2)} <span className="unit" style={{ fontSize: '0.8rem', opacity: 0.5 }}>px</span></div>
                 </div>
                 <div className="metric-item" style={{ flex: 1 }}>
-                  <span className="text-secondary micro-label" style={{ display: 'block' }}>PCK @ 15px</span>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span className="text-secondary micro-label">PCK @ 15px</span>
+                    <InfoTooltip text="Percentage of Correct Keypoints. The percentage of joints where the error is below the 15px threshold." />
+                  </div>
                   <div className="metric-value" style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{(results.pck * 100).toFixed(1)} <span className="unit" style={{ fontSize: '0.8rem', opacity: 0.5 }}>%</span></div>
                 </div>
               </div>
               
               <div className="metric-item">
-                <span className="text-secondary micro-label" style={{ display: 'block' }}>Avg Loss</span>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <span className="text-secondary micro-label">Avg Loss</span>
+                  <InfoTooltip text="Average Mean Squared Error (MSE) of the predicted heatmaps compared to the ground truth." />
+                </div>
                 <div className="metric-value" style={{ fontSize: '1.1rem' }}>{results.loss.toFixed(6)}</div>
               </div>
             </div>

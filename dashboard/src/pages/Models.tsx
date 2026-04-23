@@ -41,7 +41,7 @@ const Models: React.FC = () => {
           <p>Loading models...</p>
         ) : models.length > 0 ? (
           models.map((model, i) => (
-            <div key={i} className="glass card model-card" style={{ padding: '24px', borderRadius: '12px' }}>
+            <div key={i} className="glass card model-card">
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                 <Box size={24} color="var(--accent-primary)" />
                 <h3 style={{ fontSize: '1.1rem' }}>{model.name}</h3>
@@ -71,7 +71,7 @@ const Models: React.FC = () => {
             </div>
           ))
         ) : (
-          <div className="glass card" style={{ padding: '40px', gridColumn: '1 / -1', textAlign: 'center' }}>
+          <div className="glass card" style={{ gridColumn: '1 / -1', textAlign: 'center' }}>
             <p className="text-secondary">No model checkpoints found in `models/checkpoints/`.</p>
           </div>
         )}

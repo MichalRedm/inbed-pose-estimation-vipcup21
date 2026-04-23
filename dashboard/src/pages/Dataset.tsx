@@ -195,7 +195,7 @@ const Dataset: React.FC = () => {
   };
 
   return (
-    <div className="page-container">
+    <div className="dataset-page">
       {/* Local Styles for Dataset Page */}
       <style>{`
         .dataset-header {

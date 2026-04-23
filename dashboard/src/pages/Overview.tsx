@@ -68,7 +68,10 @@ const Overview: React.FC = () => {
 
   return (
     <div className="overview-page">
-      <h1 className="text-uppercase" style={{ marginBottom: '24px' }}>Dashboard Overview</h1>
+      <div className="page-header">
+        <h1 className="text-uppercase">Dashboard Overview</h1>
+        <p className="text-secondary">System status and training progress summary.</p>
+      </div>
       
       <div className="grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px' }}>
         

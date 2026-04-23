@@ -109,6 +109,7 @@ button {
   border-radius: 12px;
   display: flex;
   flex-direction: column;
+  gap: 16px; /* Standard internal card gap */
 }
 
 .flex-column {
@@ -192,9 +193,18 @@ button.glass:hover {
 
 .page-container {
   padding: 40px;
-  max-width: 1200px;
+  max-width: 1400px; /* Increased for better dashboard spread */
   width: 100%;
   margin: 0 auto;
+}
+
+.page-header {
+  margin-bottom: 32px;
+}
+
+.page-header p {
+  margin-top: 8px;
+  opacity: 0.8;
 }
 
 /* Sidebar */
@@ -498,7 +508,7 @@ button.glass:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  /* margin-bottom handled by card gap */
 }
 
 .chart-wrapper {
@@ -669,4 +679,55 @@ button.glass:hover {
   text-align: center;
   border: 2px dashed var(--border-purple);
   border-radius: 12px;
+}
+
+/* Tooltips */
+.tooltip-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  cursor: help;
+}
+
+.info-icon {
+  opacity: 0.5;
+  transition: opacity 0.2s;
+  color: var(--text-secondary);
+}
+
+.tooltip-container:hover .info-icon {
+  opacity: 1;
+  color: var(--accent-primary);
+}
+
+.tooltip-content {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  padding: 12px;
+  border-radius: 8px;
+  width: 220px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  visibility: hidden;
+  opacity: 0;
+  transition: all 0.2s;
+  z-index: 1000;
+  pointer-events: none;
+  text-transform: none;
+  font-weight: normal;
+  text-align: center;
+  background: rgba(26, 26, 38, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-purple);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.tooltip-container:hover .tooltip-content {
+  visibility: visible;
+  opacity: 1;
+  transform: translateX(-50%) translateY(-12px);
 }
