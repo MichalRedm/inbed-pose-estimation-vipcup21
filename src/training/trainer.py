@@ -1,4 +1,5 @@
 import torch
+from src.utils import decode_heatmaps, compute_mpjpe, compute_pck
 from tqdm import tqdm
 
 
@@ -100,12 +101,51 @@ class PoseTrainer:
         self.model.eval()
         total_loss = 0
         batches = 0
+
+        all_preds = []
+        all_gts = []
+        all_visibility = []
+
+        image_size = self.config.get("dataset", {}).get("image_size", (256, 256))
+
         for batch in dataloader:
             if batch is None:
                 continue
             images = batch["image"].to(self.device)
             targets = batch["target"].to(self.device)
+            joints = batch["joints"]  # (B, 3, 14)
+
             outputs = self.model(images)
-            total_loss += self.criterion(outputs, targets).item()
+            loss = self.criterion(outputs, targets)
+
+            total_loss += loss.item()
             batches += 1
-        return total_loss / max(batches, 1)
+
+            # Decode predictions
+            preds = decode_heatmaps(outputs.cpu(), image_size)  # (B, 14, 2)
+
+            all_preds.append(preds)
+            all_gts.append(
+                joints[:, :2, :].permute(0, 2, 1)
+            )  # (B, 3, 14) -> (B, 14, 2)
+            all_visibility.append(joints)  # (B, 3, 14)
+
+        avg_loss = total_loss / max(batches, 1)
+
+        if not all_preds:
+            return {"loss": avg_loss}
+
+        all_preds = torch.cat(all_preds, dim=0)
+        all_gts = torch.cat(all_gts, dim=0)
+        all_visibility = torch.cat(all_visibility, dim=0)
+
+        mpjpe, per_joint_error = compute_mpjpe(all_preds, all_gts, all_visibility)
+        pck, per_joint_pck = compute_pck(all_preds, all_gts, all_visibility)
+
+        return {
+            "loss": avg_loss,
+            "mpjpe": float(mpjpe),
+            "pck": float(pck),
+            "per_joint_error": per_joint_error.tolist(),
+            "per_joint_pck": per_joint_pck.tolist(),
+        }

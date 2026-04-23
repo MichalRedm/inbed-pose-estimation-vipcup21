@@ -114,3 +114,66 @@ def draw_pose(
             zorder=5,
             alpha=alpha,
         )
+
+
+def compute_mpjpe(preds, gts, visibility=None):
+    """
+    Compute Mean Per Joint Position Error.
+    preds: (B, J, 2)
+    gts: (B, J, 2)
+    visibility: (B, J) or (B, 3, J) - if (B, 3, J), index 2 is used as visibility.
+    Returns: Average error per joint, and per-joint errors.
+    """
+    if torch.is_tensor(preds):
+        preds = preds.cpu().numpy()
+    if torch.is_tensor(gts):
+        gts = gts.cpu().numpy()
+
+    if visibility is not None:
+        if torch.is_tensor(visibility):
+            visibility = visibility.cpu().numpy()
+
+        if len(visibility.shape) == 3:  # (B, 3, J)
+            visibility = (visibility[:, 2, :] <= 1).astype(float)
+    else:
+        visibility = np.ones(preds.shape[:2])
+
+    # Distance between preds and gts
+    dist = np.sqrt(np.sum((preds - gts) ** 2, axis=-1))  # (B, J)
+
+    # Apply visibility mask
+    dist = dist * visibility
+
+    per_joint_error = np.sum(dist, axis=0) / np.maximum(np.sum(visibility, axis=0), 1)
+    mean_error = np.sum(dist) / np.maximum(np.sum(visibility), 1)
+
+    return mean_error, per_joint_error
+
+
+def compute_pck(preds, gts, visibility=None, threshold=15.0):
+    """
+    Compute Percentage of Correct Keypoints.
+    threshold: Error threshold in pixels (after scaling to image size).
+    """
+    if torch.is_tensor(preds):
+        preds = preds.cpu().numpy()
+    if torch.is_tensor(gts):
+        gts = gts.cpu().numpy()
+
+    if visibility is not None:
+        if torch.is_tensor(visibility):
+            visibility = visibility.cpu().numpy()
+
+        if len(visibility.shape) == 3:  # (B, 3, J)
+            visibility = (visibility[:, 2, :] <= 1).astype(float)
+    else:
+        visibility = np.ones(preds.shape[:2])
+
+    dist = np.sqrt(np.sum((preds - gts) ** 2, axis=-1))  # (B, J)
+
+    correct = (dist <= threshold).astype(float) * visibility
+
+    per_joint_pck = np.sum(correct, axis=0) / np.maximum(np.sum(visibility, axis=0), 1)
+    mean_pck = np.sum(correct) / np.maximum(np.sum(visibility), 1)
+
+    return mean_pck, per_joint_pck

@@ -19,7 +19,9 @@ if str(project_root) not in sys.path:
 from src.training.manager import training_manager  # noqa: E402
 from src.utils import load_config, decode_heatmaps, LSP_JOINT_NAMES  # noqa: E402
 from src.models.hrnet import get_pose_net  # noqa: E402
-from src.data.dataset import VIPCupDataset  # noqa: E402
+from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
+from torch.utils.data import DataLoader  # noqa: E402
+from src.training.trainer import PoseTrainer  # noqa: E402
 
 app = FastAPI(
     title="In-Bed Pose Estimation API",
@@ -179,6 +181,46 @@ async def stop_training():
     if not success:
         raise HTTPException(status_code=400, detail=message)
     return {"message": message}
+
+
+@app.post("/evaluate")
+async def evaluate_model(split: str = "valid", checkpoint: str = None):
+    # Load model with specific checkpoint if provided
+    device = model_container["device"]
+    model = model_container["model"]
+
+    if checkpoint:
+        checkpoint_path = project_root / "models" / "checkpoints" / checkpoint
+        if not checkpoint_path.exists():
+            raise HTTPException(status_code=404, detail="Checkpoint not found")
+        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+
+    ds = dataset_container.get(split)
+    if not ds:
+        # Try to initialize if not present (e.g. if config changed)
+        # For simplicity, we assume they are initialized in startup
+        raise HTTPException(status_code=404, detail=f"Dataset split {split} not found")
+
+    loader = DataLoader(ds, batch_size=8, shuffle=False, collate_fn=collate_skip_none)
+
+    criterion = torch.nn.MSELoss()
+    config = load_config()
+    trainer = PoseTrainer(model, None, criterion, device, config)
+
+    metrics = trainer.evaluate(loader)
+
+    # Add joint names to per-joint metrics for frontend
+    if "per_joint_error" in metrics:
+        metrics["per_joint_metrics"] = [
+            {
+                "name": LSP_JOINT_NAMES[i],
+                "error": metrics["per_joint_error"][i],
+                "pck": metrics["per_joint_pck"][i],
+            }
+            for i in range(len(LSP_JOINT_NAMES))
+        ]
+
+    return metrics
 
 
 @app.get("/models")

@@ -7,7 +7,8 @@ import {
   Eye, 
   Settings, 
   Database, 
-  Box 
+  Box,
+  ClipboardCheck
 } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:8000';
@@ -35,6 +36,7 @@ const Sidebar: React.FC = () => {
     { name: 'Training', path: '/training', icon: Activity },
     { name: 'Inference', path: '/inference', icon: Eye },
     { name: 'Models', path: '/models', icon: Box },
+    { name: 'Evaluation', path: '/evaluation', icon: ClipboardCheck },
     { name: 'Dataset', path: '/dataset', icon: Database },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];

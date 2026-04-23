@@ -7,6 +7,7 @@ import Inference from './pages/Inference';
 import Models from './pages/Models';
 import Settings from './pages/Settings';
 import Dataset from './pages/Dataset';
+import Evaluation from './pages/Evaluation';
 
 
 
@@ -20,6 +21,7 @@ const App: React.FC = () => {
           <Route path="inference" element={<Inference />} />
           <Route path="models" element={<Models />} />
           <Route path="dataset" element={<Dataset />} />
+          <Route path="evaluation" element={<Evaluation />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

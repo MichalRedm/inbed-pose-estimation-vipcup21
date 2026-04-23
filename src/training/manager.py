@@ -3,6 +3,7 @@ import subprocess
 import sys
 import re
 import time
+import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -25,11 +26,18 @@ class TrainingManager:
 
         self.is_running = True
         self._stop_event.clear()
-        self.loss_history = []
         self.log_history = []
         self.progress = 0.0
         self.current_epoch = 0
         self.total_epochs = 0
+
+        # Load existing history if resuming
+        if config_overrides and config_overrides.get("resume"):
+            self.loss_history = self._load_history()
+            if self.loss_history:
+                self.current_epoch = len(self.loss_history)
+        else:
+            self.loss_history = []
 
         self._thread = threading.Thread(
             target=self._run_training, args=(config_overrides,)
@@ -46,6 +54,12 @@ class TrainingManager:
         return True, "Stop signal sent"
 
     def get_status(self):
+        # Refresh loss history from file if it's more complete than our in-memory version
+        # (Especially useful for remote training where history.json is synced periodically)
+        file_history = self._load_history()
+        if len(file_history) > len(self.loss_history):
+            self.loss_history = file_history
+
         return {
             "is_running": self.is_running,
             "progress": self.progress,
@@ -55,6 +69,18 @@ class TrainingManager:
             "log_history": self.log_history,
             "status_message": self.status_message,
         }
+
+    def _load_history(self) -> List[float]:
+        try:
+            project_root = Path(__file__).parent.parent.parent
+            history_path = project_root / "models" / "checkpoints" / "history.json"
+            if history_path.exists():
+                with open(history_path, "r") as f:
+                    data = json.load(f)
+                    return [float(entry.get("train_loss", 0)) for entry in data]
+        except Exception as e:
+            print(f"[TrainingManager] Error loading history: {e}")
+        return []
 
     def _run_training(self, config_overrides):
         try:
@@ -173,19 +199,32 @@ class TrainingManager:
 
                     # 5. Parse loss: "train_loss=0.1234" or "Epoch 1: train_loss=0.1234  val_loss=0.5678"
                     loss_match = re.search(
-                        r"train_loss=([0-9.]+)(?:\s+val_loss=([0-9.]+))?", line
+                        r"(?:Epoch (\d+): )?train_loss=([0-9.]+)(?:\s+val_loss=([0-9.]+))?",
+                        line,
                     )
                     if loss_match:
-                        train_loss = float(loss_match.group(1))
-                        val_loss = loss_match.group(2)
+                        epoch_num = loss_match.group(1)
+                        train_loss = float(loss_match.group(2))
+                        val_loss = loss_match.group(3)
 
                         msg = f"Last loss: {train_loss:.4f}"
                         if val_loss:
                             msg += f" | Val: {float(val_loss):.4f}"
                         self.status_message = msg
 
-                        if not self.loss_history or self.loss_history[-1] != train_loss:
-                            self.loss_history.append(train_loss)
+                        if epoch_num:
+                            idx = int(epoch_num) - 1
+                            # Ensure list is long enough
+                            while len(self.loss_history) <= idx:
+                                self.loss_history.append(0.0)
+                            self.loss_history[idx] = train_loss
+                        else:
+                            # Fallback to appending if no epoch number
+                            if (
+                                not self.loss_history
+                                or self.loss_history[-1] != train_loss
+                            ):
+                                self.loss_history.append(train_loss)
                         continue
 
                     # 6. Remote Sync & Prep
