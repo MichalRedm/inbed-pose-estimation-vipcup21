@@ -224,11 +224,14 @@ const Evaluation: React.FC = () => {
                       <Tooltip 
                         cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                         contentStyle={{ 
-                          backgroundColor: 'var(--bg-secondary)', 
-                          borderColor: 'var(--border-purple)',
+                          backgroundColor: 'rgba(15, 12, 28, 0.95)',
+                          border: '1px solid var(--border-purple)',
                           borderRadius: '8px',
-                          color: 'var(--text-primary)'
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
                         }}
+                        itemStyle={{ color: 'var(--accent-lime)', fontSize: '0.9rem' }}
+                        labelStyle={{ color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '4px' }}
+                        formatter={(value: number) => [`${value.toFixed(2)} %`, 'PCK']}
                       />
                       <Bar dataKey="pck" radius={[0, 4, 4, 0]}>
                         {pckData.map((entry, index) => (
@@ -254,11 +257,14 @@ const Evaluation: React.FC = () => {
                       <Tooltip 
                         cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                         contentStyle={{ 
-                          backgroundColor: 'var(--bg-secondary)', 
-                          borderColor: 'var(--border-purple)',
+                          backgroundColor: 'rgba(15, 12, 28, 0.95)',
+                          border: '1px solid var(--border-purple)',
                           borderRadius: '8px',
-                          color: 'var(--text-primary)'
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
                         }}
+                        itemStyle={{ color: 'var(--accent-pink)', fontSize: '0.9rem' }}
+                        labelStyle={{ color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '4px' }}
+                        formatter={(value: number) => [`${value.toFixed(2)} px`, 'Error']}
                       />
                       <Bar dataKey="error" fill="var(--accent-pink)" radius={[4, 4, 0, 0]} />
                     </BarChart>
