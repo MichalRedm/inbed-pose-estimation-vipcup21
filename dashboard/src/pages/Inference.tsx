@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { Upload, Play, RefreshCw, Download } from 'lucide-react';
 import { predictPose } from '../services/api';
 
@@ -19,7 +19,6 @@ const Inference: React.FC = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<InferenceResult | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,41 +45,6 @@ const Inference: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    const drawPose = () => {
-      const canvas = canvasRef.current;
-      const img = imageRef.current;
-      if (!canvas || !img || !result) return;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      // Set canvas size to match displayed image size
-      canvas.width = img.clientWidth;
-      canvas.height = img.clientHeight;
-
-      const scaleX = canvas.width / result.original_size.width;
-      const scaleY = canvas.height / result.original_size.height;
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Draw joints
-      result.predictions.forEach((pred) => {
-        ctx.beginPath();
-        ctx.arc(pred.x * scaleX, pred.y * scaleY, 5, 0, 2 * Math.PI);
-        ctx.fillStyle = 'var(--accent-lime)';
-        ctx.fill();
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      });
-    };
-
-    if (result && canvasRef.current && imageRef.current) {
-      drawPose();
-    }
-  }, [result]);
-
   return (
     <div className="inference-page">
       <div className="page-header">
@@ -96,7 +60,26 @@ const Inference: React.FC = () => {
               {previewUrl ? (
                 <div className="preview-container">
                   <img ref={imageRef} src={previewUrl} alt="Preview" className="image-preview" />
-                  <canvas ref={canvasRef} className="pose-canvas"></canvas>
+                  {result && (
+                    <svg 
+                      className="pose-overlay"
+                      viewBox={`0 0 ${result.original_size.width} ${result.original_size.height}`}
+                      preserveAspectRatio="xMidYMid meet"
+                    >
+                      {result.predictions.map((pred, i) => (
+                        <g key={i}>
+                          <circle
+                            cx={pred.x}
+                            cy={pred.y}
+                            r={result.original_size.width / 100} // Dynamic radius based on image size
+                            fill="var(--accent-lime)"
+                            stroke="white"
+                            strokeWidth={result.original_size.width / 400}
+                          />
+                        </g>
+                      ))}
+                    </svg>
+                  )}
                 </div>
               ) : (
                 <div className="upload-placeholder">
