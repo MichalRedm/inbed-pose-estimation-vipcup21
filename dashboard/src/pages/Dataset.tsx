@@ -48,6 +48,14 @@ const JOINT_NAMES = [
 // --- Sub-components ---
 
 const JointOverlay = ({ joints, width, height }: { joints: number[][], width: number, height: number }) => {
+  // Calculate a scale factor based on the reference resolution (approx 1000px)
+  // This ensures markers look consistent regardless of the underlying SVG units
+  const scale = Math.min(width, height) / 400;
+  const dotRadius = Math.max(1, 4 * scale);
+  const strokeWidth = Math.max(0.5, 2 * scale);
+  const fontSize = Math.max(4, 10 * scale);
+  const textOffset = Math.max(2, 6 * scale);
+
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
@@ -71,7 +79,7 @@ const JointOverlay = ({ joints, width, height }: { joints: number[][], width: nu
             x1={j1[0]} y1={j1[1]}
             x2={j2[0]} y2={j2[1]}
             stroke="white"
-            strokeWidth="2"
+            strokeWidth={strokeWidth}
             strokeOpacity="0.4"
           />
         );
@@ -85,17 +93,17 @@ const JointOverlay = ({ joints, width, height }: { joints: number[][], width: nu
             <circle
               cx={joint[0]}
               cy={joint[1]}
-              r="4"
+              r={dotRadius}
               fill={JOINT_COLORS[idx] || '#ffffff'}
               stroke="white"
-              strokeWidth="1"
+              strokeWidth={strokeWidth / 2}
             />
             <text
-              x={joint[0] + 6}
-              y={joint[1] + 4}
+              x={joint[0] + textOffset}
+              y={joint[1] + textOffset / 1.5}
               fill="white"
-              fontSize="10"
-              style={{ textShadow: '1px 1px 2px black' }}
+              fontSize={fontSize}
+              style={{ textShadow: '1px 1px 1px black' }}
             >
               {JOINT_NAMES[idx]}
             </text>
@@ -350,11 +358,10 @@ const Dataset: React.FC = () => {
         }
         .modal-image-wrapper img {
           display: block;
-          width: auto;
-          height: auto;
-          max-width: 100%;
-          max-height: 100%;
+          width: 100%;
+          height: 100%;
           object-fit: contain;
+          image-rendering: pixelated;
         }
         .modal-sidebar {
           padding: 32px;
