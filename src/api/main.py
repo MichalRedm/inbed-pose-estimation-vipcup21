@@ -322,7 +322,13 @@ async def list_models():
 
 @app.get("/dataset/stats")
 async def get_dataset_stats():
-    summary = {"total": 0, "train": 0, "valid": 0, "modalities": ["IR", "RGB"], "covers": set()}
+    summary = {
+        "total": 0,
+        "train": 0,
+        "valid": 0,
+        "modalities": ["IR", "RGB"],
+        "covers": set(),
+    }
 
     # Map internal dictionary keys to the output JSON keys expected by the frontend
     splits_mapping = [("train", "train"), ("val", "valid")]
@@ -370,11 +376,13 @@ async def get_samples(
             "subject": sample["subject"],
             "cover": sample["cover"],
             "modalities": list(sample["image_paths"].keys()),
-            "has_joints": any(j is not None for j in sample["joints"].values())
+            "has_joints": any(j is not None for j in sample["joints"].values()),
         }
 
         # For the list view, we provide the IR path if available, else first modality
-        default_mod = "IR" if "IR" in sample["image_paths"] else sample_info["modalities"][0]
+        default_mod = (
+            "IR" if "IR" in sample["image_paths"] else sample_info["modalities"][0]
+        )
         sample_info["image_path"] = str(sample["image_paths"][default_mod])
         sample_info["modality"] = default_mod
 
@@ -427,7 +435,9 @@ async def get_sample_detail(split: str, idx: int):
         "modalities": list(sample["image_paths"].keys()),
         "resolutions": resolutions,
         "joints_per_modality": joints_data,
-        "filenames": {mod: Path(path).name for mod, path in sample["image_paths"].items()}
+        "filenames": {
+            mod: Path(path).name for mod, path in sample["image_paths"].items()
+        },
     }
     return res
 
@@ -442,7 +452,7 @@ async def get_dataset_image(split: str, idx: int, modality: str = "IR"):
     if modality not in sample["image_paths"]:
         # Fallback to first available if requested not found
         modality = list(sample["image_paths"].keys())[0]
-        
+
     return FileResponse(sample["image_paths"][modality])
 
 
@@ -527,7 +537,9 @@ async def predict(file: UploadFile = File(...)):
     try:
         # Load image
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert("L")  # Convert to Grayscale (1-channel)
+        image = Image.open(io.BytesIO(contents)).convert(
+            "L"
+        )  # Convert to Grayscale (1-channel)
 
         # Preprocess
         original_size = image.size

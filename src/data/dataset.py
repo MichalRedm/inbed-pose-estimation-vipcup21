@@ -109,16 +109,18 @@ class VIPCupDataset(Dataset):
 
                 # Determine number of scenes (assume aligned if multiple modalities)
                 num_scenes = min(len(paths) for paths in mod_paths.values())
-                
+
                 for i in range(num_scenes):
                     sample = {
                         "subject": subject_id,
                         "cover": cover,
                         "index": i,
-                        "image_paths": {mod: paths[i] for mod, paths in mod_paths.items()},
-                        "joints": {}
+                        "image_paths": {
+                            mod: paths[i] for mod, paths in mod_paths.items()
+                        },
+                        "joints": {},
                     }
-                    
+
                     # Store joints for each modality if available
                     for mod in self.modalities:
                         if (
@@ -128,7 +130,7 @@ class VIPCupDataset(Dataset):
                             sample["joints"][mod] = annotations[mod][:, :, i]
                         else:
                             sample["joints"][mod] = None
-                            
+
                     samples.append(sample)
         return samples
 
@@ -137,12 +139,16 @@ class VIPCupDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
-        
+
         # Default to IR for training/evaluation as requested
         # If IR is not available for some reason (shouldn't happen with min()), fallback to first available
-        target_mod = "IR" if "IR" in sample["image_paths"] else list(sample["image_paths"].keys())[0]
+        target_mod = (
+            "IR"
+            if "IR" in sample["image_paths"]
+            else list(sample["image_paths"].keys())[0]
+        )
         image_path = sample["image_paths"][target_mod]
-        
+
         # Load and convert to 1-channel (L) for IR, as requested for simplification
         if target_mod == "IR":
             image = Image.open(image_path).convert("L")
@@ -173,7 +179,9 @@ class VIPCupDataset(Dataset):
                 image = torch.from_numpy(np.array(image)).unsqueeze(0).float() / 255.0
             else:
                 # (3, H, W)
-                image = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0
+                image = (
+                    torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0
+                )
 
         target_heatmaps = None
         if joints is not None:
@@ -186,7 +194,9 @@ class VIPCupDataset(Dataset):
             "subject": sample["subject"],
             "modality": target_mod,
             "cover": sample["cover"],
-            "image_paths": {k: str(v) for k, v in sample["image_paths"].items()} # For dashboard/API
+            "image_paths": {
+                k: str(v) for k, v in sample["image_paths"].items()
+            },  # For dashboard/API
         }
 
     def _generate_heatmaps(self, joints):
