@@ -192,7 +192,7 @@ const Dataset: React.FC = () => {
     }
   };
 
-  const currentRes = selectedSample?.resolutions[viewModality] || { width: 256, height: 256 };
+  const currentRes = selectedSample?.resolutions?.[viewModality] || { width: 256, height: 256 };
 
   return (
     <div className="dataset-page">
