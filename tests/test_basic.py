@@ -17,7 +17,7 @@ class TestProjectInfrastructure(unittest.TestCase):
     def test_model_forward(self):
         """Test if the model forward pass produces correct heatmap dimensions."""
         model = get_pose_net(self.model_cfg)
-        dummy_input = torch.randn(1, 3, 256, 256)
+        dummy_input = torch.randn(1, 1, 256, 256)
         output = model(dummy_input)
         # Expected Output: [Batch, Joints, HeatmapH, HeatmapW]
         # In our simplified HRNet, input 256 -> two 2-stride convs -> output 64
