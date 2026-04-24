@@ -13,14 +13,18 @@ class PoseTrainer:
     Real implementation using Heatmap MSE loss.
     """
 
-    def __init__(self, model, optimizer, criterion, device, config):
+    def __init__(
+        self, model, optimizer=None, criterion=None, device="cpu", config=None
+    ):
         self.model = model.to(device)
         self.optimizer = optimizer
-        self.criterion = criterion
+        self.criterion = criterion or torch.nn.MSELoss()
         self.device = device
-        self.config = config
-        self.epochs = config.get("training", {}).get("epochs", 10)
-        self.save_dir = config.get("training", {}).get("save_dir", "models/checkpoints")
+        self.config = config or {}
+        self.epochs = self.config.get("training", {}).get("epochs", 10)
+        self.save_dir = self.config.get("training", {}).get(
+            "save_dir", "models/checkpoints"
+        )
         os.makedirs(self.save_dir, exist_ok=True)
 
     def train_epoch(self, dataloader, epoch):

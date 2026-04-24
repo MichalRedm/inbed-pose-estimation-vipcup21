@@ -17,7 +17,13 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.training.manager import training_manager  # noqa: E402
-from src.utils import load_config, decode_heatmaps, LSP_JOINT_NAMES  # noqa: E402
+from src.utils import (  # noqa: E402
+    load_config,
+    get_training_config,
+    save_training_config,
+    decode_heatmaps,
+    LSP_JOINT_NAMES,
+)
 from src.models.hrnet import get_pose_net  # noqa: E402
 from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
@@ -128,6 +134,27 @@ async def save_gpu_config(config: GPUConfig):
         return {"message": "Configuration saved successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
+
+
+@app.get("/config/training")
+async def get_training_settings():
+    try:
+        return get_training_config()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load training config: {str(e)}"
+        )
+
+
+@app.post("/config/training")
+async def save_training_settings(config: dict):
+    try:
+        save_training_config(config)
+        return {"message": "Training configuration saved successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save training config: {str(e)}"
+        )
 
 
 @app.post("/gpu/verify")
@@ -244,13 +271,13 @@ async def evaluate_model(
         ds, batch_size=8, shuffle=False, num_workers=0, collate_fn=collate_skip_none
     )
 
-    trainer = PoseTrainer(model, device=device)
+    trainer = PoseTrainer(model, device=device, config=model_container.get("config"))
     metrics = trainer.evaluate(loader)
 
     # Format per-joint metrics for display if they exist
     if "per_joint_error" in metrics:
         metrics["per_joint_metrics"] = [
-            {"name": name, "pck": float(pck) * 100, "error": float(error)}
+            {"name": name, "pck": float(pck), "error": float(error)}
             for name, pck, error in zip(
                 LSP_JOINT_NAMES, metrics["per_joint_pck"], metrics["per_joint_error"]
             )
@@ -452,6 +479,7 @@ async def startup_event():
     model_container["model"] = model
     model_container["device"] = device
     model_container["image_size"] = image_size
+    model_container["config"] = config
 
     # Initialize datasets
     try:
