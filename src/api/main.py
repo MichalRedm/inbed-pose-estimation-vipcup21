@@ -322,7 +322,7 @@ async def list_models():
 
 @app.get("/dataset/stats")
 async def get_dataset_stats():
-    summary = {"total": 0, "train": 0, "valid": 0, "modalities": set(), "covers": set()}
+    summary = {"total": 0, "train": 0, "valid": 0, "modalities": ["IR", "RGB"], "covers": set()}
 
     # Map internal dictionary keys to the output JSON keys expected by the frontend
     splits_mapping = [("train", "train"), ("val", "valid")]
@@ -337,10 +337,8 @@ async def get_dataset_stats():
         summary["total"] += count
 
         for sample in ds.samples:
-            summary["modalities"].add(sample["modality"])
             summary["covers"].add(sample["cover"])
 
-    summary["modalities"] = sorted(list(summary["modalities"]))
     summary["covers"] = sorted(list(summary["covers"]))
 
     return summary
@@ -351,7 +349,6 @@ async def get_samples(
     split: str = "train",
     page: int = 1,
     limit: int = 20,
-    modality: str = None,
     cover: str = None,
     subject: int = None,
 ):
@@ -361,27 +358,25 @@ async def get_samples(
 
     filtered_samples = []
     for i, sample in enumerate(ds.samples):
-        if modality and sample["modality"] != modality:
-            continue
         if cover and sample["cover"] != cover:
             continue
         if subject and sample["subject"] != subject:
             continue
 
         # Add index to the sample info for later retrieval
-        sample_info = sample.copy()
-        sample_info["index"] = i
-        sample_info["id"] = f"{split}_{i}"
+        sample_info = {
+            "index": i,
+            "id": f"{split}_{i}",
+            "subject": sample["subject"],
+            "cover": sample["cover"],
+            "modalities": list(sample["image_paths"].keys()),
+            "has_joints": any(j is not None for j in sample["joints"].values())
+        }
 
-        # Keep image_path for the /dataset/image?path= endpoint
-        # or we can use the index-based one later
-        sample_info["image_path"] = str(sample["image_path"])
-
-        if "joints" in sample_info and sample_info["joints"] is not None:
-            sample_info["joints"] = sample_info["joints"][:2, :].T.tolist()
-            sample_info["has_joints"] = True
-        else:
-            sample_info["has_joints"] = False
+        # For the list view, we provide the IR path if available, else first modality
+        default_mod = "IR" if "IR" in sample["image_paths"] else sample_info["modalities"][0]
+        sample_info["image_path"] = str(sample["image_paths"][default_mod])
+        sample_info["modality"] = default_mod
 
         filtered_samples.append(sample_info)
 
@@ -405,41 +400,52 @@ async def get_sample_detail(split: str, idx: int):
 
     sample = ds.samples[idx]
 
-    # Get original image size with EXIF orientation handled
+    # Use IR as reference for size if available
+    ref_mod = "IR" if "IR" in sample["image_paths"] else list(sample["image_paths"].keys())[0]
+    ref_path = sample["image_paths"][ref_mod]
+
     try:
         from PIL import ImageOps
-
-        with Image.open(sample["image_path"]) as img:
+        with Image.open(ref_path) as img:
             img = ImageOps.exif_transpose(img)
             width, height = img.size
     except Exception:
-        width, height = 256, 256  # Fallback
+        width, height = 256, 256
+
+    # Prepare joints - return a dictionary of joints per modality
+    joints_data = {}
+    for mod, joints in sample["joints"].items():
+        if joints is not None:
+            joints_data[mod] = joints[:2, :].T.tolist()
+        else:
+            joints_data[mod] = None
 
     res = {
         "id": idx,
         "split": split,
         "subject": sample["subject"],
-        "modality": sample["modality"],
         "cover": sample["cover"],
-        "filename": sample["image_path"].name,
-        "image_path": str(sample["image_path"]),
+        "modalities": list(sample["image_paths"].keys()),
         "width": width,
         "height": height,
-        "joints": sample["joints"][:2, :].T.tolist()
-        if "joints" in sample and sample["joints"] is not None
-        else None,
+        "joints_per_modality": joints_data,
+        "filenames": {mod: Path(path).name for mod, path in sample["image_paths"].items()}
     }
     return res
 
 
 @app.get("/dataset/image/{split}/{idx}")
-async def get_dataset_image(split: str, idx: int):
+async def get_dataset_image(split: str, idx: int, modality: str = "IR"):
     ds = dataset_container.get(split)
     if not ds or idx >= len(ds):
         raise HTTPException(status_code=404, detail="Sample not found")
 
     sample = ds.samples[idx]
-    return FileResponse(sample["image_path"])
+    if modality not in sample["image_paths"]:
+        # Fallback to first available if requested not found
+        modality = list(sample["image_paths"].keys())[0]
+        
+    return FileResponse(sample["image_paths"][modality])
 
 
 @app.on_event("startup")
@@ -523,13 +529,14 @@ async def predict(file: UploadFile = File(...)):
     try:
         # Load image
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
+        image = Image.open(io.BytesIO(contents)).convert("L")  # Convert to Grayscale (1-channel)
 
         # Preprocess
         original_size = image.size
         image_resized = image.resize(model_container["image_size"])
+        # (1, H, W)
         img_tensor = (
-            torch.from_numpy(np.array(image_resized)).permute(2, 0, 1).float() / 255.0
+            torch.from_numpy(np.array(image_resized)).unsqueeze(0).float() / 255.0
         )
         img_tensor = img_tensor.unsqueeze(0).to(model_container["device"])
 
