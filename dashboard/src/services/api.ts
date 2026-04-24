@@ -40,6 +40,16 @@ export const stopTraining = async () => {
   return response.data;
 };
 
+export const getTrainingConfig = async () => {
+  const response = await axios.get(`${API_BASE_URL}/config/training`);
+  return response.data;
+};
+
+export const saveTrainingConfig = async (config: Record<string, unknown>) => {
+  const response = await axios.post(`${API_BASE_URL}/config/training`, config);
+  return response.data;
+};
+
 export const getDatasetStats = async () => {
   const response = await axios.get(`${API_BASE_URL}/dataset/stats`);
   return response.data;

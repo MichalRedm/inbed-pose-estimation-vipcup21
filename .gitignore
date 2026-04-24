@@ -165,6 +165,7 @@ archive/
 gpu_connection.json
 /models/
 /results/
+configs/user_training.json
 
 
 

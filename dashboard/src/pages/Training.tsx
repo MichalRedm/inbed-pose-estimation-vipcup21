@@ -15,7 +15,13 @@ import {
   Tooltip, 
   ResponsiveContainer 
 } from 'recharts';
-import { getTrainingStatus, startTraining, stopTraining } from '../services/api';
+import { 
+  getTrainingStatus, 
+  startTraining, 
+  stopTraining,
+  getTrainingConfig,
+  saveTrainingConfig
+} from '../services/api';
 
 interface TrainingStatus {
   is_running: boolean;
@@ -48,6 +54,20 @@ const Training: React.FC = () => {
 
   useEffect(() => {
     const initialize = async () => {
+      try {
+        const savedConfig = await getTrainingConfig();
+        if (savedConfig) {
+          setConfig(prev => ({
+            ...prev,
+            lr: savedConfig.lr ?? prev.lr,
+            epochs: savedConfig.epochs ?? prev.epochs,
+            batch_size: savedConfig.batch_size ?? prev.batch_size,
+            remote: savedConfig.remote ?? prev.remote
+          }));
+        }
+      } catch (error) {
+        console.error('Failed to load training config:', error);
+      }
       await fetchStatus();
     };
     
@@ -74,6 +94,15 @@ const Training: React.FC = () => {
 
   const handleStart = async () => {
     try {
+      // Persist the current configuration to the backend first
+      await saveTrainingConfig({
+        lr: config.lr,
+        epochs: config.epochs,
+        batch_size: config.batch_size,
+        remote: config.remote
+      });
+
+      // Start training with the current configuration
       await startTraining({
         training: {
           lr: config.lr,
@@ -83,7 +112,8 @@ const Training: React.FC = () => {
         remote: config.remote
       });
       fetchStatus();
-    } catch {
+    } catch (error) {
+      console.error('Failed to start training:', error);
       alert('Failed to start training');
     }
   };

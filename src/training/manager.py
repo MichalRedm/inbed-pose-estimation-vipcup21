@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
+from src.utils import get_training_config
+
+
 class TrainingManager:
     def __init__(self):
         self.is_running = False
@@ -24,6 +27,23 @@ class TrainingManager:
         if self.is_running:
             return False, "Training already in progress"
 
+        # Load saved config as baseline overrides if nothing is passed or to fill gaps
+        base_overrides = get_training_config()
+
+        # Merge passed overrides into base
+        if config_overrides:
+            # Handle possible nesting from frontend
+            if "training" in config_overrides:
+                base_overrides.update(config_overrides["training"])
+                if "remote" in config_overrides:
+                    base_overrides["remote"] = config_overrides["remote"]
+                if "resume" in config_overrides:
+                    base_overrides["resume"] = config_overrides["resume"]
+            else:
+                base_overrides.update(config_overrides)
+
+        actual_overrides = base_overrides
+
         self.is_running = True
         self._stop_event.clear()
         self.log_history = []
@@ -32,7 +52,7 @@ class TrainingManager:
         self.total_epochs = 0
 
         # Load existing history if resuming
-        if config_overrides and config_overrides.get("resume"):
+        if actual_overrides and actual_overrides.get("resume"):
             self.loss_history = self._load_history()
             if self.loss_history:
                 self.current_epoch = len(self.loss_history)
@@ -40,7 +60,7 @@ class TrainingManager:
             self.loss_history = []
 
         self._thread = threading.Thread(
-            target=self._run_training, args=(config_overrides,)
+            target=self._run_training, args=(actual_overrides,)
         )
         self._thread.start()
         return True, "Training started"
