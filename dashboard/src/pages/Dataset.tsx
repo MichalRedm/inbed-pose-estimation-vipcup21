@@ -9,7 +9,7 @@ import {
   Layers,
   X
 } from 'lucide-react';
-import { getDatasetStats, getSamples, getSampleDetail } from '../services/api';
+import { getDatasetStats, getSamples, getSampleDetail, getDatasetImageUrl } from '../services/api';
 
 // --- Constants & Skeleton Config ---
 
@@ -119,25 +119,24 @@ interface DatasetStats {
 interface DatasetSample {
   id: string;
   index: number;
-  modality: string;
+  modality: string; // Default modality (IR)
   cover: string;
   subject: number;
   image_path: string;
+  modalities: string[];
   has_joints: boolean;
-  joints?: number[][];
 }
 
 interface SampleDetail {
   id: number;
   split: string;
   subject: number;
-  modality: string;
   cover: string;
-  filename: string;
-  image_path: string;
+  modalities: string[];
   width: number;
   height: number;
-  joints: number[][] | null;
+  joints_per_modality: Record<string, number[][] | null>;
+  filenames: Record<string, string>;
 }
 
 // --- Main Component ---
@@ -146,9 +145,9 @@ const Dataset: React.FC = () => {
   const [stats, setStats] = useState<DatasetStats | null>(null);
   const [samples, setSamples] = useState<DatasetSample[]>([]);
   const [split, setSplit] = useState('train');
-  const [modality, setModality] = useState('all');
   const [cover, setCover] = useState('all');
   const [selectedSample, setSelectedSample] = useState<SampleDetail | null>(null);
+  const [viewModality, setViewModality] = useState<string>('IR');
   const [loading, setLoading] = useState(true);
 
   const fetchStats = React.useCallback(async () => {
@@ -165,7 +164,6 @@ const Dataset: React.FC = () => {
     try {
       const data = await getSamples({
         split,
-        modality: modality === 'all' ? undefined : modality,
         cover: cover === 'all' ? undefined : cover,
         limit: 12
       });
@@ -175,7 +173,7 @@ const Dataset: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [split, modality, cover]);
+  }, [split, cover]);
 
   useEffect(() => {
     const load = async () => {
@@ -189,6 +187,7 @@ const Dataset: React.FC = () => {
     try {
       const detail = await getSampleDetail(split, sample.index);
       setSelectedSample(detail);
+      setViewModality('IR'); // Default to IR when opening
     } catch (err) {
       console.error('Failed to fetch sample detail', err);
     }
@@ -247,7 +246,6 @@ const Dataset: React.FC = () => {
           border-color: var(--accent-primary);
         }
         
-        /* FIXED: Added .select-custom styling */
         .select-custom {
           padding: 8px 32px 8px 16px;
           border-radius: 8px;
@@ -258,7 +256,6 @@ const Dataset: React.FC = () => {
           border: 1px solid var(--border-purple);
           cursor: pointer;
           appearance: none;
-          /* Custom SVG arrow */
           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a0a0b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
           background-repeat: no-repeat;
           background-position: right 12px center;
@@ -267,10 +264,6 @@ const Dataset: React.FC = () => {
         .select-custom:focus {
           outline: none;
           border-color: var(--accent-primary);
-        }
-        .select-custom option {
-          background-color: #1a1a24; /* Dark fallback for dropdown list */
-          color: white;
         }
 
         .samples-grid {
@@ -366,6 +359,28 @@ const Dataset: React.FC = () => {
           overflow-y: auto;
           background: var(--bg-secondary);
         }
+        .modality-toggle {
+          display: flex;
+          background: rgba(255,255,255,0.05);
+          padding: 4px;
+          border-radius: 8px;
+          margin-bottom: 16px;
+        }
+        .modality-toggle button {
+          flex: 1;
+          padding: 6px;
+          border: none;
+          background: transparent;
+          color: var(--text-secondary);
+          font-size: 0.8rem;
+          font-weight: 600;
+          cursor: pointer;
+          border-radius: 6px;
+        }
+        .modality-toggle button.active {
+          background: var(--accent-primary);
+          color: white;
+        }
         .close-btn {
           position: absolute;
           top: 20px;
@@ -393,13 +408,13 @@ const Dataset: React.FC = () => {
 
       <div className="dataset-header">
         <h1>Dataset Explorer</h1>
-        <p style={{ color: 'var(--text-secondary)' }}>Explore SLP Dataset samples and ground-truth annotations.</p>
+        <p style={{ color: 'var(--text-secondary)' }}>Explore SLP Dataset samples. Now showing IR and RGB together.</p>
       </div>
 
       {/* Stats Summary */}
       <div className="stats-grid">
         <div className="stat-card glass">
-          <span className="micro-label">Total Samples</span>
+          <span className="micro-label">Total Scenes</span>
           <span className="stat-value">{stats?.total?.toLocaleString() ?? '---'}</span>
           <Database size={16} color="var(--accent-lime)" />
         </div>
@@ -414,8 +429,8 @@ const Dataset: React.FC = () => {
           <Activity size={16} color="var(--accent-pink)" />
         </div>
         <div className="stat-card glass">
-          <span className="micro-label">Modalities</span>
-          <span className="stat-value">{stats?.modalities?.length ?? '---'}</span>
+          <span className="micro-label">Covers</span>
+          <span className="stat-value">{stats?.covers?.length ?? '---'}</span>
           <ImageIcon size={16} color="var(--accent-primary)" />
         </div>
       </div>
@@ -445,16 +460,6 @@ const Dataset: React.FC = () => {
           <div style={{ display: 'flex', gap: '12px' }}>
             <select
               className="glass select-custom"
-              value={modality}
-              onChange={(e) => setModality(e.target.value)}
-            >
-              <option value="all">All Modalities</option>
-              {stats?.modalities?.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-            <select
-              className="glass select-custom"
               value={cover}
               onChange={(e) => setCover(e.target.value)}
             >
@@ -482,12 +487,12 @@ const Dataset: React.FC = () => {
             >
               <div className="image-container">
                 <img
-                  src={`http://localhost:8000/dataset/image/${split}/${sample.index}`}
+                  src={getDatasetImageUrl(split, sample.index, 'IR')}
                   alt={sample.id}
                   className="sample-img"
                 />
                 <div style={{ position: 'absolute', top: '12px', right: '12px' }}>
-                  <span className="modality-badge">{sample.modality}</span>
+                  <span className="modality-badge">IR (default)</span>
                 </div>
               </div>
               <div className="sample-info">
@@ -495,7 +500,11 @@ const Dataset: React.FC = () => {
                   <span style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{sample.id}</span>
                   <span className="micro-label">Cover: {sample.cover}</span>
                 </div>
-                <Maximize2 size={16} color="var(--text-secondary)" />
+                <div style={{ display: 'flex', gap: '4px' }}>
+                   {sample.modalities.map(m => (
+                     <div key={m} style={{ width: '6px', height: '6px', borderRadius: '50%', background: m === 'IR' ? 'var(--accent-primary)' : 'var(--accent-lime)' }}></div>
+                   ))}
+                </div>
               </div>
             </div>
           ))}
@@ -513,12 +522,12 @@ const Dataset: React.FC = () => {
             <div className="modal-main">
               <div className="modal-image-wrapper">
                 <img
-                  src={`http://localhost:8000/dataset/image/${split}/${selectedSample.id}`}
+                  src={getDatasetImageUrl(split, selectedSample.id, viewModality)}
                   alt={String(selectedSample.id)}
                 />
-                {selectedSample.joints && (
+                {selectedSample.joints_per_modality[viewModality] && (
                   <JointOverlay
-                    joints={selectedSample.joints}
+                    joints={selectedSample.joints_per_modality[viewModality]!}
                     width={selectedSample.width}
                     height={selectedSample.height}
                   />
@@ -528,8 +537,20 @@ const Dataset: React.FC = () => {
 
             <div className="modal-sidebar glass">
               <div>
-                <h2 style={{ marginBottom: '8px' }}>Sample Detail</h2>
-                <div className="modality-badge" style={{ marginBottom: '16px' }}>{selectedSample.modality}</div>
+                <h2 style={{ marginBottom: '16px' }}>Sample Detail</h2>
+                
+                <div className="micro-label" style={{ marginBottom: '8px' }}>Select Modality</div>
+                <div className="modality-toggle">
+                  {selectedSample.modalities.map(m => (
+                    <button 
+                      key={m} 
+                      className={viewModality === m ? 'active' : ''}
+                      onClick={() => setViewModality(m)}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -559,7 +580,7 @@ const Dataset: React.FC = () => {
               </div>
 
               <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid var(--border-purple)' }}>
-                <div className="micro-label" style={{ marginBottom: '12px' }}>Joint Coordinates</div>
+                <div className="micro-label" style={{ marginBottom: '12px' }}>Joint Coordinates ({viewModality})</div>
                 <div style={{
                   background: 'var(--bg-secondary)',
                   borderRadius: '8px',
@@ -569,8 +590,8 @@ const Dataset: React.FC = () => {
                   overflowY: 'auto',
                   fontFamily: 'var(--font-mono)'
                 }}>
-                  {selectedSample.joints ? (
-                    selectedSample.joints.map((j, i) => (
+                  {selectedSample.joints_per_modality[viewModality] ? (
+                    selectedSample.joints_per_modality[viewModality]!.map((j, i) => (
                       <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                         <span style={{ color: 'var(--text-secondary)' }}>{JOINT_NAMES[i] || `J${i}`}</span>
                         <span style={{ color: 'var(--accent-lime)' }}>
@@ -581,7 +602,7 @@ const Dataset: React.FC = () => {
                       </div>
                     ))
                   ) : (
-                    <div style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>No annotations available</div>
+                    <div style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>No annotations available for {viewModality}</div>
                   )}
                 </div>
               </div>

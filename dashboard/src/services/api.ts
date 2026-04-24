@@ -72,8 +72,8 @@ export const getSampleDetail = async (split: string, idx: number) => {
   return response.data;
 };
 
-export const getDatasetImageUrl = (split: string, idx: number) => {
-  return `${API_BASE_URL}/dataset/image/${split}/${idx}`;
+export const getDatasetImageUrl = (split: string, idx: number, modality: string = 'IR') => {
+  return `${API_BASE_URL}/dataset/image/${split}/${idx}?modality=${modality}`;
 };
 export const evaluateModel = async (split: string = 'val', checkpoint?: string, force: boolean = false) => {
   const response = await axios.post(`${API_BASE_URL}/evaluate`, null, {
