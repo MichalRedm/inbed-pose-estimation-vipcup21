@@ -241,7 +241,7 @@ class HRNet(nn.Module):
     def __init__(self, config):
         super().__init__()
         num_joints = config.get("num_joints", 14)
-        in_channels = config.get("in_channels", 3)
+        in_channels = config.get("in_channels", 1)
         C = self.W32  # shorthand
 
         # ── Stem ─────────────────────────────────────────────────────────────

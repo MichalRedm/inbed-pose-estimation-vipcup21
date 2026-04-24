@@ -17,7 +17,7 @@ model:
   name: "hrnet"
   hrnet:
     num_joints: 14
-    in_channels: 3 
+    in_channels: 1 
     architecture: "w32"
     heatmap_size: [64, 64]
     sigma: 2.0

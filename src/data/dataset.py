@@ -80,10 +80,11 @@ class VIPCupDataset(Dataset):
                 else:
                     annotations[mod] = None
 
-            # 3. Find images for each modality and cover
+            # Find images for each modality and cover, then group them
             for cover in self.covers:
+                # Collect paths for each modality
+                mod_paths = {}
                 for mod in self.modalities:
-                    # Generic search for modality subfolder
                     mod_dir = subj_dir / mod / cover
                     if not mod_dir.exists():
                         # Fallback for structured root-level modalities or other layouts
@@ -97,29 +98,38 @@ class VIPCupDataset(Dataset):
                                 mod_dir = fb
                                 break
 
-                    if not mod_dir.exists():
-                        continue
+                    if mod_dir.exists():
+                        img_files = sorted(
+                            list(mod_dir.glob("*.jpg")) + list(mod_dir.glob("*.png"))
+                        )
+                        mod_paths[mod] = img_files
 
-                    img_files = sorted(
-                        list(mod_dir.glob("*.jpg")) + list(mod_dir.glob("*.png"))
-                    )
-                    for i, img_path in enumerate(img_files):
-                        sample = {
-                            "image_path": img_path,
-                            "subject": subject_id,
-                            "modality": mod,
-                            "cover": cover,
-                            "index": i,
-                        }
+                if not mod_paths:
+                    continue
+
+                # Determine number of scenes (assume aligned if multiple modalities)
+                num_scenes = min(len(paths) for paths in mod_paths.values())
+                
+                for i in range(num_scenes):
+                    sample = {
+                        "subject": subject_id,
+                        "cover": cover,
+                        "index": i,
+                        "image_paths": {mod: paths[i] for mod, paths in mod_paths.items()},
+                        "joints": {}
+                    }
+                    
+                    # Store joints for each modality if available
+                    for mod in self.modalities:
                         if (
-                            annotations[mod] is not None
+                            annotations.get(mod) is not None
                             and i < annotations[mod].shape[2]
                         ):
-                            sample["joints"] = annotations[mod][:, :, i]
+                            sample["joints"][mod] = annotations[mod][:, :, i]
                         else:
-                            sample["joints"] = None
-
-                        samples.append(sample)
+                            sample["joints"][mod] = None
+                            
+                    samples.append(sample)
         return samples
 
     def __len__(self):
@@ -127,17 +137,25 @@ class VIPCupDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
-        image = Image.open(sample["image_path"]).convert("RGB")
+        
+        # Default to IR for training/evaluation as requested
+        # If IR is not available for some reason (shouldn't happen with min()), fallback to first available
+        target_mod = "IR" if "IR" in sample["image_paths"] else list(sample["image_paths"].keys())[0]
+        image_path = sample["image_paths"][target_mod]
+        
+        # Load and convert to 1-channel (L) for IR, as requested for simplification
+        if target_mod == "IR":
+            image = Image.open(image_path).convert("L")
+        else:
+            image = Image.open(image_path).convert("RGB")
 
         # Resize to standard size
         image = image.resize(self.image_size)
 
-        joints = sample["joints"]
+        joints = sample["joints"].get(target_mod)
         if joints is not None:
             # Need to scale joints if image was resized
-            # Original sizes vary, but commonly 160x120 or similar for IR?
-            # We'll need the original size for scaling.
-            orig_w, orig_h = Image.open(sample["image_path"]).size
+            orig_w, orig_h = Image.open(image_path).size
             scale_x = self.image_size[0] / orig_w
             scale_y = self.image_size[1] / orig_h
 
@@ -150,7 +168,12 @@ class VIPCupDataset(Dataset):
             image = self.transform(image)
         else:
             # Default to tensor conversion
-            image = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0
+            if target_mod == "IR":
+                # (1, H, W)
+                image = torch.from_numpy(np.array(image)).unsqueeze(0).float() / 255.0
+            else:
+                # (3, H, W)
+                image = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0
 
         target_heatmaps = None
         if joints is not None:
@@ -161,8 +184,9 @@ class VIPCupDataset(Dataset):
             "joints": joints,
             "target": target_heatmaps,
             "subject": sample["subject"],
-            "modality": sample["modality"],
+            "modality": target_mod,
             "cover": sample["cover"],
+            "image_paths": {k: str(v) for k, v in sample["image_paths"].items()} # For dashboard/API
         }
 
     def _generate_heatmaps(self, joints):
