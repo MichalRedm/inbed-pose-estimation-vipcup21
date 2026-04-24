@@ -133,8 +133,7 @@ interface SampleDetail {
   subject: number;
   cover: string;
   modalities: string[];
-  width: number;
-  height: number;
+  resolutions: Record<string, { width: number; height: number }>;
   joints_per_modality: Record<string, number[][] | null>;
   filenames: Record<string, string>;
 }
@@ -192,6 +191,8 @@ const Dataset: React.FC = () => {
       console.error('Failed to fetch sample detail', err);
     }
   };
+
+  const currentRes = selectedSample?.resolutions[viewModality] || { width: 256, height: 256 };
 
   return (
     <div className="dataset-page">
@@ -341,13 +342,18 @@ const Dataset: React.FC = () => {
         }
         .modal-image-wrapper {
           position: relative;
-          max-width: 100%;
-          max-height: 100%;
+          width: 100%;
+          height: 80vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
         .modal-image-wrapper img {
           display: block;
+          width: auto;
+          height: auto;
           max-width: 100%;
-          max-height: 80vh;
+          max-height: 100%;
           object-fit: contain;
         }
         .modal-sidebar {
@@ -528,8 +534,8 @@ const Dataset: React.FC = () => {
                 {selectedSample.joints_per_modality[viewModality] && (
                   <JointOverlay
                     joints={selectedSample.joints_per_modality[viewModality]!}
-                    width={selectedSample.width}
-                    height={selectedSample.height}
+                    width={currentRes.width}
+                    height={currentRes.height}
                   />
                 )}
               </div>
@@ -574,7 +580,7 @@ const Dataset: React.FC = () => {
                   <Maximize2 size={18} color="var(--accent-pink)" />
                   <div>
                     <div className="micro-label">Resolution</div>
-                    <div style={{ fontWeight: 600 }}>{selectedSample.width} × {selectedSample.height}</div>
+                    <div style={{ fontWeight: 600 }}>{currentRes.width} × {currentRes.height}</div>
                   </div>
                 </div>
               </div>

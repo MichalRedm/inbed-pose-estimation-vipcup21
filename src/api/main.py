@@ -400,22 +400,21 @@ async def get_sample_detail(split: str, idx: int):
 
     sample = ds.samples[idx]
 
-    # Use IR as reference for size if available
-    ref_mod = "IR" if "IR" in sample["image_paths"] else list(sample["image_paths"].keys())[0]
-    ref_path = sample["image_paths"][ref_mod]
-
-    try:
-        from PIL import ImageOps
-        with Image.open(ref_path) as img:
-            img = ImageOps.exif_transpose(img)
-            width, height = img.size
-    except Exception:
-        width, height = 256, 256
+    # Get resolutions per modality
+    resolutions = {}
+    for mod, path in sample["image_paths"].items():
+        try:
+            with Image.open(path) as img:
+                w, h = img.size
+                resolutions[mod] = {"width": w, "height": h}
+        except Exception:
+            resolutions[mod] = {"width": 256, "height": 256}
 
     # Prepare joints - return a dictionary of joints per modality
     joints_data = {}
     for mod, joints in sample["joints"].items():
         if joints is not None:
+            # joints is (3, 14) -> (x, y, visibility)
             joints_data[mod] = joints[:2, :].T.tolist()
         else:
             joints_data[mod] = None
@@ -426,8 +425,7 @@ async def get_sample_detail(split: str, idx: int):
         "subject": sample["subject"],
         "cover": sample["cover"],
         "modalities": list(sample["image_paths"].keys()),
-        "width": width,
-        "height": height,
+        "resolutions": resolutions,
         "joints_per_modality": joints_data,
         "filenames": {mod: Path(path).name for mod, path in sample["image_paths"].items()}
     }
