@@ -541,9 +541,14 @@ async def predict(file: UploadFile = File(...)):
         img_tensor = img_tensor.unsqueeze(0).to(model_container["device"])
 
         # Inference
+        model = model_container["model"]
         with torch.no_grad():
-            heatmaps = model_container["model"](img_tensor)
-            preds = decode_heatmaps(heatmaps.cpu(), model_container["image_size"])
+            outputs = model(img_tensor)
+            if model.output_type == "heatmap":
+                preds = decode_heatmaps(outputs.cpu(), model_container["image_size"])
+            else:
+                # Direct coordinates (1, 14, 2)
+                preds = outputs.cpu()
 
         # Rescale predictions to original image size
         # preds is (1, 14, 2)

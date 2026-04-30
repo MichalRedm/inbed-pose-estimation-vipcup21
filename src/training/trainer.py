@@ -37,12 +37,21 @@ class PoseTrainer:
                 continue
 
             images = batch["image"].to(self.device)
-            targets = batch["target"].to(self.device)
+            
+            # Select target based on model output type
+            if self.model.output_type == "heatmap":
+                targets = batch["target"].to(self.device)
+            else:
+                # For coordinate models, use joints (B, 3, 14) -> (B, 14, 2)
+                # We extract only (x, y) and normalize if necessary, 
+                # but for now we'll assume the model predicts pixels or the loss handles it.
+                # Standard practice for regression: (B, num_joints * 2) or (B, num_joints, 2)
+                targets = batch["joints"][:, :2, :].permute(0, 2, 1).to(self.device)
 
             # Forward pass
             outputs = self.model(images)
 
-            # Heatmap MSE loss
+            # Loss calculation
             loss = self.criterion(outputs, targets)
 
             # Backward pass
@@ -59,15 +68,18 @@ class PoseTrainer:
     def fit(self, train_loader, val_loader=None):
         print(f"Starting training on {self.device}...")
         history_path = os.path.join(self.save_dir, "history.json")
+        model_name = self.config.get("model", {}).get("name", "model")
 
         for epoch in range(self.epochs):
             train_loss = self.train_epoch(train_loader, epoch)
             val_loss = None
 
             if val_loader:
-                val_loss = self.evaluate(val_loader)
+                val_result = self.evaluate(val_loader)
+                val_loss = val_result["loss"]
                 print(
-                    f"Epoch {epoch + 1}: train_loss={train_loss:.4f} val_loss={val_loss:.4f}"
+                    f"Epoch {epoch + 1}: train_loss={train_loss:.4f} val_loss={val_loss:.4f} "
+                    f"mpjpe={val_result.get('mpjpe', 0):.2f}"
                 )
             else:
                 print(f"Epoch {epoch + 1}: train_loss={train_loss:.4f}")
@@ -79,7 +91,7 @@ class PoseTrainer:
             if (epoch + 1) % 10 == 0:
                 torch.save(
                     self.model.state_dict(),
-                    os.path.join(self.save_dir, f"hrnet_epoch_{epoch + 1}.pth"),
+                    os.path.join(self.save_dir, f"{model_name}_epoch_{epoch + 1}.pth"),
                 )
 
     def _update_history(self, path, epoch, train_loss, val_loss):
@@ -116,8 +128,12 @@ class PoseTrainer:
             if batch is None:
                 continue
             images = batch["image"].to(self.device)
-            targets = batch["target"].to(self.device)
             joints = batch["joints"]  # (B, 3, 14)
+            
+            if self.model.output_type == "heatmap":
+                targets = batch["target"].to(self.device)
+            else:
+                targets = batch["joints"][:, :2, :].permute(0, 2, 1).to(self.device)
 
             outputs = self.model(images)
             loss = self.criterion(outputs, targets)
@@ -126,7 +142,11 @@ class PoseTrainer:
             batches += 1
 
             # Decode predictions
-            preds = decode_heatmaps(outputs.cpu(), image_size)  # (B, 14, 2)
+            if self.model.output_type == "heatmap":
+                preds = decode_heatmaps(outputs.cpu(), image_size)  # (B, 14, 2)
+            else:
+                # If coordinates are predicted directly, they are already (B, 14, 2)
+                preds = outputs.cpu()
 
             all_preds.append(preds)
             all_gts.append(

@@ -243,8 +243,9 @@ class HRNet(BaseModel):
 
     def __init__(self, config):
         super().__init__(config)
-        num_joints = config.get("num_joints", 14)
-        in_channels = config.get("in_channels", 1)
+        config_model = config.get("model", {}).get("hrnet", {})
+        num_joints = config_model.get("num_joints", 14)
+        in_channels = config_model.get("in_channels", 1)
         C = self.W32  # shorthand
 
         # ── Stem ─────────────────────────────────────────────────────────────
@@ -295,6 +296,10 @@ class HRNet(BaseModel):
             nn.ReLU(inplace=True),
             nn.Conv2d(total_channels, num_joints, kernel_size=1),
         )
+
+    @property
+    def output_type(self) -> str:
+        return "heatmap"
 
     def _apply_transition(self, transition, x_list):
         """Apply transition layers, extending x_list if new branches are added."""

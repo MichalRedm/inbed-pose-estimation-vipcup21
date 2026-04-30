@@ -144,8 +144,11 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5):
             if isinstance(joints, torch.Tensor) and joints.shape[0] == 0:
                 continue
 
-            heatmaps = model(images)
-            preds = decode_heatmaps(heatmaps.cpu(), image_size)  # (B, J, 2)
+            outputs = model(images)
+            if model.output_type == "heatmap":
+                preds = decode_heatmaps(outputs.cpu(), image_size)  # (B, J, 2)
+            else:
+                preds = outputs.cpu()
 
             all_preds.append(preds)
             all_gt.append(joints)

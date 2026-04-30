@@ -12,6 +12,15 @@ class BaseModel(nn.Module, ABC):
         super().__init__()
         self.config = config
 
+    @property
+    @abstractmethod
+    def output_type(self) -> str:
+        """
+        Returns the type of output the model produces.
+        Possible values: "heatmap", "coordinates"
+        """
+        pass
+
     @abstractmethod
     def forward(self, x):
         """
@@ -21,6 +30,7 @@ class BaseModel(nn.Module, ABC):
             x: Input tensor of shape (B, in_channels, H, W)
 
         Returns:
-            Heatmaps of shape (B, num_joints, H/4, W/4)
+            If output_type is "heatmap": Heatmaps of shape (B, num_joints, H/k, W/k)
+            If output_type is "coordinates": Joint coordinates of shape (B, num_joints, 2)
         """
         pass

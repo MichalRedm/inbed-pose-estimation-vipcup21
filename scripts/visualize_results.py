@@ -60,7 +60,10 @@ def visualize_samples(checkpoint_path, num_samples=3):
             gt_joints = batch["joints"][0].cpu().numpy().T
 
             output = model(image)
-            pred_joints = decode_heatmaps(output, image_size)[0]  # (J, 2)
+            if model.output_type == "heatmap":
+                pred_joints = decode_heatmaps(output, image_size)[0]  # (J, 2)
+            else:
+                pred_joints = output[0].cpu()  # (J, 2)
 
             # Convert image to numpy for plotting
             img_np = image[0].cpu().numpy().transpose(1, 2, 0)
