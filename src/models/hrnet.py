@@ -14,6 +14,8 @@ W32 configuration:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .base import BaseModel
+from . import register_model
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -223,7 +225,8 @@ def make_transition(in_channels, out_channels_list):
 # ── HRNet-W32 ─────────────────────────────────────────────────────────────────
 
 
-class HRNet(nn.Module):
+@register_model("hrnet")
+class HRNet(BaseModel):
     """
     HRNet-W32 for human pose estimation.
 
@@ -239,7 +242,7 @@ class HRNet(nn.Module):
     W32 = [32, 64, 128, 256]
 
     def __init__(self, config):
-        super().__init__()
+        super().__init__(config)
         num_joints = config.get("num_joints", 14)
         in_channels = config.get("in_channels", 1)
         C = self.W32  # shorthand
@@ -332,8 +335,3 @@ class HRNet(nn.Module):
         ]
         x = torch.cat(upsampled, dim=1)
         return self.head(x)
-
-
-def get_pose_net(config, is_train=True):
-    model = HRNet(config)
-    return model

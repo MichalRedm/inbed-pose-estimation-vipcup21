@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils import load_config
 from src.data.dataset import VIPCupDataset, collate_skip_none
-from src.models.hrnet import get_pose_net
+from src.models import build_model
 
 
 def set_seed(seed=42):
@@ -47,7 +47,6 @@ def train():
     # 1. Load Configuration
     config = load_config()
     train_cfg = config.get("training", {})
-    model_cfg = config.get("model", {}).get("hrnet", {})
     dataset_cfg = config.get("dataset", {})
 
     parser = argparse.ArgumentParser()
@@ -168,7 +167,7 @@ def train():
             print("No annotated validation samples found — skipping val loop.")
 
     # 5. Initialize Model
-    model = get_pose_net(model_cfg).to(device)
+    model = build_model(config).to(device)
     if is_distributed:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[local_rank], output_device=local_rank
@@ -305,9 +304,10 @@ def train():
                 os.makedirs(save_dir, exist_ok=True)
                 # Unwrap model if DDP
                 model_to_save = model.module if is_distributed else model
+                model_name = config.get("model", {}).get("name", "model")
                 torch.save(
                     model_to_save.state_dict(),
-                    os.path.join(save_dir, f"hrnet_epoch_{epoch + 1}.pth"),
+                    os.path.join(save_dir, f"{model_name}_epoch_{epoch + 1}.pth"),
                 )
 
     if is_distributed:

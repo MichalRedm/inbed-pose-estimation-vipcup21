@@ -24,7 +24,7 @@ from src.utils import (  # noqa: E402
     decode_heatmaps,
     LSP_JOINT_NAMES,
 )
-from src.models.hrnet import get_pose_net  # noqa: E402
+from src.models import build_model  # noqa: E402
 from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
 from src.training.trainer import PoseTrainer  # noqa: E402
@@ -199,8 +199,6 @@ def verify_gpu():
             "stderr": f"Internal server error: {str(e)}",
         }
 
-
-# Global model container
 
 # Global containers
 model_container = {}
@@ -459,14 +457,13 @@ async def get_dataset_image(split: str, idx: int, modality: str = "IR"):
 @app.on_event("startup")
 async def startup_event():
     config = load_config()
-    model_cfg = config.get("model", {}).get("hrnet", {})
     dataset_cfg = config.get("dataset", {})
     image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Initialize model
-    model = get_pose_net(model_cfg).to(device)
+    # Initialize model using factory
+    model = build_model(config).to(device)
 
     # Find latest checkpoint
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
@@ -482,13 +479,6 @@ async def startup_event():
         model.load_state_dict(torch.load(latest_checkpoint, map_location=device))
 
     model.eval()
-
-    # Check for remote training dependencies
-    try:
-        print("Remote training dependencies (paramiko, scp) found.")
-    except ImportError:
-        print("WARNING: Remote training dependencies (paramiko, scp) not found.")
-        print("Run 'pip install paramiko scp' to enable remote GPU support.")
 
     model_container["model"] = model
     model_container["device"] = device

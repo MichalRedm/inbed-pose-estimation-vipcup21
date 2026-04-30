@@ -12,21 +12,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils import load_config, decode_heatmaps, draw_pose
 from src.data.dataset import VIPCupDataset, collate_skip_none
-from src.models.hrnet import get_pose_net
+from src.models import build_model
 
 
 def visualize_samples(checkpoint_path, num_samples=3):
     # 1. Load Configuration
     config = load_config()
-    model_cfg = config.get("model", {}).get("hrnet", {})
     dataset_cfg = config.get("dataset", {})
     image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # 2. Initialize Model
-    model = get_pose_net(model_cfg).to(device)
+    # 2. Initialize Model using factory
+    model = build_model(config).to(device)
     print(f"Loading checkpoint: {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint)

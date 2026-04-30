@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils import load_config, decode_heatmaps
 from src.data.dataset import VIPCupDataset, collate_skip_none
-from src.models.hrnet import get_pose_net
+from src.models import build_model
 
 # Leeds Sports Pose joint indices (matches dataset README order)
 JOINT_NAMES = [
@@ -90,20 +90,19 @@ def compute_pck(pred_joints, gt_joints, threshold=0.5):
 
 def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5):
     config = load_config()
-    model_cfg = config.get("model", {}).get("hrnet", {})
     dataset_cfg = config.get("dataset", {})
     image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Load model
-    model = get_pose_net(model_cfg).to(device)
+    # Load model using factory
+    model = build_model(config).to(device)
     print(f"Loading: {checkpoint_path}")
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     model.eval()
 
-    # 3. Setup Dataset
+    # Setup Dataset
     s_val = dataset_cfg.get("subjects_val", [81, 90])
     val_dataset = VIPCupDataset(
         root=data_root,
