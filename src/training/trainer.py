@@ -37,13 +37,13 @@ class PoseTrainer:
                 continue
 
             images = batch["image"].to(self.device)
-            
+
             # Select target based on model output type
             if self.model.output_type == "heatmap":
                 targets = batch["target"].to(self.device)
             else:
                 # For coordinate models, use joints (B, 3, 14) -> (B, 14, 2)
-                # We extract only (x, y) and normalize if necessary, 
+                # We extract only (x, y) and normalize if necessary,
                 # but for now we'll assume the model predicts pixels or the loss handles it.
                 # Standard practice for regression: (B, num_joints * 2) or (B, num_joints, 2)
                 targets = batch["joints"][:, :2, :].permute(0, 2, 1).to(self.device)
@@ -129,7 +129,7 @@ class PoseTrainer:
                 continue
             images = batch["image"].to(self.device)
             joints = batch["joints"]  # (B, 3, 14)
-            
+
             if self.model.output_type == "heatmap":
                 targets = batch["target"].to(self.device)
             else:
