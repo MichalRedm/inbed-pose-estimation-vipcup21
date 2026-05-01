@@ -1,9 +1,11 @@
 import torch
 import numpy as np
+from typing import Optional
 import scipy.io as sio
 from torch.utils.data import Dataset, default_collate
 from pathlib import Path
 from PIL import Image
+from .augmentations import DataAugmenter
 
 
 def collate_skip_none(batch):
@@ -31,6 +33,7 @@ class VIPCupDataset(Dataset):
         covers=["uncover"],
         split="train",
         transform=None,
+        augmenter: Optional[DataAugmenter] = None,
         image_size=(256, 256),
     ):
         self.root = Path(root)
@@ -39,6 +42,7 @@ class VIPCupDataset(Dataset):
         self.modalities = modalities
         self.covers = covers
         self.transform = transform
+        self.augmenter = augmenter
         self.image_size = image_size
         self.heatmap_size = (64, 64)  # HRNet output size
         self.sigma = 2.0
@@ -155,10 +159,16 @@ class VIPCupDataset(Dataset):
         else:
             image = Image.open(image_path).convert("RGB")
 
-        # Resize to standard size
-        image = image.resize(self.image_size)
-
         joints = sample["joints"].get(target_mod)
+
+        # Apply data augmentation if provided (affects both image and joints)
+        if self.augmenter and self.split == "train":
+            image, joints = self.augmenter(image, joints)
+
+        # Resize to standard size if not already handled by augmentation
+        if image.size != self.image_size:
+            image = image.resize(self.image_size)
+
         if joints is not None:
             # Need to scale joints if image was resized
             orig_w, orig_h = Image.open(image_path).size

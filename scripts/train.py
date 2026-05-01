@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils import load_config
 from src.data.dataset import VIPCupDataset, collate_skip_none
+from src.data.augmentations import DataAugmenter
 from src.models import build_model
 
 
@@ -115,11 +116,15 @@ def train():
     s_train = dataset_cfg.get("subjects_train", [1, 30])
     s_val = dataset_cfg.get("subjects_val", [81, 90])
 
+    # Initialize Augmenter
+    augmenter = DataAugmenter(train_cfg.get("augmentation", {}))
+
     train_dataset = VIPCupDataset(
         root=data_root,
         subjects=range(s_train[0], s_train[1] + 1),
         modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
         split="train",
+        augmenter=augmenter,
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
     )
     val_dataset = VIPCupDataset(
