@@ -163,7 +163,7 @@ class VIPCupDataset(Dataset):
 
         # Apply data augmentation if provided (affects both image and joints)
         if self.augmenter and self.split == "train":
-            image, joints = self.augmenter(image, joints)
+            image, joints = self.augmenter(image, joints, is_ir=(target_mod == "IR"))
 
         # Resize to standard size if not already handled by augmentation
         if image.size != self.image_size:
