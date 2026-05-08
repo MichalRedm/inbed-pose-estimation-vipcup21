@@ -10,6 +10,8 @@ import json
 import subprocess
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import shutil
+import time
 
 # Add project root to sys.path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
@@ -226,9 +228,92 @@ async def stop_training():
     return {"message": message}
 
 
+@app.get("/runs")
+async def list_runs():
+    runs_dir = project_root / "results" / "runs"
+    if not runs_dir.exists():
+        return {"runs": []}
+
+    runs = []
+    for run_path in sorted(
+        runs_dir.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True
+    ):
+        if not run_path.is_dir():
+            continue
+
+        run_info = {
+            "id": run_path.name,
+            "created_at": time.ctime(run_path.stat().st_ctime),
+            "has_config": (run_path / "config.json").exists(),
+            "has_history": (run_path / "history.json").exists(),
+        }
+
+        # Load summary from history if available
+        if run_info["has_history"]:
+            try:
+                with open(run_path / "history.json", "r") as f:
+                    history = json.load(f)
+                    if history:
+                        run_info["epochs"] = len(history)
+                        run_info["final_loss"] = history[-1].get("train_loss")
+                        run_info["final_val_loss"] = history[-1].get("val_loss")
+            except Exception:
+                pass
+
+        runs.append(run_info)
+
+    return {"runs": runs}
+
+
+@app.get("/runs/{run_id}")
+async def get_run_details(run_id: str):
+    run_path = project_root / "results" / "runs" / run_id
+    if not run_path.exists():
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    details = {"id": run_id}
+
+    # Load config
+    if (run_path / "config.json").exists():
+        with open(run_path / "config.json", "r") as f:
+            details["config"] = json.load(f)
+
+    # Load history
+    if (run_path / "history.json").exists():
+        with open(run_path / "history.json", "r") as f:
+            details["history"] = json.load(f)
+
+    # List checkpoints
+    ckpt_dir = run_path / "checkpoints"
+    if ckpt_dir.exists():
+        checkpoints = sorted(list(ckpt_dir.glob("*.pth")))
+        details["checkpoints"] = [
+            {
+                "name": cp.name,
+                "size_mb": cp.stat().st_size / (1024 * 1024),
+            }
+            for cp in checkpoints
+        ]
+
+    return details
+
+
+@app.delete("/runs/{run_id}")
+async def delete_run(run_id: str):
+    run_path = project_root / "results" / "runs" / run_id
+    if not run_path.exists():
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    try:
+        shutil.rmtree(run_path)
+        return {"message": f"Run {run_id} deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete run: {str(e)}")
+
+
 @app.post("/evaluate")
 async def evaluate_model(
-    split: str = "val", checkpoint: str = None, force: bool = False
+    split: str = "val", checkpoint: str = None, run_id: str = None, force: bool = False
 ):
     # Normalize split name
     if split == "valid":
@@ -236,7 +321,19 @@ async def evaluate_model(
 
     # Load cache
     cache = load_evaluation_cache()
-    checkpoint_key = checkpoint if checkpoint else "best_model.pth"
+
+    # Determine checkpoint path
+    if run_id:
+        checkpoint_key = f"{run_id}:{checkpoint if checkpoint else 'best_model.pth'}"
+        run_path = project_root / "results" / "runs" / run_id
+        if not run_path.exists():
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        checkpoint_name = checkpoint if checkpoint else "best_model.pth"
+        checkpoint_path = run_path / "checkpoints" / checkpoint_name
+    else:
+        checkpoint_key = checkpoint if checkpoint else "best_model.pth"
+        checkpoint_path = project_root / "models" / "checkpoints" / checkpoint_key
 
     # Check if results are cached
     if not force and checkpoint_key in cache and split in cache[checkpoint_key]:
@@ -246,11 +343,10 @@ async def evaluate_model(
     device = model_container["device"]
     model = model_container["model"]
 
-    if checkpoint:
-        checkpoint_path = project_root / "models" / "checkpoints" / checkpoint
+    if checkpoint or run_id:
         if not checkpoint_path.exists():
             raise HTTPException(
-                status_code=404, detail=f"Checkpoint {checkpoint} not found"
+                status_code=404, detail=f"Checkpoint not found at {checkpoint_path}"
             )
         model.load_state_dict(
             torch.load(checkpoint_path, map_location=device, weights_only=True)

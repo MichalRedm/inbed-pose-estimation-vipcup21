@@ -77,11 +77,25 @@ def train():
         action="store_true",
         help="Resume training from the latest checkpoint in save_dir",
     )
+    parser.add_argument(
+        "--run_id", type=str, default=None, help="Unique ID for this training run"
+    )
     args, _ = parser.parse_known_args()
 
     data_root = args.data_root
-    save_dir = train_cfg.get("save_dir", "models/checkpoints")
+    run_root = None
+    if args.run_id:
+        run_root = Path(__file__).parent.parent / "results" / "runs" / args.run_id
+        save_dir = str(run_root / "checkpoints")
+        os.makedirs(save_dir, exist_ok=True)
+        # Save config snapshot
+        with open(run_root / "config.json", "w") as f:
+            json.dump(config, f, indent=4)
+    else:
+        save_dir = train_cfg.get("save_dir", "models/checkpoints")
+
     start_epoch = 0
+    best_val_loss = float("inf")
 
     # 2. Check for Remote Execution
     if config.get("remote", {}).get("use_remote", False):
@@ -281,7 +295,11 @@ def train():
 
         # Save history and checkpoint (only rank 0)
         if rank <= 0:
-            history_path = os.path.join(save_dir, "history.json")
+            if run_root:
+                history_path = os.path.join(run_root, "history.json")
+            else:
+                history_path = os.path.join(save_dir, "history.json")
+
             history = []
             if os.path.exists(history_path):
                 with open(history_path, "r") as f:
@@ -313,6 +331,16 @@ def train():
                 torch.save(
                     model_to_save.state_dict(),
                     os.path.join(save_dir, f"{model_name}_epoch_{epoch + 1}.pth"),
+                )
+
+            # Save best model
+            if val_loss is not None and val_loss < best_val_loss:
+                best_val_loss = val_loss
+                os.makedirs(save_dir, exist_ok=True)
+                model_to_save = model.module if is_distributed else model
+                torch.save(
+                    model_to_save.state_dict(),
+                    os.path.join(save_dir, "best_model.pth"),
                 )
 
     if is_distributed:

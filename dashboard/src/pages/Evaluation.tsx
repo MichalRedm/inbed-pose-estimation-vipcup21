@@ -19,12 +19,20 @@ import {
   ResponsiveContainer,
   Cell
 } from 'recharts';
-import { getModels, evaluateModel } from '../services/api';
+import { getModels, evaluateModel, getRuns } from '../services/api';
 
 interface Model {
   name: string;
   path: string;
   size_mb: number;
+}
+
+interface RunSummary {
+  id: string;
+  created_at: string;
+  epochs?: number;
+  final_loss?: number;
+  final_val_loss?: number;
 }
 
 interface PerJointMetric {
@@ -51,7 +59,9 @@ const InfoTooltip = ({ text }: { text: string }) => (
 
 const Evaluation: React.FC = () => {
   const [models, setModels] = useState<Model[]>([]);
+  const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [selectedRun, setSelectedRun] = useState<string>('');
   const [selectedSplit, setSelectedSplit] = useState<string>('val');
   const [results, setResults] = useState<EvaluationResults | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -61,19 +71,23 @@ const Evaluation: React.FC = () => {
     const fetchInitialData = async () => {
       setIsLoading(true);
       try {
-        const data = await getModels();
-        setModels(data.models);
-        if (data.models.length > 0) {
-          const latestModel = data.models[data.models.length - 1].name;
+        const [modelsData, runsData] = await Promise.all([getModels(), getRuns()]);
+        setModels(modelsData.models);
+        setRuns(runsData.runs);
+        
+        if (modelsData.models.length > 0) {
+          const latestModel = modelsData.models[modelsData.models.length - 1].name;
           setSelectedModel(latestModel);
           
           // Try to load cached results for the latest model
           try {
-            const evalRes = await evaluateModel(selectedSplit, latestModel, false);
+            const evalRes = await evaluateModel(selectedSplit, latestModel, undefined, false);
             setResults(evalRes);
           } catch {
             console.log('No cached results available yet');
           }
+        } else if (runsData.runs.length > 0) {
+          setSelectedRun(runsData.runs[0].id);
         }
       } catch (err) {
         console.error('Failed to fetch initial evaluation data:', err);
@@ -88,7 +102,7 @@ const Evaluation: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await evaluateModel(selectedSplit, selectedModel, force);
+      const data = await evaluateModel(selectedSplit, selectedModel, selectedRun, force);
       setResults(data);
     } catch (err) {
       console.error('Evaluation failed:', err);
@@ -124,17 +138,33 @@ const Evaluation: React.FC = () => {
             </div>
             
             <div className="control-group">
-              <label className="text-uppercase micro-label" style={{ display: 'block', marginBottom: '8px', opacity: 0.7 }}>Checkpoint</label>
+              <label className="text-uppercase micro-label" style={{ display: 'block', marginBottom: '8px', opacity: 0.7 }}>Source</label>
               <div style={{ position: 'relative' }}>
                 <select 
-                  value={selectedModel} 
-                  onChange={(e) => setSelectedModel(e.target.value)}
+                  value={selectedRun ? `run:${selectedRun}` : selectedModel} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val.startsWith('run:')) {
+                      setSelectedRun(val.replace('run:', ''));
+                      setSelectedModel('');
+                    } else {
+                      setSelectedModel(val);
+                      setSelectedRun('');
+                    }
+                  }}
                   className="glass-input"
                   style={{ width: '100%', appearance: 'none', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-purple)', borderRadius: '8px', color: 'var(--text-primary)' }}
                 >
-                  {models.map(m => (
-                    <option key={m.name} value={m.name}>{m.name}</option>
-                  ))}
+                  <optgroup label="Training Runs">
+                    {runs.map(r => (
+                      <option key={r.id} value={`run:${r.id}`}>Run: {r.id}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Global Models">
+                    {models.map(m => (
+                      <option key={m.name} value={m.name}>{m.name}</option>
+                    ))}
+                  </optgroup>
                 </select>
                 <Box size={16} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5, pointerEvents: 'none' }} />
               </div>

@@ -75,9 +75,24 @@ export const getSampleDetail = async (split: string, idx: number) => {
 export const getDatasetImageUrl = (split: string, idx: number, modality: string = 'IR') => {
   return `${API_BASE_URL}/dataset/image/${split}/${idx}?modality=${modality}`;
 };
-export const evaluateModel = async (split: string = 'val', checkpoint?: string, force: boolean = false) => {
+export const evaluateModel = async (split: string = 'val', checkpoint?: string, runId?: string, force: boolean = false) => {
   const response = await axios.post(`${API_BASE_URL}/evaluate`, null, {
-    params: { split, checkpoint, force }
+    params: { split, checkpoint, run_id: runId, force }
   });
+  return response.data;
+};
+
+export const getRuns = async () => {
+  const response = await axios.get(`${API_BASE_URL}/runs`);
+  return response.data;
+};
+
+export const getRunDetails = async (runId: string) => {
+  const response = await axios.get(`${API_BASE_URL}/runs/${runId}`);
+  return response.data;
+};
+
+export const deleteRun = async (runId: string) => {
+  const response = await axios.delete(`${API_BASE_URL}/runs/${runId}`);
   return response.data;
 };

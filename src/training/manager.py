@@ -20,6 +20,7 @@ class TrainingManager:
         self.loss_history: List[float] = []
         self.log_history: List[str] = []
         self.status_message = "Idle"
+        self.current_run_id: Optional[str] = None
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -45,6 +46,7 @@ class TrainingManager:
         actual_overrides = base_overrides
 
         self.is_running = True
+        self.current_run_id = f"run_{time.strftime('%Y%m%d_%H%M%S')}"
         self._stop_event.clear()
         self.log_history = []
         self.progress = 0.0
@@ -82,6 +84,7 @@ class TrainingManager:
 
         return {
             "is_running": self.is_running,
+            "run_id": self.current_run_id,
             "progress": self.progress,
             "current_epoch": self.current_epoch,
             "total_epochs": self.total_epochs,
@@ -93,7 +96,17 @@ class TrainingManager:
     def _load_history(self) -> List[float]:
         try:
             project_root = Path(__file__).parent.parent.parent
-            history_path = project_root / "models" / "checkpoints" / "history.json"
+            if self.current_run_id:
+                history_path = (
+                    project_root
+                    / "results"
+                    / "runs"
+                    / self.current_run_id
+                    / "history.json"
+                )
+            else:
+                history_path = project_root / "models" / "checkpoints" / "history.json"
+
             if history_path.exists():
                 with open(history_path, "r") as f:
                     data = json.load(f)
@@ -130,6 +143,9 @@ class TrainingManager:
                     cmd.extend(["--batch_size", str(config_overrides["batch_size"])])
                 if config_overrides.get("resume"):
                     cmd.append("--resume")
+
+            if self.current_run_id:
+                cmd.extend(["--run_id", self.current_run_id])
 
             print(f"  Executing training command: {' '.join(cmd)}")
             process = subprocess.Popen(

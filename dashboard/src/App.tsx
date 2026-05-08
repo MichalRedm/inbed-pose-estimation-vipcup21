@@ -8,6 +8,7 @@ import Models from './pages/Models';
 import Settings from './pages/Settings';
 import Dataset from './pages/Dataset';
 import Evaluation from './pages/Evaluation';
+import RunsHistory from './pages/RunsHistory';
 
 
 
@@ -18,6 +19,7 @@ const App: React.FC = () => {
         <Route path="/" element={<Layout />}>
           <Route index element={<Overview />} />
           <Route path="training" element={<Training />} />
+          <Route path="history" element={<RunsHistory />} />
           <Route path="inference" element={<Inference />} />
           <Route path="models" element={<Models />} />
           <Route path="dataset" element={<Dataset />} />
