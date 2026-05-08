@@ -48,6 +48,11 @@ class VIPCupDataset(Dataset):
         self.sigma = 2.0
 
         self.samples = self._prepare_samples()
+        if not self.samples:
+            raise ValueError(
+                f"No samples found for split='{split}', subjects={subjects}, covers={covers}. "
+                f"Check your data path: {self.root}"
+            )
 
     def _prepare_samples(self):
         samples = []
