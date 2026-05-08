@@ -51,6 +51,7 @@ const Evaluation: React.FC = () => {
   const [results, setResults] = useState<EvaluationResults | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [isRemote, setIsRemote] = useState<boolean>(false);
 
   useEffect(() => {
     const loadCachedEvaluation = async () => {
@@ -62,7 +63,7 @@ const Evaluation: React.FC = () => {
       setIsLoading(true);
       try {
         // Try to load cached results for the currently selected model/run
-        const evalRes = await evaluateModel(selectedSplit, selectedModel, selectedRun, false);
+        const evalRes = await evaluateModel(selectedSplit, selectedModel, selectedRun, false, isRemote);
         setResults(evalRes);
       } catch {
         console.log('No cached results available yet for this selection');
@@ -73,13 +74,13 @@ const Evaluation: React.FC = () => {
     };
     
     loadCachedEvaluation();
-  }, [selectedSplit, selectedModel, selectedRun]);
+  }, [selectedSplit, selectedModel, selectedRun, isRemote]);
 
   const handleEvaluate = async (force: boolean = true) => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await evaluateModel(selectedSplit, selectedModel, selectedRun, force);
+      const data = await evaluateModel(selectedSplit, selectedModel, selectedRun, force, isRemote);
       setResults(data);
     } catch (err) {
       console.error('Evaluation failed:', err);
@@ -151,6 +152,20 @@ const Evaluation: React.FC = () => {
                   Validation
                 </button>
               </div>
+            </div>
+
+            <div className="control-group" style={{ marginTop: '20px' }}>
+              <label className="flex-row" style={{ gap: '8px', cursor: 'pointer', justifyContent: 'flex-start' }}>
+                <input 
+                  type="checkbox" 
+                  checked={isRemote} 
+                  onChange={(e) => setIsRemote(e.target.checked)}
+                />
+                <span className="text-uppercase micro-label" style={{ opacity: 0.7 }}>Use Remote GPU</span>
+              </label>
+              <p className="text-secondary" style={{ fontSize: '0.7rem', marginTop: '4px' }}>
+                Execute evaluation on the configured remote server instead of locally.
+              </p>
             </div>
 
             <button 
