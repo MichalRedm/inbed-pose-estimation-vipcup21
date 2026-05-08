@@ -6,8 +6,8 @@ import random
 
 class ThermalDiffusionAugmenter:
     """
-    Simulates the effect of a blanket on IR images by diffusing and dampening 
-    the heat signature. It uses joint coordinates to realistically place 
+    Simulates the effect of a blanket on IR images by diffusing and dampening
+    the heat signature. It uses joint coordinates to realistically place
     the "blanket" over the subject.
     """
 
@@ -15,13 +15,15 @@ class ThermalDiffusionAugmenter:
         self.probability = probability
         self.is_training = is_training
 
-    def __call__(self, image: Image.Image, joints: Optional[np.ndarray], is_ir: bool) -> Image.Image:
+    def __call__(
+        self, image: Image.Image, joints: Optional[np.ndarray], is_ir: bool
+    ) -> Image.Image:
         # Skip if not training, if it's NOT an IR image, or if the random check fails
         if not self.is_training or not is_ir or random.random() > self.probability:
             return image
 
         w, h = image.size
-        
+
         # Create a mask for the "covered" area
         mask = Image.new("L", image.size, 0)
         draw = ImageDraw.Draw(mask)
@@ -31,13 +33,13 @@ class ThermalDiffusionAugmenter:
         coverage_options = []
         if joints is not None:
             # Check visibility/annotation
-            if joints[2, 0] < 2 and joints[2, 5] < 2: # ankles
+            if joints[2, 0] < 2 and joints[2, 5] < 2:  # ankles
                 coverage_options.append(min(joints[1, 0], joints[1, 5]))
-            if joints[2, 1] < 2 and joints[2, 4] < 2: # knees
+            if joints[2, 1] < 2 and joints[2, 4] < 2:  # knees
                 coverage_options.append(min(joints[1, 1], joints[1, 4]))
-            if joints[2, 2] < 2 and joints[2, 3] < 2: # hips
+            if joints[2, 2] < 2 and joints[2, 3] < 2:  # hips
                 coverage_options.append(min(joints[1, 2], joints[1, 3]))
-            if joints[2, 8] < 2 and joints[2, 9] < 2: # shoulders
+            if joints[2, 8] < 2 and joints[2, 9] < 2:  # shoulders
                 coverage_options.append(min(joints[1, 8], joints[1, 9]))
 
         if coverage_options:
@@ -50,7 +52,7 @@ class ThermalDiffusionAugmenter:
         # Add slight randomization to the top edge
         left_y = base_y + random.randint(-20, 20)
         right_y = base_y + random.randint(-20, 20)
-        
+
         polygon = [(0, left_y), (w, right_y), (w, h), (0, h)]
         draw.polygon(polygon, fill=255)
 
@@ -64,7 +66,7 @@ class ThermalDiffusionAugmenter:
         # Convert to numpy for intensity manipulation
         img_np = np.array(image).astype(np.float32)
         dampened_np = img_np * random.uniform(0.5, 0.8)
-        
+
         # Add slight thermal noise
         noise = np.random.normal(0, 3, dampened_np.shape).astype(np.float32)
         dampened_np = np.clip(dampened_np + noise, 0, 255).astype(np.uint8)
@@ -72,8 +74,10 @@ class ThermalDiffusionAugmenter:
 
         # 3. Combine blur and dampening
         # We blend the original with the blurred+dampened version using the mask
-        blurred_dampened = Image.composite(dampened.filter(ImageFilter.GaussianBlur(radius=2)), blurred, mask)
-        
+        blurred_dampened = Image.composite(
+            dampened.filter(ImageFilter.GaussianBlur(radius=2)), blurred, mask
+        )
+
         # Final composition: original image blended with the "under-blanket" version
         final_image = Image.composite(blurred_dampened, image, mask)
 

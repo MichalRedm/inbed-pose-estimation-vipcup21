@@ -243,15 +243,21 @@ def train():
                     history_path = os.path.join(run_root, "history.json")
                 else:
                     history_path = os.path.join(save_dir, "history.json")
-                
+
                 if os.path.exists(history_path):
                     with open(history_path, "r") as f:
                         try:
                             history = json.load(f)
-                            val_losses = [e.get("val_loss") for e in history if e.get("val_loss") is not None]
+                            val_losses = [
+                                e.get("val_loss")
+                                for e in history
+                                if e.get("val_loss") is not None
+                            ]
                             if val_losses:
                                 best_val_loss = min(val_losses)
-                                print(f"Loaded best val_loss from history: {best_val_loss:.6f}")
+                                print(
+                                    f"Loaded best val_loss from history: {best_val_loss:.6f}"
+                                )
                         except Exception:
                             pass
         elif rank <= 0:

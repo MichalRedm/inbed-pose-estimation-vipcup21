@@ -22,7 +22,12 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.utils import load_config, decode_heatmaps, compute_mpjpe, LSP_JOINT_NAMES as JOINT_NAMES
+from src.utils import (
+    load_config,
+    decode_heatmaps,
+    compute_mpjpe,
+    LSP_JOINT_NAMES as JOINT_NAMES,
+)
 from src.data.dataset import VIPCupDataset, collate_skip_none
 from src.models import build_model
 
@@ -73,7 +78,9 @@ def compute_pck(pred_joints, gt_joints, threshold=0.5):
     return per_joint_pck, per_joint_count, mean_pck
 
 
-def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5, save_json=None):
+def evaluate(
+    checkpoint_path, data_root, batch_size=16, pck_threshold=0.5, save_json=None
+):
     config = load_config()
     dataset_cfg = config.get("dataset", {})
     image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
@@ -93,25 +100,27 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5, save_
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if rank <= 0:
-        print(f"Using device: {device} (Distributed: {is_distributed}, World Size: {world_size})")
+        print(
+            f"Using device: {device} (Distributed: {is_distributed}, World Size: {world_size})"
+        )
 
     # Load model using factory
     model = build_model(config).to(device)
     if rank <= 0:
         print(f"Loading: {checkpoint_path}")
-    
+
     state_dict = torch.load(checkpoint_path, map_location=device)
     # Handle both DDP and non-DDP checkpoints
     if any(k.startswith("module.") for k in state_dict.keys()):
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
-    
+
     model.load_state_dict(state_dict)
-    
+
     if is_distributed:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[local_rank], output_device=local_rank
         )
-    
+
     model.eval()
 
     # Setup Dataset
@@ -127,11 +136,15 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5, save_
 
     if len(val_dataset) == 0:
         if rank <= 0:
-            print("WARNING: Validation set is empty. Check data_root and covers configuration.")
+            print(
+                "WARNING: Validation set is empty. Check data_root and covers configuration."
+            )
         return
 
-    val_sampler = DistributedSampler(val_dataset, shuffle=False) if is_distributed else None
-    
+    val_sampler = (
+        DistributedSampler(val_dataset, shuffle=False) if is_distributed else None
+    )
+
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
@@ -140,7 +153,7 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5, save_
         collate_fn=collate_skip_none,
         sampler=val_sampler,
     )
-    
+
     if rank <= 0:
         print(f"Validation samples: {len(val_dataset)}")
 
@@ -162,30 +175,34 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5, save_
             # Skip unannotated samples
             if joints is None:
                 continue
-            
+
             outputs = model(images)
-            
+
             # Loss calculation if targets available
             if targets is not None:
                 total_loss += criterion(outputs, targets).item()
                 num_batches += 1
 
-            if model.module.output_type == "heatmap" if is_distributed else model.output_type == "heatmap":
+            if (
+                model.module.output_type == "heatmap"
+                if is_distributed
+                else model.output_type == "heatmap"
+            ):
                 preds = decode_heatmaps(outputs.cpu(), image_size)  # (B, J, 2)
             else:
                 preds = outputs.cpu()
 
             # Compute PCK counts for this batch
             p_pck, p_count, _ = compute_pck(preds, joints, threshold=pck_threshold)
-            
+
             # Compute MPJPE for this batch
-            gt_xy = joints[:, :2, :].permute(0, 2, 1) # (B, J, 2)
+            gt_xy = joints[:, :2, :].permute(0, 2, 1)  # (B, J, 2)
             _, p_error_arr = compute_mpjpe(preds, gt_xy, visibility=joints)
-            
+
             # Convert to tensors and accumulate
             per_joint_correct_total += (p_pck * p_count).to(device)
             per_joint_count_total += p_count.to(device)
-            
+
             p_error_tensor = torch.from_numpy(p_error_arr).float()
             per_joint_error_total += (p_error_tensor * p_count.cpu()).to(device)
 
@@ -194,7 +211,7 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5, save_
         dist.all_reduce(per_joint_correct_total, op=dist.ReduceOp.SUM)
         dist.all_reduce(per_joint_count_total, op=dist.ReduceOp.SUM)
         dist.all_reduce(per_joint_error_total, op=dist.ReduceOp.SUM)
-        
+
         if num_batches > 0:
             loss_tensor = torch.tensor([total_loss, float(num_batches)], device=device)
             dist.all_reduce(loss_tensor, op=dist.ReduceOp.SUM)
@@ -203,12 +220,18 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5, save_
 
     if rank <= 0:
         avg_loss = total_loss / max(num_batches, 1)
-        per_joint_pck = (per_joint_correct_total / per_joint_count_total.clamp(min=1)).cpu().numpy()
-        per_joint_error = (per_joint_error_total / per_joint_count_total.clamp(min=1)).cpu().numpy()
+        per_joint_pck = (
+            (per_joint_correct_total / per_joint_count_total.clamp(min=1)).cpu().numpy()
+        )
+        per_joint_error = (
+            (per_joint_error_total / per_joint_count_total.clamp(min=1)).cpu().numpy()
+        )
         mean_pck = per_joint_pck.mean()
         mean_mpjpe = per_joint_error.mean()
 
-        print(f"\n=== Evaluation Results (Loss: {avg_loss:.4f}, MPJPE: {mean_mpjpe:.1f}) ===")
+        print(
+            f"\n=== Evaluation Results (Loss: {avg_loss:.4f}, MPJPE: {mean_mpjpe:.1f}) ==="
+        )
         print(f"=== PCK@{pck_threshold} Results ===")
         print(f"{'Joint':<15} {'PCK':>6} {'MPJPE':>8}")
         print("-" * 32)
@@ -225,11 +248,12 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5, save_
             "per_joint_error": per_joint_error.tolist(),
             "joint_names": JOINT_NAMES,
             "threshold": pck_threshold,
-            "samples": len(val_dataset)
+            "samples": len(val_dataset),
         }
 
         if save_json:
             import json
+
             save_path = Path(save_json)
             save_path.parent.mkdir(parents=True, exist_ok=True)
             with open(save_path, "w") as f:
@@ -256,7 +280,9 @@ if __name__ == "__main__":
         default=0.5,
         help="PCK threshold as fraction of torso diameter",
     )
-    parser.add_argument("--save_json", type=str, default=None, help="Save metrics to JSON file")
+    parser.add_argument(
+        "--save_json", type=str, default=None, help="Save metrics to JSON file"
+    )
     parser.add_argument("--run_id", type=str, default=None, help="Run ID to evaluate")
     args = parser.parse_args()
 
@@ -273,7 +299,13 @@ if __name__ == "__main__":
             print(f"Checkpoint not found: {checkpoint_path}")
             sys.exit(1)
 
-    evaluate(checkpoint_path, args.data_root, args.batch_size, args.threshold, save_json=args.save_json)
+    evaluate(
+        checkpoint_path,
+        args.data_root,
+        args.batch_size,
+        args.threshold,
+        save_json=args.save_json,
+    )
 
     # Cleanup DDP
     if dist.is_initialized():

@@ -290,10 +290,10 @@ class TrainingManager:
                 if process.returncode == 0:
                     self.status_message = "Training complete. Starting evaluation..."
                     self.progress = 0.95  # Almost done
-                    
+
                     # Trigger evaluation
                     success = self._run_evaluation(is_remote, self.current_run_id)
-                    
+
                     if success:
                         self.status_message = "Finished"
                         self.progress = 1.0
@@ -308,7 +308,6 @@ class TrainingManager:
         finally:
             self.is_running = False
 
-
     def _run_evaluation(self, is_remote: bool, run_id: str) -> bool:
         """Runs evaluation script for a specific run_id."""
         try:
@@ -322,7 +321,7 @@ class TrainingManager:
                 ]
             else:
                 # For local evaluation, we might want to use torchrun if multiple GPUs are available,
-                # but for simplicity and common local dev, we use normal python. 
+                # but for simplicity and common local dev, we use normal python.
                 # scripts/evaluate.py handles DDP if RANK env is set.
                 cmd = [
                     sys.executable,
@@ -334,7 +333,7 @@ class TrainingManager:
                 ]
 
             print(f"[TrainingManager] Running evaluation: {' '.join(cmd)}")
-            
+
             # Run evaluation synchronously (within the training thread)
             eval_process = subprocess.Popen(
                 cmd,
@@ -349,7 +348,7 @@ class TrainingManager:
                 if self._stop_event.is_set():
                     eval_process.terminate()
                     return False
-                
+
                 line = line.strip()
                 if line:
                     timestamp = time.strftime("%H:%M:%S")

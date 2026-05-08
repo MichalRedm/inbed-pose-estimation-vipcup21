@@ -314,11 +314,11 @@ async def delete_run(run_id: str):
 
 @app.post("/evaluate")
 async def evaluate_model(
-    split: str = "val", 
-    checkpoint: str = None, 
-    run_id: str = None, 
+    split: str = "val",
+    checkpoint: str = None,
+    run_id: str = None,
     force: bool = False,
-    remote: bool = False
+    remote: bool = False,
 ):
     # Normalize split name
     if split == "valid":
@@ -337,7 +337,7 @@ async def evaluate_model(
 
         checkpoint_name = checkpoint if checkpoint else "best_model.pth"
         checkpoint_path = run_path / "checkpoints" / checkpoint_name
-        
+
         # Load run-specific config if available
         run_config_path = run_path / "config.json"
         if run_config_path.exists():
@@ -366,20 +366,24 @@ async def evaluate_model(
 
     if remote:
         if not run_id:
-            raise HTTPException(status_code=400, detail="run_id is required for remote evaluation")
-        
+            raise HTTPException(
+                status_code=400, detail="run_id is required for remote evaluation"
+            )
+
         # Trigger remote evaluation via manager helper
         # We run it synchronously here since the API is already blocking for local eval
         success = training_manager._run_evaluation(is_remote=True, run_id=run_id)
-        
+
         if not success:
             raise HTTPException(status_code=500, detail="Remote evaluation failed")
-            
+
         # Load the downloaded results
         eval_file = project_root / "results" / "runs" / run_id / "evaluation.json"
         if not eval_file.exists():
-            raise HTTPException(status_code=500, detail="Evaluation results not found after remote run")
-            
+            raise HTTPException(
+                status_code=500, detail="Evaluation results not found after remote run"
+            )
+
         with open(eval_file, "r") as f:
             metrics = json.load(f)
     else:
@@ -390,7 +394,9 @@ async def evaluate_model(
             ds = list(dataset_container.values())[0] if dataset_container else None
 
         if not ds:
-            raise HTTPException(status_code=404, detail=f"Dataset split {split} not found")
+            raise HTTPException(
+                status_code=404, detail=f"Dataset split {split} not found"
+            )
 
         loader = DataLoader(
             ds, batch_size=8, shuffle=False, num_workers=0, collate_fn=collate_skip_none
@@ -649,7 +655,10 @@ async def startup_event():
 
 @app.post("/predict")
 async def predict(
-    file: UploadFile = File(...), model_name: str = Form(None), run_id: str = Form(None), checkpoint: str = Form(None)
+    file: UploadFile = File(...),
+    model_name: str = Form(None),
+    run_id: str = Form(None),
+    checkpoint: str = Form(None),
 ):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image.")
@@ -693,17 +702,22 @@ async def predict(
 
         # Check if file exists and get mtime
         if checkpoint_path and not os.path.exists(checkpoint_path):
-            raise HTTPException(status_code=404, detail=f"Checkpoint not found: {checkpoint_path}")
-        
+            raise HTTPException(
+                status_code=404, detail=f"Checkpoint not found: {checkpoint_path}"
+            )
+
         file_mtime = os.path.getmtime(checkpoint_path) if checkpoint_path else 0
 
         # Load model if not already loaded or if different run/checkpoint requested or if file is newer
         model_key = f"{model_name}_{run_id}_{checkpoint}"
-        
+
         needs_load = False
         if model_key not in model_container:
             needs_load = True
-        elif isinstance(model_container[model_key], dict) and model_container[model_key].get("mtime", 0) < file_mtime:
+        elif (
+            isinstance(model_container[model_key], dict)
+            and model_container[model_key].get("mtime", 0) < file_mtime
+        ):
             print(f"[API] Checkpoint {checkpoint} updated on disk. Reloading...")
             needs_load = True
 
@@ -711,39 +725,47 @@ async def predict(
         device = model_container["device"]
         if needs_load and checkpoint_path:
             print(f"[API] Loading model: {model_name} from {checkpoint_path}")
-            
+
             # Use run-specific config if available
             current_config = model_container["config"]
             if run_id:
-                run_config_path = project_root / "results" / "runs" / run_id / "config.json"
+                run_config_path = (
+                    project_root / "results" / "runs" / run_id / "config.json"
+                )
                 if run_config_path.exists():
                     try:
                         with open(run_config_path, "r") as f:
                             current_config = json.load(f)
                         print(f"[API] Using run-specific config for {run_id}")
                     except Exception as e:
-                        print(f"[API] Warning: Failed to load run config, using global: {e}")
+                        print(
+                            f"[API] Warning: Failed to load run config, using global: {e}"
+                        )
 
             # Build new model
             model = build_model(current_config).to(device)
             # Load state dict
             model.load_state_dict(torch.load(checkpoint_path, map_location=device))
             model.eval()
-            
+
             # Update container
-            model_container[model_key] = {
-                "model": model,
-                "mtime": file_mtime
-            }
-        
+            model_container[model_key] = {"model": model, "mtime": file_mtime}
+
         # Select active model from cache
         if model_key in model_container:
             active_model_entry = model_container[model_key]
-            model = active_model_entry["model"] if isinstance(active_model_entry, dict) else active_model_entry
+            model = (
+                active_model_entry["model"]
+                if isinstance(active_model_entry, dict)
+                else active_model_entry
+            )
         elif "model" in model_container:
             model = model_container["model"]
         else:
-            raise HTTPException(status_code=500, detail="No model available for inference. Check if checkpoints exist.")
+            raise HTTPException(
+                status_code=500,
+                detail="No model available for inference. Check if checkpoints exist.",
+            )
 
         with torch.no_grad():
             outputs = model(img_tensor)

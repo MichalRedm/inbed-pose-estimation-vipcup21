@@ -181,7 +181,7 @@ def compute_pck(preds, gts, visibility=None, threshold=0.5):
         torso_dist = np.sqrt(np.sum((shoulder_mid - hip_mid) ** 2, axis=-1))  # (B,)
         # Ensure minimum torso distance to avoid division by zero
         torso_dist = np.maximum(torso_dist, 1e-6)
-        
+
         # Reshape torso_dist to (B, 1) for broadcasting
         effective_threshold = torso_dist[:, np.newaxis] * threshold
     else:

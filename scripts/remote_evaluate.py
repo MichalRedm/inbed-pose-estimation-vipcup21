@@ -18,12 +18,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils.remote_gpu import GPUManager
 
+
 def main():
     load_dotenv()
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--run_id", type=str, required=True, help="Run ID to evaluate"
-    )
+    parser.add_argument("--run_id", type=str, required=True, help="Run ID to evaluate")
     parser.add_argument(
         "--max_gpus", type=int, default=None, help="Maximum number of GPUs to use"
     )
@@ -50,12 +49,19 @@ def main():
     with mgr.use(backend_name) as gpu:
         # 1. Sync local code to remote
         gpu.sync_project(
-            remote_dir="/root/project", 
+            remote_dir="/root/project",
             exclude=[
-                ".git", ".venv", "dashboard", "data", "__pycache__", 
-                ".pytest_cache", ".agents", ".ipynb_checkpoints", 
-                "results", "logs"
-            ]
+                ".git",
+                ".venv",
+                "dashboard",
+                "data",
+                "__pycache__",
+                ".pytest_cache",
+                ".agents",
+                ".ipynb_checkpoints",
+                "results",
+                "logs",
+            ],
         )
 
         # 2. Env setup
@@ -97,15 +103,17 @@ def main():
 
         # 6. Run evaluation
         master_port = random.randint(20000, 29999)
-        remote_results_path = f"/root/project/results/runs/{args_cli.run_id}/evaluation.json"
-        
+        remote_results_path = (
+            f"/root/project/results/runs/{args_cli.run_id}/evaluation.json"
+        )
+
         cmd = (
             f"cd /root/project && {env_setup} && "
             f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
             f"scripts/evaluate.py --run_id {args_cli.run_id} --save_json {remote_results_path} "
             f"{' '.join(other_args)}"
         )
-        
+
         print("\nExecuting evaluation on remote GPU...")
         result = gpu.run(cmd)
 
@@ -114,10 +122,12 @@ def main():
             local_results_dir = Path("results/runs") / args_cli.run_id
             os.makedirs(local_results_dir, exist_ok=True)
             local_results_path = local_results_dir / "evaluation.json"
-            
+
             print("\n[sync] Downloading evaluation results...")
             try:
-                gpu.download(remote_results_path, str(local_results_path), recursive=False)
+                gpu.download(
+                    remote_results_path, str(local_results_path), recursive=False
+                )
                 print(f"[sync] Results saved to {local_results_path}")
             except Exception as e:
                 print(f"[sync] Error downloading results: {e}")
@@ -132,6 +142,7 @@ def main():
             sys.exit(1)
 
     print("--- Remote Evaluation Complete ---")
+
 
 if __name__ == "__main__":
     main()
