@@ -30,11 +30,10 @@ training:
   save_dir: "models/checkpoints"
   augmentation:
     enabled: false
-    occlusion_prob: 1
-    # Parameters for future augmentations
-    # flip_prob: 0.5
-    # rotation_range: [-30, 30]
-    # scaling_range: [0.8, 1.2]
+    occlusion_prob: 0.5
+    flip_prob: 0.5
+    rotation_range: [-30, 30]
+    scaling_range: [0.8, 1.2]
 
 remote:
   use_remote: false
