@@ -395,6 +395,9 @@ class GPUSession:
                 ".pytest_cache",
                 ".agents",
                 ".ipynb_checkpoints",
+                "results",
+                "artifacts",
+                "scratch",
             ]
 
         print(f"Syncing project to {remote_dir}...")
