@@ -10,7 +10,11 @@
 - **SLP Dataset Specifics**: SLP features systematic cover (blankets). For IR, blankets act as insulators, diffusing and dampening the heat signature.
 - **Multimodal Fusion**: Leveraging Pressure Maps or RGB can help, but since we are training on uncovered IR to predict covered IR, we need to bridge the domain gap via augmentation or UDA.
 
+## Graveyard
+- **Thermal Diffusion (Initial)**: Failed due to a critical rotation sign error in `src/data/augmentations.py` which corrupted training coordinates. Root cause: Image rotation was CCW but joint rotation was effectively CW.
+- **Relative Data Paths (Remote)**: Failed on Kaggle GPU instances. Root cause: Execution context in Kaggle notebooks/scripts requires absolute paths for dataset discovery.
+
 ## Hypothesis Queue (Prioritized)
-1. **Heat Diffusion Augmentation**: Simulate the effect of blankets in IR by applying localized Gaussian blur and intensity reduction to the body regions in uncovered training images. This is more realistic than the current polygon-based occlusion.
-2. **Adversarial Domain Alignment**: Use a Discriminator to make the feature representations of "uncovered" and "covered" images indistinguishable.
-3. **Joint-Aware Masking**: Randomly occlude specific limbs or the entire lower/upper body to simulate various blanket positions.
+1. **Adversarial Domain Alignment**: Use a Discriminator to make the feature representations of "uncovered" (source) and "covered" (target) images indistinguishable.
+2. **Joint-Aware Masking**: Randomly occlude specific limbs or the entire lower/upper body to simulate various blanket positions, combined with the fixed Thermal Diffusion.
+3. **Multi-Scale Heatmap Regression**: Adjust the heatmap sigma based on joint type (larger sigma for lower body joints which are harder to localize under covers).

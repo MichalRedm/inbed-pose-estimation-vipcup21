@@ -17,4 +17,5 @@
 | Experiment | PCK@0.5 | MPJPE | Date |
 |------------|---------|-------|------|
 | Baseline (Poly Occlusion) | 42.9% | 65.5 | 2026-05-08 |
-| Loop 1: Thermal Diffusion | 74.2% | 27.8 | 2026-05-08 |
+| Loop 1: Thermal Diffusion | 4.6% (Bug) | 106.2 | 2026-05-08 |
+| Loop 2: fixed_aug (Stable) | 73.0% | 29.7 | 2026-05-08 |
