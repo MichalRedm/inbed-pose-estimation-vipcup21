@@ -170,6 +170,7 @@ configs/user_training.json
 
 # Local development files
 scratch/
+artifacts/
 *.txt
 *.log
 dashboard/lint_output.txt
