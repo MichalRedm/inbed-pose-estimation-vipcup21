@@ -88,6 +88,10 @@ def train():
         run_root = Path(__file__).parent.parent / "results" / "runs" / args.run_id
         save_dir = str(run_root / "checkpoints")
         os.makedirs(save_dir, exist_ok=True)
+        if not args.resume:
+            h_path = run_root / "history.json"
+            if h_path.exists():
+                h_path.unlink()
 
         # Update config with CLI overrides for the snapshot
         if args.epochs is not None:
@@ -102,6 +106,14 @@ def train():
             json.dump(config, f, indent=4)
     else:
         save_dir = train_cfg.get("save_dir", "models/checkpoints")
+        if not args.resume:
+            # Clear old history if starting fresh
+            h_path = os.path.join(save_dir, "history.json")
+            if os.path.exists(h_path):
+                try:
+                    os.remove(h_path)
+                except Exception:
+                    pass
 
     start_epoch = 0
     best_val_loss = float("inf")
