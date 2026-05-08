@@ -681,6 +681,28 @@ button.glass:hover {
   border-radius: 12px;
 }
 
+.dropdown-item {
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  color: var(--text-secondary);
+}
+
+.dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.dropdown-item.active {
+  background: var(--accent-vibrant);
+  color: var(--text-primary);
+}
+
 /* Tooltips */
 .tooltip-container {
   position: relative;

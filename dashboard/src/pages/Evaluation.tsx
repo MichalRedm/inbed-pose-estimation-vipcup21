@@ -4,10 +4,11 @@ import {
   Target, 
   AlertCircle,
   Play,
-  Box,
   Layers,
   Search,
-  Info
+  Info,
+  RefreshCw,
+  ChevronDown
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -66,6 +67,7 @@ const Evaluation: React.FC = () => {
   const [results, setResults] = useState<EvaluationResults | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -139,34 +141,93 @@ const Evaluation: React.FC = () => {
             
             <div className="control-group">
               <label className="text-uppercase micro-label" style={{ display: 'block', marginBottom: '8px', opacity: 0.7 }}>Source</label>
-              <div style={{ position: 'relative' }}>
-                <select 
-                  value={selectedRun ? `run:${selectedRun}` : selectedModel} 
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val.startsWith('run:')) {
-                      setSelectedRun(val.replace('run:', ''));
-                      setSelectedModel('');
-                    } else {
-                      setSelectedModel(val);
-                      setSelectedRun('');
-                    }
+              <div className="custom-dropdown-container" style={{ position: 'relative' }}>
+                <div 
+                  className={`glass-input custom-dropdown-trigger ${isDropdownOpen ? 'open' : ''}`}
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  style={{ 
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    minHeight: '48px'
                   }}
-                  className="glass-input"
-                  style={{ width: '100%', appearance: 'none', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-purple)', borderRadius: '8px', color: 'var(--text-primary)' }}
                 >
-                  <optgroup label="Training Runs">
-                    {runs.map(r => (
-                      <option key={r.id} value={`run:${r.id}`}>Run: {r.id}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Global Models">
-                    {models.map(m => (
-                      <option key={m.name} value={m.name}>{m.name}</option>
-                    ))}
-                  </optgroup>
-                </select>
-                <Box size={16} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5, pointerEvents: 'none' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {selectedRun ? (
+                      <>
+                        <RefreshCw size={16} className="text-secondary" />
+                        <span>Run: {selectedRun}</span>
+                      </>
+                    ) : selectedModel ? (
+                      <>
+                        <Layers size={16} className="text-secondary" />
+                        <span>{selectedModel}</span>
+                      </>
+                    ) : (
+                      <span className="text-secondary">Select Source...</span>
+                    )}
+                  </div>
+                  <ChevronDown size={18} style={{ transform: isDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                </div>
+
+                {isDropdownOpen && (
+                  <div className="glass dropdown-menu" style={{ 
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    left: 0,
+                    right: 0,
+                    zIndex: 100,
+                    borderRadius: '12px',
+                    padding: '8px',
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                    border: '1px solid var(--border-purple)',
+                    background: 'var(--bg-secondary)'
+                  }}>
+                    {runs.length > 0 && (
+                      <>
+                        <div className="micro-label text-uppercase" style={{ padding: '8px 12px', opacity: 0.5, fontSize: '0.6rem' }}>Training Runs</div>
+                        {runs.map(r => (
+                          <div 
+                            key={r.id}
+                            className={`dropdown-item ${selectedRun === r.id ? 'active' : ''}`}
+                            onClick={() => {
+                              setSelectedRun(r.id);
+                              setSelectedModel('');
+                              setIsDropdownOpen(false);
+                            }}
+                          >
+                            <RefreshCw size={14} className="" />
+                            {r.id}
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    
+                    {models.length > 0 && (
+                      <>
+                        <div className="micro-label text-uppercase" style={{ padding: '12px 12px 8px', opacity: 0.5, fontSize: '0.6rem' }}>Global Models</div>
+                        {models.map(m => (
+                          <div 
+                            key={m.name}
+                            className={`dropdown-item ${selectedModel === m.name ? 'active' : ''}`}
+                            onClick={() => {
+                              setSelectedModel(m.name);
+                              setSelectedRun('');
+                              setIsDropdownOpen(false);
+                            }}
+                          >
+                            <Layers size={14} />
+                            {m.name}
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -193,7 +254,7 @@ const Evaluation: React.FC = () => {
             <button 
               className="btn-primary" 
               onClick={() => handleEvaluate(true)} 
-              disabled={isLoading || !selectedModel}
+              disabled={isLoading || (!selectedModel && !selectedRun)}
               style={{ width: '100%', marginTop: '24px' }}
             >
               {isLoading ? (
@@ -331,24 +392,5 @@ const Evaluation: React.FC = () => {
   );
 };
 
-// Add missing icon for loading
-const RefreshCw = ({ size, className }: { size: number, className: string }) => (
-  <svg 
-    xmlns="http://www.w3.org/2000/svg" 
-    width={size} height={size} 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="2" 
-    strokeLinecap="round" 
-    strokeLinejoin="round" 
-    className={className}
-  >
-    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-    <path d="M21 3v5h-5"></path>
-    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-    <path d="M8 16H3v5"></path>
-  </svg>
-);
 
 export default Evaluation;
