@@ -31,6 +31,9 @@ def main():
         "--max_gpus", type=int, default=None, help="Maximum number of GPUs to use"
     )
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
+    parser.add_argument(
+        "--run_id", type=str, default=None, help="Unique ID for this run"
+    )
     args_cli, other_args = parser.parse_known_args()
 
     json_path = "gpu_connection.json"
@@ -100,6 +103,7 @@ def main():
 
         # Use torchrun for both single and multi-GPU to keep consistency
         resume_flag = "--resume" if args_cli.resume else ""
+        run_id_flag = f"--run_id {args_cli.run_id}" if args_cli.run_id else ""
         passthrough = " ".join(other_args)
 
         # Use a random master port to avoid EADDRINUSE (Address already in use)
@@ -111,7 +115,7 @@ def main():
         cmd = (
             f"cd /root/project && {env_setup} && "
             f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
-            f"scripts/train.py --data_root data/raw {resume_flag} {passthrough}"
+            f"scripts/train.py --data_root data/raw {resume_flag} {run_id_flag} {passthrough}"
         )
 
         # --- Step 4: Smart Cleanup & State Tracking ---
@@ -123,13 +127,31 @@ def main():
 
         # Track which checkpoints have already been downloaded
         downloaded: set[str] = set()
-        os.makedirs("models/checkpoints", exist_ok=True)
+
+        # Determine local and remote paths based on run_id
+        if args_cli.run_id:
+            local_run_dir = Path("results/runs") / args_cli.run_id
+            local_ckpt_dir = local_run_dir / "checkpoints"
+            local_history_path = local_run_dir / "history.json"
+            remote_ckpt_dir = (
+                f"/root/project/results/runs/{args_cli.run_id}/checkpoints"
+            )
+            remote_history_path = (
+                f"/root/project/results/runs/{args_cli.run_id}/history.json"
+            )
+        else:
+            local_ckpt_dir = Path("models/checkpoints")
+            local_history_path = local_ckpt_dir / "history.json"
+            remote_ckpt_dir = "/root/project/models/checkpoints"
+            remote_history_path = "/root/project/models/checkpoints/history.json"
+
+        os.makedirs(local_ckpt_dir, exist_ok=True)
 
         # Initial snapshot: mark existing remote checkpoints as 'downloaded'
         # so we don't pull down old data at the start.
         print("Taking initial snapshot of remote checkpoints...")
         res = gpu.run(
-            "ls /root/project/models/checkpoints/*.pth 2>/dev/null || true",
+            f"ls {remote_ckpt_dir}/*.pth 2>/dev/null || true",
             stream=False,
         )
         for f in res.stdout.splitlines():
@@ -142,7 +164,7 @@ def main():
             """Download any checkpoint not yet synced locally."""
             # 1. Sync .pth checkpoints
             result = session.run(
-                "ls /root/project/models/checkpoints/*.pth 2>/dev/null || true",
+                f"ls {remote_ckpt_dir}/*.pth 2>/dev/null || true",
                 stream=False,
             )
             remote_files = [
@@ -154,13 +176,13 @@ def main():
                 fname = remote_path.split("/")[-1]
                 if fname not in downloaded:
                     print(f"\n[sync] Downloading {fname}...")
-                    session.download(remote_path, "models/checkpoints", recursive=False)
+                    session.download(remote_path, str(local_ckpt_dir), recursive=False)
                     downloaded.add(fname)
-                    print(f"[sync] {fname} saved to models/checkpoints/")
+                    print(f"[sync] {fname} saved to {local_ckpt_dir}/")
 
             # 2. Sync history.json
             session.run(
-                "if [ -f /root/project/models/checkpoints/history.json ]; then cp /root/project/models/checkpoints/history.json /tmp/history_sync.json; fi",
+                f"if [ -f {remote_history_path} ]; then cp {remote_history_path} /tmp/history_sync.json; fi",
                 stream=False,
             )
             try:
@@ -168,7 +190,7 @@ def main():
                 # if nothing changed (though SCP always downloads).
                 session.download(
                     "/tmp/history_sync.json",
-                    "models/checkpoints/history.json",
+                    str(local_history_path),
                     recursive=False,
                 )
             except Exception:

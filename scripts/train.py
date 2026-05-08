@@ -88,6 +88,15 @@ def train():
         run_root = Path(__file__).parent.parent / "results" / "runs" / args.run_id
         save_dir = str(run_root / "checkpoints")
         os.makedirs(save_dir, exist_ok=True)
+
+        # Update config with CLI overrides for the snapshot
+        if args.epochs is not None:
+            config["training"]["epochs"] = args.epochs
+        if args.batch_size is not None:
+            config["training"]["batch_size"] = args.batch_size
+        if args.lr is not None:
+            config["training"]["lr"] = args.lr
+
         # Save config snapshot
         with open(run_root / "config.json", "w") as f:
             json.dump(config, f, indent=4)
