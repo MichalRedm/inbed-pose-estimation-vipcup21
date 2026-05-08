@@ -37,10 +37,17 @@ const Training: React.FC = () => {
   const [status, setStatus] = useState<TrainingStatus | null>(null);
   const logsContainerRef = React.useRef<HTMLDivElement>(null);
   const [config, setConfig] = useState({
-    lr: 0.001,
-    epochs: 10,
-    batch_size: 32,
-    remote: false
+    lr: 0.0001,
+    epochs: 30,
+    batch_size: 16,
+    remote: false,
+    augmentation: {
+      enabled: false,
+      occlusion_prob: 0.5,
+      flip_prob: 0.5,
+      rotation_range: [-30, 30],
+      scaling_range: [0.8, 1.2] as [number, number]
+    }
   });
 
   const fetchStatus = React.useCallback(async () => {
@@ -62,7 +69,11 @@ const Training: React.FC = () => {
             lr: savedConfig.lr ?? prev.lr,
             epochs: savedConfig.epochs ?? prev.epochs,
             batch_size: savedConfig.batch_size ?? prev.batch_size,
-            remote: savedConfig.remote ?? prev.remote
+            remote: savedConfig.remote ?? prev.remote,
+            augmentation: savedConfig.augmentation ? {
+              ...prev.augmentation,
+              ...savedConfig.augmentation
+            } : prev.augmentation
           }));
         }
       } catch (error) {
@@ -99,7 +110,8 @@ const Training: React.FC = () => {
         lr: config.lr,
         epochs: config.epochs,
         batch_size: config.batch_size,
-        remote: config.remote
+        remote: config.remote,
+        augmentation: config.augmentation
       });
 
       // Start training with the current configuration
@@ -107,7 +119,8 @@ const Training: React.FC = () => {
         training: {
           lr: config.lr,
           epochs: config.epochs,
-          batch_size: config.batch_size
+          batch_size: config.batch_size,
+          augmentation: config.augmentation
         },
         remote: config.remote
       });
@@ -277,6 +290,122 @@ const Training: React.FC = () => {
                   onChange={(e) => setConfig({...config, batch_size: parseInt(e.target.value)})}
                 />
               </div>
+            </div>
+            
+            <div className="config-section" style={{ marginTop: '32px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <h4 className="text-uppercase micro-label" style={{ opacity: 0.7, margin: 0 }}>Data Augmentation</h4>
+                <label className="switch-sm" style={{ position: 'relative', display: 'inline-block', width: '32px', height: '16px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.augmentation.enabled}
+                    onChange={(e) => setConfig({
+                      ...config, 
+                      augmentation: { ...config.augmentation, enabled: e.target.checked }
+                    })}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span className="slider" style={{ 
+                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, 
+                    backgroundColor: config.augmentation.enabled ? 'var(--accent-lime)' : '#555', 
+                    transition: '.4s', borderRadius: '16px' 
+                  }}>
+                    <span style={{ 
+                      position: 'absolute', height: '12px', width: '12px', left: config.augmentation.enabled ? '18px' : '2px', 
+                      bottom: '2px', backgroundColor: 'white', transition: '.4s', borderRadius: '50%' 
+                    }}></span>
+                  </span>
+                </label>
+              </div>
+
+              {config.augmentation.enabled && (
+                <div className="augmentation-controls" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div className="input-field">
+                    <label>Occlusion Prob</label>
+                    <input 
+                      type="number" 
+                      value={config.augmentation.occlusion_prob} 
+                      onChange={(e) => setConfig({
+                        ...config, 
+                        augmentation: { ...config.augmentation, occlusion_prob: parseFloat(e.target.value) }
+                      })}
+                      step="0.1" min="0" max="1"
+                    />
+                  </div>
+                  <div className="input-field">
+                    <label>Flip Prob</label>
+                    <input 
+                      type="number" 
+                      value={config.augmentation.flip_prob} 
+                      onChange={(e) => setConfig({
+                        ...config, 
+                        augmentation: { ...config.augmentation, flip_prob: parseFloat(e.target.value) }
+                      })}
+                      step="0.1" min="0" max="1"
+                    />
+                  </div>
+                  <div className="input-field">
+                    <label>Rotation Range</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input 
+                        type="number" 
+                        value={config.augmentation.rotation_range[0]} 
+                        onChange={(e) => setConfig({
+                          ...config, 
+                          augmentation: { 
+                            ...config.augmentation, 
+                            rotation_range: [parseInt(e.target.value), config.augmentation.rotation_range[1]] 
+                          }
+                        })}
+                        placeholder="Min"
+                      />
+                      <input 
+                        type="number" 
+                        value={config.augmentation.rotation_range[1]} 
+                        onChange={(e) => setConfig({
+                          ...config, 
+                          augmentation: { 
+                            ...config.augmentation, 
+                            rotation_range: [config.augmentation.rotation_range[0], parseInt(e.target.value)] 
+                          }
+                        })}
+                        placeholder="Max"
+                      />
+                    </div>
+                  </div>
+                  <div className="input-field">
+                    <label>Scaling Range</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input 
+                        type="number" 
+                        value={config.augmentation.scaling_range[0]} 
+                        onChange={(e) => setConfig({
+                          ...config, 
+                          augmentation: { 
+                            ...config.augmentation, 
+                            scaling_range: [parseFloat(e.target.value), config.augmentation.scaling_range[1]] 
+                          }
+                        })}
+                        step="0.1"
+                        placeholder="Min"
+                      />
+                      <input 
+                        type="number" 
+                        value={config.augmentation.scaling_range[1]} 
+                        onChange={(e) => setConfig({
+                          ...config, 
+                          augmentation: { 
+                            ...config.augmentation, 
+                            scaling_range: [config.augmentation.scaling_range[0], parseFloat(e.target.value)] 
+                          }
+                        })}
+                        step="0.1"
+                        placeholder="Max"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           
