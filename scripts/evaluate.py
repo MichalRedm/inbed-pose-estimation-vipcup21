@@ -230,6 +230,7 @@ def evaluate(checkpoint_path, data_root, batch_size=16, pck_threshold=0.5, save_
         }
 
         if save_json:
+            import json
             save_path = Path(save_json)
             save_path.parent.mkdir(parents=True, exist_ok=True)
             with open(save_path, "w") as f:

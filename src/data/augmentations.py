@@ -4,54 +4,80 @@ from PIL import Image, ImageDraw, ImageFilter
 import random
 
 
-class OcclusionAugmenter:
+class ThermalDiffusionAugmenter:
     """
-    Adds a mask that imitates a bed sheet covering the patient.
-    It covers the lower portion of the image with a semi-transparent overlay.
-    Applied ONLY to IR images.
+    Simulates the effect of a blanket on IR images by diffusing and dampening 
+    the heat signature. It uses joint coordinates to realistically place 
+    the "blanket" over the subject.
     """
 
     def __init__(self, probability: float = 0.5, is_training: bool = True):
         self.probability = probability
         self.is_training = is_training
 
-    def __call__(self, image: Image.Image, is_ir: bool) -> Image.Image:
+    def __call__(self, image: Image.Image, joints: Optional[np.ndarray], is_ir: bool) -> Image.Image:
         # Skip if not training, if it's NOT an IR image, or if the random check fails
         if not self.is_training or not is_ir or random.random() > self.probability:
             return image
 
         w, h = image.size
+        
+        # Create a mask for the "covered" area
+        mask = Image.new("L", image.size, 0)
+        draw = ImageDraw.Draw(mask)
 
-        # Create a transparent overlay for the "sheet"
-        overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(overlay)
+        # Determine coverage level (e.g., from ankles to knees, hips, or chest)
+        # LSP indices: 0,5: ankles | 1,4: knees | 2,3: hips | 8,9: shoulders
+        coverage_options = []
+        if joints is not None:
+            # Check visibility/annotation
+            if joints[2, 0] < 2 and joints[2, 5] < 2: # ankles
+                coverage_options.append(min(joints[1, 0], joints[1, 5]))
+            if joints[2, 1] < 2 and joints[2, 4] < 2: # knees
+                coverage_options.append(min(joints[1, 1], joints[1, 4]))
+            if joints[2, 2] < 2 and joints[2, 3] < 2: # hips
+                coverage_options.append(min(joints[1, 2], joints[1, 3]))
+            if joints[2, 8] < 2 and joints[2, 9] < 2: # shoulders
+                coverage_options.append(min(joints[1, 8], joints[1, 9]))
 
-        # Determine the top edge of the sheet (between 20% and 50% of the height)
-        base_y = random.randint(int(h * 0.2), int(h * 0.5))
+        if coverage_options:
+            # Pick a random joint level to start the blanket from
+            base_y = random.choice(coverage_options)
+        else:
+            # Fallback to random height if no joints are visible
+            base_y = random.randint(int(h * 0.2), int(h * 0.6))
 
-        # Add slight randomization to the left and right sides to simulate an angled/uneven sheet
-        left_y = base_y + random.randint(-int(h * 0.05), int(h * 0.05))
-        right_y = base_y + random.randint(-int(h * 0.05), int(h * 0.05))
-
-        # Define the polygon for the bedsheet (bottom part of the image)
+        # Add slight randomization to the top edge
+        left_y = base_y + random.randint(-20, 20)
+        right_y = base_y + random.randint(-20, 20)
+        
         polygon = [(0, left_y), (w, right_y), (w, h), (0, h)]
+        draw.polygon(polygon, fill=255)
 
-        # Sheet color for IR: Ambient room temperature is usually cooler (darker).
-        # We use a dark gray/black with high opacity to block most of the "heat"
-        # but let a tiny bit bleed through, which is realistic for thin hospital sheets.
-        sheet_color = (30, 30, 30, 230)
-        draw.polygon(polygon, fill=sheet_color)
+        # Soften the mask edge
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=10))
 
-        # Apply a Gaussian blur to the overlay to soften the edge of the sheet
-        overlay = overlay.filter(ImageFilter.GaussianBlur(radius=5))
+        # 1. Create a blurred version of the image
+        blurred = image.filter(ImageFilter.GaussianBlur(radius=random.uniform(3, 7)))
 
-        # Composite the original image with the blurred sheet overlay
-        original_mode = image.mode
-        image_rgba = image.convert("RGBA")
-        blended = Image.alpha_composite(image_rgba, overlay)
+        # 2. Create a dampened version (lower intensity)
+        # Convert to numpy for intensity manipulation
+        img_np = np.array(image).astype(np.float32)
+        dampened_np = img_np * random.uniform(0.5, 0.8)
+        
+        # Add slight thermal noise
+        noise = np.random.normal(0, 3, dampened_np.shape).astype(np.float32)
+        dampened_np = np.clip(dampened_np + noise, 0, 255).astype(np.uint8)
+        dampened = Image.fromarray(dampened_np)
 
-        # Return the image in its original format (e.g., 'RGB' or 'L')
-        return blended.convert(original_mode)
+        # 3. Combine blur and dampening
+        # We blend the original with the blurred+dampened version using the mask
+        blurred_dampened = Image.composite(dampened.filter(ImageFilter.GaussianBlur(radius=2)), blurred, mask)
+        
+        # Final composition: original image blended with the "under-blanket" version
+        final_image = Image.composite(blurred_dampened, image, mask)
+
+        return final_image
 
 
 class DataAugmenter:
@@ -65,8 +91,8 @@ class DataAugmenter:
         self.enabled = self.config.get("enabled", False)
         self.is_training = is_training
 
-        # Initialize the occlusion augmenter with config parameters
-        self.occlusion_augmenter = OcclusionAugmenter(
+        # Initialize the thermal diffusion augmenter with config parameters
+        self.thermal_augmenter = ThermalDiffusionAugmenter(
             probability=self.config.get("occlusion_prob", 0.5),
             is_training=self.is_training,
         )
@@ -92,9 +118,9 @@ class DataAugmenter:
         # 2. Pixel-level transforms (affects only image, joints stay the same)
         # image, joints = self._color_jitter(image, joints)
 
-        # 3. Apply the IR-only sheet occlusion
-        if self.occlusion_augmenter:
-            image = self.occlusion_augmenter(image, is_ir=is_ir)
+        # 3. Apply the IR-only thermal diffusion (simulates blanket)
+        if self.thermal_augmenter:
+            image = self.thermal_augmenter(image, joints=joints, is_ir=is_ir)
 
         return image, joints
 
