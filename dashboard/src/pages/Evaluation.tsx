@@ -27,6 +27,14 @@ interface Model {
   size_mb: number;
 }
 
+interface RunSummary {
+  id: string;
+  created_at: string;
+  epochs?: number;
+  final_loss?: number;
+  final_val_loss?: number;
+}
+
 interface PerJointMetric {
   name: string;
   error: number;
@@ -51,7 +59,7 @@ const InfoTooltip = ({ text }: { text: string }) => (
 
 const Evaluation: React.FC = () => {
   const [models, setModels] = useState<Model[]>([]);
-  const [runs, setRuns] = useState<any[]>([]);
+  const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [selectedRun, setSelectedRun] = useState<string>('');
   const [selectedSplit, setSelectedSplit] = useState<string>('val');

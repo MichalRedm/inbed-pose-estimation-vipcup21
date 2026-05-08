@@ -2,14 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   History, 
   Trash2, 
-  Eye, 
-  ChevronRight, 
   Calendar, 
   Target, 
   Activity,
   FileJson,
-  Package,
-  Play
+  Package
 } from 'lucide-react';
 import { 
   LineChart, 
@@ -32,39 +29,42 @@ interface RunSummary {
 
 interface RunDetails {
   id: string;
-  config?: any;
-  history?: any[];
+  config?: Record<string, unknown>;
+  history?: { epoch: number; train_loss: number; val_loss?: number }[];
   checkpoints?: { name: string; size_mb: number }[];
 }
 
 const RunsHistory: React.FC = () => {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selectedRun, setSelectedRun] = useState<RunDetails | null>(null);
-  const [loading, setLoading] = useState(false);
   const [evaluating, setEvaluating] = useState<string | null>(null);
-
-  const fetchRuns = async () => {
-    try {
-      const data = await getRuns();
-      setRuns(data.runs);
-    } catch (error) {
-      console.error('Failed to fetch runs:', error);
-    }
-  };
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
-    fetchRuns();
-  }, []);
+    let mounted = true;
+    const loadRuns = async () => {
+      try {
+        const data = await getRuns();
+        if (mounted) {
+          setRuns(data.runs);
+        }
+      } catch (error) {
+        console.error('Failed to fetch runs:', error);
+      }
+    };
+    
+    loadRuns();
+    return () => {
+      mounted = false;
+    };
+  }, [refreshTrigger]);
 
   const handleViewDetails = async (runId: string) => {
-    setLoading(true);
     try {
       const details = await getRunDetails(runId);
       setSelectedRun(details);
     } catch (error) {
       console.error('Failed to fetch run details:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -75,7 +75,7 @@ const RunsHistory: React.FC = () => {
     try {
       await deleteRun(runId);
       if (selectedRun?.id === runId) setSelectedRun(null);
-      fetchRuns();
+      setRefreshTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Failed to delete run:', error);
     }
@@ -94,7 +94,7 @@ const RunsHistory: React.FC = () => {
     }
   };
 
-  const chartData = selectedRun?.history?.map((entry: any) => ({
+  const chartData = selectedRun?.history?.map((entry) => ({
     epoch: entry.epoch,
     loss: entry.train_loss,
     val_loss: entry.val_loss
