@@ -39,17 +39,20 @@ def save_training_config(config):
 
     # We only save the hyperparameters we want to persist
     persistent_keys = ["lr", "epochs", "batch_size", "remote", "augmentation"]
-    to_save = {k: v for k, v in config.items() if k in persistent_keys}
-
-    # If the config is nested (from the frontend), flatten it
+    
+    # Extract values from the root or from a nested 'training' object
+    to_save = {}
+    
+    # 1. Check root level
+    for k in persistent_keys:
+        if k in config:
+            to_save[k] = config[k]
+            
+    # 2. Check nested 'training' level (for compatibility with startTraining payload)
     if "training" in config:
-        for k, v in config["training"].items():
-            if k in persistent_keys:
-                to_save[k] = v
-
-    # Special handling for augmentation if it's passed at root of config but inside training in default.yaml
-    if "augmentation" in config and "augmentation" not in to_save:
-        to_save["augmentation"] = config["augmentation"]
+        for k in persistent_keys:
+            if k in config["training"]:
+                to_save[k] = config["training"][k]
 
     with open(USER_CONFIG_PATH, "w") as f:
         json.dump(to_save, f, indent=4)
