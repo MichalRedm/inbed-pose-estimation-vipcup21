@@ -170,19 +170,21 @@ class DataAugmenter:
         # Rotate joints
         if joints is not None:
             joints = joints.copy()
-            angle_rad = -np.deg2rad(
-                angle
-            )  # PIL rotate is counter-clockwise, math is usually clockwise
+            # PIL rotate is counter-clockwise.
+            # In image coordinates (y-down), CCW rotation by angle 'a' is:
+            # x' = x*cos(a) + y*sin(a)
+            # y' = -x*sin(a) + y*cos(a)
+            angle_rad = np.deg2rad(angle)
             cos_a = np.cos(angle_rad)
             sin_a = np.sin(angle_rad)
 
-            # Shift to origin
+            # Shift to origin (center of rotation)
             x = joints[0] - center[0]
             y = joints[1] - center[1]
 
             # Rotate
-            new_x = x * cos_a - y * sin_a
-            new_y = x * sin_a + y * cos_a
+            new_x = x * cos_a + y * sin_a
+            new_y = -x * sin_a + y * cos_a
 
             # Shift back
             joints[0] = new_x + center[0]
