@@ -38,7 +38,7 @@ def save_training_config(config):
     USER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     # We only save the hyperparameters we want to persist
-    persistent_keys = ["lr", "epochs", "batch_size", "remote"]
+    persistent_keys = ["lr", "epochs", "batch_size", "remote", "augmentation"]
     to_save = {k: v for k, v in config.items() if k in persistent_keys}
 
     # If the config is nested (from the frontend), flatten it
@@ -46,6 +46,10 @@ def save_training_config(config):
         for k, v in config["training"].items():
             if k in persistent_keys:
                 to_save[k] = v
+
+    # Special handling for augmentation if it's passed at root of config but inside training in default.yaml
+    if "augmentation" in config and "augmentation" not in to_save:
+        to_save["augmentation"] = config["augmentation"]
 
     with open(USER_CONFIG_PATH, "w") as f:
         json.dump(to_save, f, indent=4)
