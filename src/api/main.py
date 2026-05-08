@@ -327,7 +327,8 @@ async def evaluate_model(
     # Load cache
     cache = load_evaluation_cache()
 
-    # Determine checkpoint path
+    # Determine checkpoint path and config
+    eval_config = model_container.get("config")
     if run_id:
         checkpoint_key = f"{run_id}:{checkpoint if checkpoint else 'best_model.pth'}"
         run_path = project_root / "results" / "runs" / run_id
@@ -336,6 +337,12 @@ async def evaluate_model(
 
         checkpoint_name = checkpoint if checkpoint else "best_model.pth"
         checkpoint_path = run_path / "checkpoints" / checkpoint_name
+        
+        # Load run-specific config if available
+        run_config_path = run_path / "config.json"
+        if run_config_path.exists():
+            with open(run_config_path, "r") as f:
+                eval_config = json.load(f)
     else:
         checkpoint_key = checkpoint if checkpoint else "best_model.pth"
         checkpoint_path = project_root / "models" / "checkpoints" / checkpoint_key
@@ -624,8 +631,8 @@ async def startup_event():
             root=root_path,
             # Set the range to cover all domain adaptation subjects (31 to 70)
             subjects=range(
-                dataset_cfg.get("subjects_val", [31, 70])[0],
-                dataset_cfg.get("subjects_val", [31, 70])[1] + 1,
+                dataset_cfg.get("subjects_val", [81, 90])[0],
+                dataset_cfg.get("subjects_val", [81, 90])[1] + 1,
             ),
             modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
             covers=["uncover", "cover1", "cover2"],

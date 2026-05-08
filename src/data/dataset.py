@@ -48,9 +48,9 @@ class VIPCupDataset(Dataset):
         self.sigma = 2.0
 
         self.samples = self._prepare_samples()
-        if not self.samples:
+        if self.subjects and not self.samples:
             raise ValueError(
-                f"No samples found for split='{split}', subjects={subjects}, covers={covers}. "
+                f"No samples found for split='{split}', subjects={self.subjects}, covers={covers}. "
                 f"Check your data path: {self.root}"
             )
 
