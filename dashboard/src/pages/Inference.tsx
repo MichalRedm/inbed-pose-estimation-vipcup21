@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Play, RefreshCw, Download } from 'lucide-react';
+import { Upload, Play, RefreshCw, Download, Layers } from 'lucide-react';
 import { predictPose } from '../services/api';
+import { useGlobalState } from '../context/GlobalStateContext';
 
 interface Prediction {
   joint: string;
@@ -35,6 +36,7 @@ const JOINT_COLORS: Record<number, string> = {
 };
 
 const Inference: React.FC = () => {
+  const { selectedModel, selectedRun } = useGlobalState();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -55,7 +57,7 @@ const Inference: React.FC = () => {
 
     setLoading(true);
     try {
-      const data = await predictPose(selectedFile);
+      const data = await predictPose(selectedFile, selectedModel, selectedRun);
       setResult(data);
     } catch (error) {
       console.error('Inference failed:', error);
@@ -74,6 +76,24 @@ const Inference: React.FC = () => {
 
       <div className="inference-grid">
         <div className="glass card upload-section">
+          
+          <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid var(--border-purple)' }}>
+            <div className="micro-label text-secondary" style={{ marginBottom: '8px' }}>Active Model</div>
+            {selectedRun ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <RefreshCw size={14} className="text-accent-pink" />
+                <span>Run: {selectedRun}</span>
+              </div>
+            ) : selectedModel ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Layers size={14} className="text-accent-pink" />
+                <span>{selectedModel}</span>
+              </div>
+            ) : (
+              <div className="text-warning" style={{ fontSize: '0.85rem' }}>No model selected (choose from header)</div>
+            )}
+          </div>
+
           <div className={`dropzone ${selectedFile ? 'has-file' : ''}`}>
             <input type="file" id="file-upload" onChange={handleFileChange} accept="image/*" />
             <label htmlFor="file-upload">
@@ -132,7 +152,7 @@ const Inference: React.FC = () => {
             <button 
               className="btn-lime" 
               onClick={handleRunInference} 
-              disabled={!selectedFile || loading}
+              disabled={!selectedFile || loading || (!selectedModel && !selectedRun)}
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
               {loading ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}

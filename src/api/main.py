@@ -1,6 +1,6 @@
 import io
 import torch
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import FileResponse
 from PIL import Image
 import numpy as np
@@ -616,7 +616,9 @@ async def startup_event():
 
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(
+    file: UploadFile = File(...), model_name: str = Form(None), run_id: str = Form(None)
+):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image.")
 
@@ -636,8 +638,46 @@ async def predict(file: UploadFile = File(...)):
         )
         img_tensor = img_tensor.unsqueeze(0).to(model_container["device"])
 
+        # Determine checkpoint path
+        checkpoint_path = None
+        if run_id:
+            checkpoint_name = model_name if model_name else "best_model.pth"
+            checkpoint_path = (
+                project_root
+                / "results"
+                / "runs"
+                / run_id
+                / "checkpoints"
+                / checkpoint_name
+            )
+            checkpoint_key = f"{run_id}:{checkpoint_name}"
+        elif model_name:
+            checkpoint_path = project_root / "models" / "checkpoints" / model_name
+            checkpoint_key = model_name
+        else:
+            # Fallback to latest global checkpoint if nothing selected
+            checkpoint_dir = Path(project_root) / "models" / "checkpoints"
+            checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
+            if checkpoints:
+                checkpoint_path = checkpoints[-1]
+                checkpoint_key = checkpoint_path.name
+
         # Inference
         model = model_container["model"]
+        device = model_container["device"]
+
+        if checkpoint_path and checkpoint_path.exists():
+            if model_container.get("loaded_checkpoint") != checkpoint_key:
+                print(f"Dynamically loading checkpoint: {checkpoint_path}")
+                model.load_state_dict(
+                    torch.load(checkpoint_path, map_location=device, weights_only=True)
+                )
+                model_container["loaded_checkpoint"] = checkpoint_key
+        else:
+            print(
+                f"Warning: Checkpoint {checkpoint_path} not found. Using currently loaded model."
+            )
+
         with torch.no_grad():
             outputs = model(img_tensor)
             if model.output_type == "heatmap":

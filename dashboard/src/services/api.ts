@@ -2,9 +2,11 @@ import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:8000'; // Default, should be configurable
 
-export const predictPose = async (file: File) => {
+export const predictPose = async (file: File, modelName?: string, runId?: string) => {
   const formData = new FormData();
   formData.append('file', file);
+  if (modelName) formData.append('model_name', modelName);
+  if (runId) formData.append('run_id', runId);
   
   const response = await axios.post(`${API_BASE_URL}/predict`, formData, {
     headers: {

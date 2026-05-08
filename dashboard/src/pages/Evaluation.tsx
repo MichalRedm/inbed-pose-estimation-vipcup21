@@ -7,8 +7,7 @@ import {
   Layers,
   Search,
   Info,
-  RefreshCw,
-  ChevronDown
+  RefreshCw
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -20,21 +19,9 @@ import {
   ResponsiveContainer,
   Cell
 } from 'recharts';
-import { getModels, evaluateModel, getRuns } from '../services/api';
+import { evaluateModel } from '../services/api';
+import { useGlobalState } from '../context/GlobalStateContext';
 
-interface Model {
-  name: string;
-  path: string;
-  size_mb: number;
-}
-
-interface RunSummary {
-  id: string;
-  created_at: string;
-  epochs?: number;
-  final_loss?: number;
-  final_val_loss?: number;
-}
 
 interface PerJointMetric {
   name: string;
@@ -59,46 +46,34 @@ const InfoTooltip = ({ text }: { text: string }) => (
 );
 
 const Evaluation: React.FC = () => {
-  const [models, setModels] = useState<Model[]>([]);
-  const [runs, setRuns] = useState<RunSummary[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>('');
-  const [selectedRun, setSelectedRun] = useState<string>('');
+  const { selectedModel, selectedRun } = useGlobalState();
   const [selectedSplit, setSelectedSplit] = useState<string>('val');
   const [results, setResults] = useState<EvaluationResults | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    const fetchInitialData = async () => {
+    const loadCachedEvaluation = async () => {
+      if (!selectedModel && !selectedRun) {
+        setResults(null);
+        return;
+      }
+      
       setIsLoading(true);
       try {
-        const [modelsData, runsData] = await Promise.all([getModels(), getRuns()]);
-        setModels(modelsData.models);
-        setRuns(runsData.runs);
-        
-        if (modelsData.models.length > 0) {
-          const latestModel = modelsData.models[modelsData.models.length - 1].name;
-          setSelectedModel(latestModel);
-          
-          // Try to load cached results for the latest model
-          try {
-            const evalRes = await evaluateModel(selectedSplit, latestModel, undefined, false);
-            setResults(evalRes);
-          } catch {
-            console.log('No cached results available yet');
-          }
-        } else if (runsData.runs.length > 0) {
-          setSelectedRun(runsData.runs[0].id);
-        }
-      } catch (err) {
-        console.error('Failed to fetch initial evaluation data:', err);
+        // Try to load cached results for the currently selected model/run
+        const evalRes = await evaluateModel(selectedSplit, selectedModel, selectedRun, false);
+        setResults(evalRes);
+      } catch {
+        console.log('No cached results available yet for this selection');
+        setResults(null);
       } finally {
         setIsLoading(false);
       }
     };
-    fetchInitialData();
-  }, [selectedSplit]);
+    
+    loadCachedEvaluation();
+  }, [selectedSplit, selectedModel, selectedRun]);
 
   const handleEvaluate = async (force: boolean = true) => {
     setIsLoading(true);
@@ -141,92 +116,19 @@ const Evaluation: React.FC = () => {
             
             <div className="control-group">
               <label className="text-uppercase micro-label" style={{ display: 'block', marginBottom: '8px', opacity: 0.7 }}>Source</label>
-              <div className="custom-dropdown-container" style={{ position: 'relative' }}>
-                <div 
-                  className={`glass-input custom-dropdown-trigger ${isDropdownOpen ? 'open' : ''}`}
-                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  style={{ 
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px 16px',
-                    minHeight: '48px'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    {selectedRun ? (
-                      <>
-                        <RefreshCw size={16} className="text-secondary" />
-                        <span>Run: {selectedRun}</span>
-                      </>
-                    ) : selectedModel ? (
-                      <>
-                        <Layers size={16} className="text-secondary" />
-                        <span>{selectedModel}</span>
-                      </>
-                    ) : (
-                      <span className="text-secondary">Select Source...</span>
-                    )}
-                  </div>
-                  <ChevronDown size={18} style={{ transform: isDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-                </div>
-
-                {isDropdownOpen && (
-                  <div className="glass dropdown-menu" style={{ 
-                    position: 'absolute',
-                    top: 'calc(100% + 8px)',
-                    left: 0,
-                    right: 0,
-                    zIndex: 100,
-                    borderRadius: '12px',
-                    padding: '8px',
-                    maxHeight: '300px',
-                    overflowY: 'auto',
-                    boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-                    border: '1px solid var(--border-purple)',
-                    background: 'var(--bg-secondary)'
-                  }}>
-                    {runs.length > 0 && (
-                      <>
-                        <div className="micro-label text-uppercase" style={{ padding: '8px 12px', opacity: 0.5, fontSize: '0.6rem' }}>Training Runs</div>
-                        {runs.map(r => (
-                          <div 
-                            key={r.id}
-                            className={`dropdown-item ${selectedRun === r.id ? 'active' : ''}`}
-                            onClick={() => {
-                              setSelectedRun(r.id);
-                              setSelectedModel('');
-                              setIsDropdownOpen(false);
-                            }}
-                          >
-                            <RefreshCw size={14} className="" />
-                            {r.id}
-                          </div>
-                        ))}
-                      </>
-                    )}
-                    
-                    {models.length > 0 && (
-                      <>
-                        <div className="micro-label text-uppercase" style={{ padding: '12px 12px 8px', opacity: 0.5, fontSize: '0.6rem' }}>Global Models</div>
-                        {models.map(m => (
-                          <div 
-                            key={m.name}
-                            className={`dropdown-item ${selectedModel === m.name ? 'active' : ''}`}
-                            onClick={() => {
-                              setSelectedModel(m.name);
-                              setSelectedRun('');
-                              setIsDropdownOpen(false);
-                            }}
-                          >
-                            <Layers size={14} />
-                            {m.name}
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </div>
+              <div className="glass-input" style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--border-purple)', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {selectedRun ? (
+                  <>
+                    <RefreshCw size={16} className="text-secondary" />
+                    <span>Run: {selectedRun}</span>
+                  </>
+                ) : selectedModel ? (
+                  <>
+                    <Layers size={16} className="text-secondary" />
+                    <span>{selectedModel}</span>
+                  </>
+                ) : (
+                  <span className="text-secondary">No model selected (choose from header)</span>
                 )}
               </div>
             </div>

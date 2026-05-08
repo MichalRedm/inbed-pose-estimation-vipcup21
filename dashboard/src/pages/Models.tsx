@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Download, Trash2, CheckCircle } from 'lucide-react';
+import { Box, Download, Trash2 } from 'lucide-react';
 import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:8000';
@@ -57,12 +57,9 @@ const Models: React.FC = () => {
                 </div>
               </div>
               <div className="model-actions" style={{ marginTop: '24px', display: 'flex', gap: '12px' }}>
-                <button className="btn-primary" style={{ flex: 1, padding: '8px', fontSize: '0.75rem' }}>
-                  <CheckCircle size={14} />
-                  Activate
-                </button>
-                <button className="icon-btn glass" style={{ padding: '8px', borderRadius: '8px' }}>
+                <button className="icon-btn glass" style={{ padding: '8px', borderRadius: '8px', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                   <Download size={16} />
+                  Download
                 </button>
                 <button className="icon-btn glass" style={{ padding: '8px', borderRadius: '8px', color: 'var(--accent-pink)' }}>
                   <Trash2 size={16} />
