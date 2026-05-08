@@ -288,8 +288,18 @@ class TrainingManager:
             process.wait()
             if not self._stop_event.is_set():
                 if process.returncode == 0:
-                    self.status_message = "Finished"
-                    self.progress = 1.0
+                    self.status_message = "Training complete. Starting evaluation..."
+                    self.progress = 0.95  # Almost done
+                    
+                    # Trigger evaluation
+                    success = self._run_evaluation(is_remote, self.current_run_id)
+                    
+                    if success:
+                        self.status_message = "Finished"
+                        self.progress = 1.0
+                    else:
+                        self.status_message = "Training finished, but evaluation failed"
+                        self.progress = 1.0
                 else:
                     self.status_message = f"Failed (exit {process.returncode})"
 
@@ -297,6 +307,61 @@ class TrainingManager:
             self.status_message = f"Error: {str(e)}"
         finally:
             self.is_running = False
+
+
+    def _run_evaluation(self, is_remote: bool, run_id: str) -> bool:
+        """Runs evaluation script for a specific run_id."""
+        try:
+            project_root = Path(__file__).parent.parent.parent
+            if is_remote:
+                cmd = [
+                    sys.executable,
+                    str(project_root / "scripts" / "remote_evaluate.py"),
+                    "--run_id",
+                    run_id,
+                ]
+            else:
+                # For local evaluation, we might want to use torchrun if multiple GPUs are available,
+                # but for simplicity and common local dev, we use normal python. 
+                # scripts/evaluate.py handles DDP if RANK env is set.
+                cmd = [
+                    sys.executable,
+                    str(project_root / "scripts" / "evaluate.py"),
+                    "--run_id",
+                    run_id,
+                    "--save_json",
+                    str(project_root / "results" / "runs" / run_id / "evaluation.json"),
+                ]
+
+            print(f"[TrainingManager] Running evaluation: {' '.join(cmd)}")
+            
+            # Run evaluation synchronously (within the training thread)
+            eval_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=str(project_root),
+            )
+
+            for line in eval_process.stdout:
+                if self._stop_event.is_set():
+                    eval_process.terminate()
+                    return False
+                
+                line = line.strip()
+                if line:
+                    timestamp = time.strftime("%H:%M:%S")
+                    self.log_history.append(f"[{timestamp}] [Eval] {line}")
+                    if "PCK@" in line or "Mean PCK" in line:
+                        self.status_message = f"Evaluating: {line}"
+
+            eval_process.wait()
+            return eval_process.returncode == 0
+        except Exception as e:
+            print(f"[TrainingManager] Evaluation error: {e}")
+            return False
 
 
 training_manager = TrainingManager()

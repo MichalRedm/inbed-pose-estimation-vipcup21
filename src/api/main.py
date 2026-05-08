@@ -313,7 +313,11 @@ async def delete_run(run_id: str):
 
 @app.post("/evaluate")
 async def evaluate_model(
-    split: str = "val", checkpoint: str = None, run_id: str = None, force: bool = False
+    split: str = "val", 
+    checkpoint: str = None, 
+    run_id: str = None, 
+    force: bool = False,
+    remote: bool = False
 ):
     # Normalize split name
     if split == "valid":
@@ -352,21 +356,40 @@ async def evaluate_model(
             torch.load(checkpoint_path, map_location=device, weights_only=True)
         )
 
-    # Get dataset
-    ds = dataset_container.get(split)
-    if not ds and split == "val":
-        # Check if we have any dataset at all
-        ds = list(dataset_container.values())[0] if dataset_container else None
+    if remote:
+        if not run_id:
+            raise HTTPException(status_code=400, detail="run_id is required for remote evaluation")
+        
+        # Trigger remote evaluation via manager helper
+        # We run it synchronously here since the API is already blocking for local eval
+        success = training_manager._run_evaluation(is_remote=True, run_id=run_id)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Remote evaluation failed")
+            
+        # Load the downloaded results
+        eval_file = project_root / "results" / "runs" / run_id / "evaluation.json"
+        if not eval_file.exists():
+            raise HTTPException(status_code=500, detail="Evaluation results not found after remote run")
+            
+        with open(eval_file, "r") as f:
+            metrics = json.load(f)
+    else:
+        # Get dataset
+        ds = dataset_container.get(split)
+        if not ds and split == "val":
+            # Check if we have any dataset at all
+            ds = list(dataset_container.values())[0] if dataset_container else None
 
-    if not ds:
-        raise HTTPException(status_code=404, detail=f"Dataset split {split} not found")
+        if not ds:
+            raise HTTPException(status_code=404, detail=f"Dataset split {split} not found")
 
-    loader = DataLoader(
-        ds, batch_size=8, shuffle=False, num_workers=0, collate_fn=collate_skip_none
-    )
+        loader = DataLoader(
+            ds, batch_size=8, shuffle=False, num_workers=0, collate_fn=collate_skip_none
+        )
 
-    trainer = PoseTrainer(model, device=device, config=model_container.get("config"))
-    metrics = trainer.evaluate(loader)
+        trainer = PoseTrainer(model, device=device, config=model_container.get("config"))
+        metrics = trainer.evaluate(loader)
 
     # Format per-joint metrics for display if they exist
     if "per_joint_error" in metrics:
