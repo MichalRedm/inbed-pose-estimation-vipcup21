@@ -23,6 +23,20 @@ import {
   saveTrainingConfig
 } from '../services/api';
 
+interface TrainingConfig {
+  lr: number;
+  epochs: number;
+  batch_size: number;
+  remote: boolean;
+  augmentation: {
+    enabled: boolean;
+    occlusion_prob: number;
+    flip_prob: number;
+    rotation_range: [number, number];
+    scaling_range: [number, number];
+  };
+}
+
 interface TrainingStatus {
   is_running: boolean;
   progress: number;
@@ -36,7 +50,8 @@ interface TrainingStatus {
 const Training: React.FC = () => {
   const [status, setStatus] = useState<TrainingStatus | null>(null);
   const logsContainerRef = React.useRef<HTMLDivElement>(null);
-  const [config, setConfig] = useState({
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [config, setConfig] = useState<TrainingConfig>({
     lr: 0.0001,
     epochs: 30,
     batch_size: 16,
@@ -46,19 +61,11 @@ const Training: React.FC = () => {
       occlusion_prob: 0.5,
       flip_prob: 0.5,
       rotation_range: [-30, 30],
-      scaling_range: [0.8, 1.2] as [number, number]
+      scaling_range: [0.8, 1.2]
     }
   });
 
-  const fetchStatus = React.useCallback(async () => {
-    try {
-      const data = await getTrainingStatus();
-      setStatus(data);
-    } catch (error) {
-      console.error('Failed to fetch status:', error);
-    }
-  }, []);
-
+  // Load initial config
   useEffect(() => {
     const initialize = async () => {
       try {
@@ -79,10 +86,49 @@ const Training: React.FC = () => {
       } catch (error) {
         console.error('Failed to load training config:', error);
       }
+    };
+    initialize();
+  }, []);
+
+  // Auto-save config changes with debounce
+  useEffect(() => {
+    // Skip saving on initial load or if already idle
+    if (saveStatus === 'idle') return;
+
+    const saveTimer = setTimeout(async () => {
+      try {
+        await saveTrainingConfig(config as unknown as Record<string, unknown>);
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch (error) {
+        console.error('Auto-save failed:', error);
+        setSaveStatus('error');
+      }
+    }, 1000);
+
+    return () => clearTimeout(saveTimer);
+  }, [config, saveStatus]);
+
+  // Wrap setConfig to trigger the "saving" state immediately for UI feedback
+  const updateConfig = (updater: (prev: TrainingConfig) => TrainingConfig) => {
+    setSaveStatus('saving');
+    setConfig(updater);
+  };
+
+  const fetchStatus = React.useCallback(async () => {
+    try {
+      const data = await getTrainingStatus();
+      setStatus(data);
+    } catch (error) {
+      console.error('Failed to fetch status:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    const load = async () => {
       await fetchStatus();
     };
-    
-    initialize();
+    load();
     const interval = setInterval(fetchStatus, 2000);
     return () => clearInterval(interval);
   }, [fetchStatus]);
@@ -233,7 +279,7 @@ const Training: React.FC = () => {
                   <input 
                     type="checkbox" 
                     checked={config.remote}
-                    onChange={(e) => setConfig({...config, remote: e.target.checked})}
+                    onChange={(e) => updateConfig(prev => ({...prev, remote: e.target.checked}))}
                     style={{ opacity: 0, width: 0, height: 0 }}
                   />
                   <span className="slider" style={{ 
@@ -263,14 +309,26 @@ const Training: React.FC = () => {
               )}
             </div>
 
-            <div className="config-section" style={{ marginTop: '32px' }}>
-              <h4 className="text-uppercase micro-label" style={{ marginBottom: '16px', opacity: 0.7 }}>Hyperparameters</h4>
+            <div className="config-section" style={{ marginTop: '32px', position: 'relative' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <h4 className="text-uppercase micro-label" style={{ opacity: 0.7, margin: 0 }}>Hyperparameters</h4>
+                {saveStatus !== 'idle' && (
+                  <span style={{ 
+                    fontSize: '0.65rem', 
+                    color: saveStatus === 'error' ? 'var(--accent-pink)' : 'var(--accent-lime)',
+                    fontWeight: 'bold',
+                    opacity: 0.8
+                  }}>
+                    {saveStatus === 'saving' ? 'SAVING...' : saveStatus === 'saved' ? 'CONFIG SAVED' : 'SAVE ERROR'}
+                  </span>
+                )}
+              </div>
               <div className="input-field">
                 <label>Learning Rate</label>
                 <input 
                   type="number" 
                   value={config.lr} 
-                  onChange={(e) => setConfig({...config, lr: parseFloat(e.target.value)})}
+                  onChange={(e) => updateConfig(prev => ({...prev, lr: parseFloat(e.target.value)}))}
                   step="0.0001"
                 />
               </div>
@@ -279,7 +337,7 @@ const Training: React.FC = () => {
                 <input 
                   type="number" 
                   value={config.epochs} 
-                  onChange={(e) => setConfig({...config, epochs: parseInt(e.target.value)})}
+                  onChange={(e) => updateConfig(prev => ({...prev, epochs: parseInt(e.target.value)}))}
                 />
               </div>
               <div className="input-field">
@@ -287,7 +345,7 @@ const Training: React.FC = () => {
                 <input 
                   type="number" 
                   value={config.batch_size} 
-                  onChange={(e) => setConfig({...config, batch_size: parseInt(e.target.value)})}
+                  onChange={(e) => updateConfig(prev => ({...prev, batch_size: parseInt(e.target.value)}))}
                 />
               </div>
             </div>
@@ -299,10 +357,10 @@ const Training: React.FC = () => {
                   <input 
                     type="checkbox" 
                     checked={config.augmentation.enabled}
-                    onChange={(e) => setConfig({
-                      ...config, 
-                      augmentation: { ...config.augmentation, enabled: e.target.checked }
-                    })}
+                    onChange={(e) => updateConfig(prev => ({
+                      ...prev, 
+                      augmentation: { ...prev.augmentation, enabled: e.target.checked }
+                    }))}
                     style={{ opacity: 0, width: 0, height: 0 }}
                   />
                   <span className="slider" style={{ 
@@ -325,10 +383,10 @@ const Training: React.FC = () => {
                     <input 
                       type="number" 
                       value={config.augmentation.occlusion_prob} 
-                      onChange={(e) => setConfig({
-                        ...config, 
-                        augmentation: { ...config.augmentation, occlusion_prob: parseFloat(e.target.value) }
-                      })}
+                      onChange={(e) => updateConfig(prev => ({
+                        ...prev, 
+                        augmentation: { ...prev.augmentation, occlusion_prob: parseFloat(e.target.value) }
+                      }))}
                       step="0.1" min="0" max="1"
                     />
                   </div>
@@ -337,10 +395,10 @@ const Training: React.FC = () => {
                     <input 
                       type="number" 
                       value={config.augmentation.flip_prob} 
-                      onChange={(e) => setConfig({
-                        ...config, 
-                        augmentation: { ...config.augmentation, flip_prob: parseFloat(e.target.value) }
-                      })}
+                      onChange={(e) => updateConfig(prev => ({
+                        ...prev, 
+                        augmentation: { ...prev.augmentation, flip_prob: parseFloat(e.target.value) }
+                      }))}
                       step="0.1" min="0" max="1"
                     />
                   </div>
@@ -350,25 +408,25 @@ const Training: React.FC = () => {
                       <input 
                         type="number" 
                         value={config.augmentation.rotation_range[0]} 
-                        onChange={(e) => setConfig({
-                          ...config, 
+                        onChange={(e) => updateConfig(prev => ({
+                          ...prev, 
                           augmentation: { 
-                            ...config.augmentation, 
-                            rotation_range: [parseInt(e.target.value), config.augmentation.rotation_range[1]] 
+                            ...prev.augmentation, 
+                            rotation_range: [parseInt(e.target.value), prev.augmentation.rotation_range[1]] 
                           }
-                        })}
+                        }))}
                         placeholder="Min"
                       />
                       <input 
                         type="number" 
                         value={config.augmentation.rotation_range[1]} 
-                        onChange={(e) => setConfig({
-                          ...config, 
+                        onChange={(e) => updateConfig(prev => ({
+                          ...prev, 
                           augmentation: { 
-                            ...config.augmentation, 
-                            rotation_range: [config.augmentation.rotation_range[0], parseInt(e.target.value)] 
+                            ...prev.augmentation, 
+                            rotation_range: [prev.augmentation.rotation_range[0], parseInt(e.target.value)] 
                           }
-                        })}
+                        }))}
                         placeholder="Max"
                       />
                     </div>
@@ -379,26 +437,26 @@ const Training: React.FC = () => {
                       <input 
                         type="number" 
                         value={config.augmentation.scaling_range[0]} 
-                        onChange={(e) => setConfig({
-                          ...config, 
+                        onChange={(e) => updateConfig(prev => ({
+                          ...prev, 
                           augmentation: { 
-                            ...config.augmentation, 
-                            scaling_range: [parseFloat(e.target.value), config.augmentation.scaling_range[1]] 
+                            ...prev.augmentation, 
+                            scaling_range: [parseFloat(e.target.value), prev.augmentation.scaling_range[1]] 
                           }
-                        })}
+                        }))}
                         step="0.1"
                         placeholder="Min"
                       />
                       <input 
                         type="number" 
                         value={config.augmentation.scaling_range[1]} 
-                        onChange={(e) => setConfig({
-                          ...config, 
+                        onChange={(e) => updateConfig(prev => ({
+                          ...prev, 
                           augmentation: { 
-                            ...config.augmentation, 
-                            scaling_range: [config.augmentation.scaling_range[0], parseFloat(e.target.value)] 
+                            ...prev.augmentation, 
+                            scaling_range: [prev.augmentation.scaling_range[0], parseFloat(e.target.value)] 
                           }
-                        })}
+                        }))}
                         step="0.1"
                         placeholder="Max"
                       />
