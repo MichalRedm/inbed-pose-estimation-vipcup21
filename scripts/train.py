@@ -317,10 +317,17 @@ def train():
                     except json.JSONDecodeError:
                         history = []
 
+            # Remove existing entries for this epoch if any (handle overlaps during resume)
+            history = [e for e in history if e.get("epoch") != epoch + 1]
+
             entry = {"epoch": epoch + 1, "train_loss": epoch_loss}
             if val_loss is not None:
                 entry["val_loss"] = val_loss
             history.append(entry)
+
+            # Keep history sorted by epoch
+            history.sort(key=lambda x: x.get("epoch", 0))
+
             with open(history_path, "w") as f:
                 json.dump(history, f, indent=4)
 
