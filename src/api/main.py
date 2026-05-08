@@ -233,19 +233,21 @@ async def list_runs():
     runs_dir = project_root / "results" / "runs"
     if not runs_dir.exists():
         return {"runs": []}
-    
+
     runs = []
-    for run_path in sorted(runs_dir.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True):
+    for run_path in sorted(
+        runs_dir.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True
+    ):
         if not run_path.is_dir():
             continue
-            
+
         run_info = {
             "id": run_path.name,
             "created_at": time.ctime(run_path.stat().st_ctime),
             "has_config": (run_path / "config.json").exists(),
             "has_history": (run_path / "history.json").exists(),
         }
-        
+
         # Load summary from history if available
         if run_info["has_history"]:
             try:
@@ -257,9 +259,9 @@ async def list_runs():
                         run_info["final_val_loss"] = history[-1].get("val_loss")
             except Exception:
                 pass
-                
+
         runs.append(run_info)
-        
+
     return {"runs": runs}
 
 
@@ -268,19 +270,19 @@ async def get_run_details(run_id: str):
     run_path = project_root / "results" / "runs" / run_id
     if not run_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
-        
+
     details = {"id": run_id}
-    
+
     # Load config
     if (run_path / "config.json").exists():
         with open(run_path / "config.json", "r") as f:
             details["config"] = json.load(f)
-            
+
     # Load history
     if (run_path / "history.json").exists():
         with open(run_path / "history.json", "r") as f:
             details["history"] = json.load(f)
-            
+
     # List checkpoints
     ckpt_dir = run_path / "checkpoints"
     if ckpt_dir.exists():
@@ -292,7 +294,7 @@ async def get_run_details(run_id: str):
             }
             for cp in checkpoints
         ]
-        
+
     return details
 
 
@@ -301,7 +303,7 @@ async def delete_run(run_id: str):
     run_path = project_root / "results" / "runs" / run_id
     if not run_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
-    
+
     try:
         shutil.rmtree(run_path)
         return {"message": f"Run {run_id} deleted successfully"}
@@ -319,14 +321,14 @@ async def evaluate_model(
 
     # Load cache
     cache = load_evaluation_cache()
-    
+
     # Determine checkpoint path
     if run_id:
         checkpoint_key = f"{run_id}:{checkpoint if checkpoint else 'best_model.pth'}"
         run_path = project_root / "results" / "runs" / run_id
         if not run_path.exists():
             raise HTTPException(status_code=404, detail="Run not found")
-        
+
         checkpoint_name = checkpoint if checkpoint else "best_model.pth"
         checkpoint_path = run_path / "checkpoints" / checkpoint_name
     else:

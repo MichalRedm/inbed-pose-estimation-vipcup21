@@ -93,7 +93,7 @@ def train():
             json.dump(config, f, indent=4)
     else:
         save_dir = train_cfg.get("save_dir", "models/checkpoints")
-    
+
     start_epoch = 0
     best_val_loss = float("inf")
 
@@ -299,7 +299,7 @@ def train():
                 history_path = os.path.join(run_root, "history.json")
             else:
                 history_path = os.path.join(save_dir, "history.json")
-            
+
             history = []
             if os.path.exists(history_path):
                 with open(history_path, "r") as f:

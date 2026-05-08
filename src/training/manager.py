@@ -98,7 +98,11 @@ class TrainingManager:
             project_root = Path(__file__).parent.parent.parent
             if self.current_run_id:
                 history_path = (
-                    project_root / "results" / "runs" / self.current_run_id / "history.json"
+                    project_root
+                    / "results"
+                    / "runs"
+                    / self.current_run_id
+                    / "history.json"
                 )
             else:
                 history_path = project_root / "models" / "checkpoints" / "history.json"
@@ -139,7 +143,7 @@ class TrainingManager:
                     cmd.extend(["--batch_size", str(config_overrides["batch_size"])])
                 if config_overrides.get("resume"):
                     cmd.append("--resume")
-            
+
             if self.current_run_id:
                 cmd.extend(["--run_id", self.current_run_id])
 
