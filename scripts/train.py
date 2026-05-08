@@ -236,6 +236,24 @@ def train():
                 print(f"Resuming from checkpoint: {latest_ckpt}")
             model.load_state_dict(torch.load(latest_ckpt, map_location=device))
             start_epoch = get_epoch(latest_ckpt)
+
+            # Load best_val_loss from history
+            if rank <= 0:
+                if run_root:
+                    history_path = os.path.join(run_root, "history.json")
+                else:
+                    history_path = os.path.join(save_dir, "history.json")
+                
+                if os.path.exists(history_path):
+                    with open(history_path, "r") as f:
+                        try:
+                            history = json.load(f)
+                            val_losses = [e.get("val_loss") for e in history if e.get("val_loss") is not None]
+                            if val_losses:
+                                best_val_loss = min(val_losses)
+                                print(f"Loaded best val_loss from history: {best_val_loss:.6f}")
+                        except Exception:
+                            pass
         elif rank <= 0:
             print("No checkpoints found. Starting from scratch.")
 
