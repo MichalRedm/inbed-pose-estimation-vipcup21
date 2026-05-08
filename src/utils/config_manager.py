@@ -39,15 +39,15 @@ def save_training_config(config):
 
     # We only save the hyperparameters we want to persist
     persistent_keys = ["lr", "epochs", "batch_size", "remote", "augmentation"]
-    
+
     # Extract values from the root or from a nested 'training' object
     to_save = {}
-    
+
     # 1. Check root level
     for k in persistent_keys:
         if k in config:
             to_save[k] = config[k]
-            
+
     # 2. Check nested 'training' level (for compatibility with startTraining payload)
     if "training" in config:
         for k in persistent_keys:
