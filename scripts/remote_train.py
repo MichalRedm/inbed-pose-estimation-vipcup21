@@ -133,17 +133,23 @@ def main():
             local_run_dir = Path("results/runs") / args_cli.run_id
             local_ckpt_dir = local_run_dir / "checkpoints"
             local_history_path = local_run_dir / "history.json"
+            local_config_path = local_run_dir / "config.json"
             remote_ckpt_dir = (
                 f"/root/project/results/runs/{args_cli.run_id}/checkpoints"
             )
             remote_history_path = (
                 f"/root/project/results/runs/{args_cli.run_id}/history.json"
             )
+            remote_config_path = (
+                f"/root/project/results/runs/{args_cli.run_id}/config.json"
+            )
         else:
             local_ckpt_dir = Path("models/checkpoints")
             local_history_path = local_ckpt_dir / "history.json"
+            local_config_path = local_ckpt_dir / "config.json"
             remote_ckpt_dir = "/root/project/models/checkpoints"
             remote_history_path = "/root/project/models/checkpoints/history.json"
+            remote_config_path = "/root/project/models/checkpoints/config.json"
 
         os.makedirs(local_ckpt_dir, exist_ok=True)
 
@@ -174,27 +180,30 @@ def main():
             ]
             for remote_path in remote_files:
                 fname = remote_path.split("/")[-1]
-                if fname not in downloaded:
+                # Always download best_model.pth to ensure it's the latest
+                if fname not in downloaded or fname == "best_model.pth":
                     print(f"\n[sync] Downloading {fname}...")
                     session.download(remote_path, str(local_ckpt_dir), recursive=False)
                     downloaded.add(fname)
                     print(f"[sync] {fname} saved to {local_ckpt_dir}/")
 
-            # 2. Sync history.json
-            session.run(
-                f"if [ -f {remote_history_path} ]; then cp {remote_history_path} /tmp/history_sync.json; fi",
-                stream=False,
-            )
-            try:
-                # We only download history if it exists; no need to print 'Downloaded' every time
-                # if nothing changed (though SCP always downloads).
-                session.download(
-                    "/tmp/history_sync.json",
-                    str(local_history_path),
-                    recursive=False,
+            # 2. Sync history.json and config.json
+            for r_path, l_path in [
+                (remote_history_path, local_history_path),
+                (remote_config_path, local_config_path),
+            ]:
+                session.run(
+                    f"if [ -f {r_path} ]; then cp {r_path} /tmp/sync_tmp.json; fi",
+                    stream=False,
                 )
-            except Exception:
-                pass  # might not exist yet
+                try:
+                    session.download(
+                        "/tmp/sync_tmp.json",
+                        str(l_path),
+                        recursive=False,
+                    )
+                except Exception:
+                    pass  # might not exist yet
 
         # Run training in background thread; poll checkpoints from main thread
         import threading
