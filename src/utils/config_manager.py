@@ -46,7 +46,7 @@ def save_training_config(config):
         for k, v in config["training"].items():
             if k in persistent_keys:
                 to_save[k] = v
-    
+
     # Special handling for augmentation if it's passed at root of config but inside training in default.yaml
     if "augmentation" in config and "augmentation" not in to_save:
         to_save["augmentation"] = config["augmentation"]

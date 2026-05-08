@@ -13,9 +13,12 @@ def load_config(config_path="configs/default.yaml"):
         config = yaml.safe_load(f)
 
     # Override with user training config if present
-    user_config_path = os.path.join(os.path.dirname(os.path.dirname(config_path)), "configs", "user_training.json")
+    user_config_path = os.path.join(
+        os.path.dirname(os.path.dirname(config_path)), "configs", "user_training.json"
+    )
     if os.path.exists(user_config_path):
         import json
+
         try:
             with open(user_config_path, "r") as f:
                 user_overrides = json.load(f)
@@ -26,7 +29,7 @@ def load_config(config_path="configs/default.yaml"):
                     for k, v in user_overrides.items():
                         if k in ["lr", "epochs", "batch_size", "augmentation"]:
                             config["training"][k] = v
-                
+
                 # Remote overrides
                 if "remote" in config and "remote" in user_overrides:
                     config["remote"]["use_remote"] = user_overrides["remote"]
