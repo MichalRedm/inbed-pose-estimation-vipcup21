@@ -209,8 +209,8 @@ const Evaluation: React.FC = () => {
                 </div>
                 <div className="metric-item" style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span className="text-secondary micro-label">PCK @ 15px</span>
-                    <InfoTooltip text="Percentage of Correct Keypoints. The percentage of joints where the error is below the 15px threshold." />
+                    <span className="text-secondary micro-label">PCK @ 0.5 (Torso)</span>
+                    <InfoTooltip text="Percentage of Correct Keypoints. The percentage of joints where the error is below 50% of the torso diameter (Standard research metric)." />
                   </div>
                   <div className="metric-value" style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{(results.pck * 100).toFixed(1)} <span className="unit" style={{ fontSize: '0.8rem', opacity: 0.5 }}>%</span></div>
                 </div>

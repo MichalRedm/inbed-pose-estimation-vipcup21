@@ -150,10 +150,11 @@ def compute_mpjpe(preds, gts, visibility=None):
     return mean_error, per_joint_error
 
 
-def compute_pck(preds, gts, visibility=None, threshold=15.0):
+def compute_pck(preds, gts, visibility=None, threshold=0.5):
     """
     Compute Percentage of Correct Keypoints.
-    threshold: Error threshold in pixels (after scaling to image size).
+    threshold: If < 1.0, it's relative to torso diameter (PCK@threshold).
+              If >= 1.0, it's absolute pixel threshold.
     """
     if torch.is_tensor(preds):
         preds = preds.cpu().numpy()
@@ -171,7 +172,22 @@ def compute_pck(preds, gts, visibility=None, threshold=15.0):
 
     dist = np.sqrt(np.sum((preds - gts) ** 2, axis=-1))  # (B, J)
 
-    correct = (dist <= threshold).astype(float) * visibility
+    if threshold < 1.0:
+        # Relative threshold (PCK@threshold)
+        # Use distance between midpoint of shoulders and midpoint of hips as torso reference
+        # Indices: 8:RShoulder, 9:LShoulder, 2:RHip, 3:LHip
+        shoulder_mid = (gts[:, 8, :] + gts[:, 9, :]) / 2.0
+        hip_mid = (gts[:, 2, :] + gts[:, 3, :]) / 2.0
+        torso_dist = np.sqrt(np.sum((shoulder_mid - hip_mid) ** 2, axis=-1))  # (B,)
+        # Ensure minimum torso distance to avoid division by zero
+        torso_dist = np.maximum(torso_dist, 1e-6)
+        
+        # Reshape torso_dist to (B, 1) for broadcasting
+        effective_threshold = torso_dist[:, np.newaxis] * threshold
+    else:
+        effective_threshold = threshold
+
+    correct = (dist <= effective_threshold).astype(float) * visibility
 
     per_joint_pck = np.sum(correct, axis=0) / np.maximum(np.sum(visibility, axis=0), 1)
     mean_pck = np.sum(correct) / np.maximum(np.sum(visibility), 1)
