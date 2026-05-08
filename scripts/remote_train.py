@@ -115,7 +115,7 @@ def main():
         cmd = (
             f"cd /root/project && {env_setup} && "
             f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
-            f"scripts/train.py --data_root data/raw {resume_flag} {run_id_flag} {passthrough}"
+            f"scripts/train.py --data_root /root/project/data/raw {resume_flag} {run_id_flag} {passthrough}"
         )
 
         # --- Step 4: Smart Cleanup & State Tracking ---
