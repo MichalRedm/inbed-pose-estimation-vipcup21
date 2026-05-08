@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import shutil
 import time
+import os
 
 # Add project root to sys.path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
@@ -202,7 +203,7 @@ def verify_gpu():
         }
 
 
-# Global containers
+# In-memory model cache: {model_key: {"model": model, "mtime": timestamp}}
 model_container = {}
 dataset_container = {}
 
@@ -388,7 +389,8 @@ async def evaluate_model(
             ds, batch_size=8, shuffle=False, num_workers=0, collate_fn=collate_skip_none
         )
 
-        trainer = PoseTrainer(model, device=device, config=model_container.get("config"))
+        # Use the config from the run if available, otherwise global
+        trainer = PoseTrainer(model, device=device, config=eval_config)
         metrics = trainer.evaluate(loader)
 
     # Format per-joint metrics for display if they exist
@@ -640,7 +642,7 @@ async def startup_event():
 
 @app.post("/predict")
 async def predict(
-    file: UploadFile = File(...), model_name: str = Form(None), run_id: str = Form(None)
+    file: UploadFile = File(...), model_name: str = Form(None), run_id: str = Form(None), checkpoint: str = Form(None)
 ):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image.")
@@ -664,7 +666,7 @@ async def predict(
         # Determine checkpoint path
         checkpoint_path = None
         if run_id:
-            checkpoint_name = model_name if model_name else "best_model.pth"
+            checkpoint_name = checkpoint if checkpoint else "best_model.pth"
             checkpoint_path = (
                 project_root
                 / "results"
@@ -673,33 +675,68 @@ async def predict(
                 / "checkpoints"
                 / checkpoint_name
             )
-            checkpoint_key = f"{run_id}:{checkpoint_name}"
         elif model_name:
             checkpoint_path = project_root / "models" / "checkpoints" / model_name
-            checkpoint_key = model_name
         else:
             # Fallback to latest global checkpoint if nothing selected
             checkpoint_dir = Path(project_root) / "models" / "checkpoints"
             checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
             if checkpoints:
                 checkpoint_path = checkpoints[-1]
-                checkpoint_key = checkpoint_path.name
+
+        # Check if file exists and get mtime
+        if checkpoint_path and not os.path.exists(checkpoint_path):
+            raise HTTPException(status_code=404, detail=f"Checkpoint not found: {checkpoint_path}")
+        
+        file_mtime = os.path.getmtime(checkpoint_path) if checkpoint_path else 0
+
+        # Load model if not already loaded or if different run/checkpoint requested or if file is newer
+        model_key = f"{model_name}_{run_id}_{checkpoint}"
+        
+        needs_load = False
+        if model_key not in model_container:
+            needs_load = True
+        elif isinstance(model_container[model_key], dict) and model_container[model_key].get("mtime", 0) < file_mtime:
+            print(f"[API] Checkpoint {checkpoint} updated on disk. Reloading...")
+            needs_load = True
 
         # Inference
-        model = model_container["model"]
         device = model_container["device"]
+        if needs_load and checkpoint_path:
+            print(f"[API] Loading model: {model_name} from {checkpoint_path}")
+            
+            # Use run-specific config if available
+            current_config = model_container["config"]
+            if run_id:
+                run_config_path = project_root / "results" / "runs" / run_id / "config.json"
+                if run_config_path.exists():
+                    try:
+                        with open(run_config_path, "r") as f:
+                            current_config = json.load(f)
+                        print(f"[API] Using run-specific config for {run_id}")
+                    except Exception as e:
+                        print(f"[API] Warning: Failed to load run config, using global: {e}")
 
-        if checkpoint_path and checkpoint_path.exists():
-            if model_container.get("loaded_checkpoint") != checkpoint_key:
-                print(f"Dynamically loading checkpoint: {checkpoint_path}")
-                model.load_state_dict(
-                    torch.load(checkpoint_path, map_location=device, weights_only=True)
-                )
-                model_container["loaded_checkpoint"] = checkpoint_key
+            # Build new model
+            model = build_model(current_config).to(device)
+            # Load state dict
+            model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+            model.eval()
+            
+            # Update container
+            model_container[model_key] = {
+                "model": model,
+                "mtime": file_mtime
+            }
+        
+        # Select active model from cache
+        if model_key in model_container:
+            active_model_entry = model_container[model_key]
+            model = active_model_entry["model"] if isinstance(active_model_entry, dict) else active_model_entry
+        elif "model" in model_container:
+            model = model_container["model"]
         else:
-            print(
-                f"Warning: Checkpoint {checkpoint_path} not found. Using currently loaded model."
-            )
+            raise HTTPException(status_code=500, detail="No model available for inference. Check if checkpoints exist.")
 
         with torch.no_grad():
             outputs = model(img_tensor)
