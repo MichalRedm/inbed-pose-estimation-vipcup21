@@ -575,7 +575,9 @@ async def get_sample_detail(split: str, idx: int):
 
 
 @app.get("/dataset/image/{split}/{idx}")
-async def get_dataset_image(split: str, idx: int, modality: str = "IR"):
+async def get_dataset_image(
+    split: str, idx: int, modality: str = "IR", augment: bool = False
+):
     ds = dataset_container.get(split)
     if not ds or idx >= len(ds):
         raise HTTPException(status_code=404, detail="Sample not found")
@@ -585,7 +587,42 @@ async def get_dataset_image(split: str, idx: int, modality: str = "IR"):
         # Fallback to first available if requested not found
         modality = list(sample["image_paths"].keys())[0]
 
-    return FileResponse(sample["image_paths"][modality])
+    image_path = sample["image_paths"][modality]
+    
+    if not augment:
+        return FileResponse(image_path)
+        
+    # Apply augmentation for preview
+    image = Image.open(image_path)
+    if modality == "IR":
+        image = image.convert("L")
+    else:
+        image = image.convert("RGB")
+        
+    joints = sample["joints"].get(modality)
+    
+    # Use the global training config for augmentation settings
+    config = model_container.get("config", {})
+    aug_cfg = config.get("training", {}).get("augmentation", {})
+    
+    from src.data.augmentations import DataAugmenter
+    augmenter = DataAugmenter(
+        enabled=True,
+        occlusion_prob=1.0, # Force occlusion for preview if it's the goal
+        flip_prob=aug_cfg.get("flip_prob", 0.5),
+        rotation_range=aug_cfg.get("rotation_range", [-30, 30]),
+        scaling_range=aug_cfg.get("scaling_range", [0.8, 1.2])
+    )
+    
+    augmented_image, _ = augmenter(image, joints, is_ir=(modality == "IR"))
+    
+    # Return as streaming response
+    img_byte_arr = io.BytesIO()
+    augmented_image.save(img_byte_arr, format='PNG')
+    img_byte_arr.seek(0)
+    
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(img_byte_arr, media_type="image/png")
 
 
 @app.on_event("startup")
