@@ -32,6 +32,7 @@ class StandardTrainer(BaseTrainer):
         self.warmup_epochs = training_cfg.get("warmup_epochs", 10)
         self.anatomical_mode = training_cfg.get("anatomical_mode", "hinge")
         self.lambda_coord = training_cfg.get("lambda_coord", 0.0)
+        self.lambda_coord_occluded = training_cfg.get("lambda_coord_occluded", 0.0)
 
         if self.lambda_anatomical > 0 or self.lambda_coord > 0:
             self.soft_argmax = SoftArgmax2D().to(device)
@@ -65,19 +66,25 @@ class StandardTrainer(BaseTrainer):
         loss = loss_pose
         metrics = {"loss_pose": loss_pose.item()}
 
-        if self.lambda_coord > 0:
+        if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
             pred_coords = self.soft_argmax(outputs)  # (B, 14, 2)
             gt_coords = joints[:, :2, :].permute(0, 2, 1)  # (B, 14, 2)
             visibility = joints[:, 2, :]  # (B, 14)
 
-            # Mask only visible joints (0=visible, 1=occluded, 2=missing)
-            # In VIP Cup, we often want to supervise both 0 and 1, but let's stick to 0 for precision.
-            mask = (visibility == 0).unsqueeze(-1).float()
+            # Separate masks for visible (0) and occluded (1)
+            mask_vis = (visibility == 0).unsqueeze(-1).float()
+            mask_occ = (visibility == 1).unsqueeze(-1).float()
             
-            # L1 loss on coordinates
-            loss_coord = torch.sum(F.l1_loss(pred_coords, gt_coords, reduction='none') * mask) / (torch.sum(mask) + 1e-6)
-            loss = loss + self.lambda_coord * loss_coord
-            metrics["loss_coord"] = loss_coord.item()
+            # L1 loss per joint
+            l1_all = F.l1_loss(pred_coords, gt_coords, reduction='none')
+            
+            loss_coord_vis = torch.sum(l1_all * mask_vis) / (torch.sum(mask_vis) + 1e-6)
+            loss_coord_occ = torch.sum(l1_all * mask_occ) / (torch.sum(mask_occ) + 1e-6)
+            
+            loss = loss + self.lambda_coord * loss_coord_vis + self.lambda_coord_occluded * loss_coord_occ
+            
+            metrics["loss_coord_vis"] = loss_coord_vis.item()
+            metrics["loss_coord_occ"] = loss_coord_occ.item()
 
         if self.lambda_anatomical > 0:
             # Apply curriculum warmup
@@ -108,14 +115,21 @@ class StandardTrainer(BaseTrainer):
         loss = loss_pose
         metrics = {"loss_pose": loss_pose.item()}
 
-        if self.lambda_coord > 0:
+        if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
             pred_coords = self.soft_argmax(outputs)
             gt_coords = joints[:, :2, :].permute(0, 2, 1)
             visibility = joints[:, 2, :]
-            mask = (visibility == 0).unsqueeze(-1).float()
-            loss_coord = torch.sum(F.l1_loss(pred_coords, gt_coords, reduction='none') * mask) / (torch.sum(mask) + 1e-6)
-            loss = loss + self.lambda_coord * loss_coord
-            metrics["loss_coord"] = loss_coord.item()
+            
+            mask_vis = (visibility == 0).unsqueeze(-1).float()
+            mask_occ = (visibility == 1).unsqueeze(-1).float()
+            l1_all = F.l1_loss(pred_coords, gt_coords, reduction='none')
+            
+            loss_coord_vis = torch.sum(l1_all * mask_vis) / (torch.sum(mask_vis) + 1e-6)
+            loss_coord_occ = torch.sum(l1_all * mask_occ) / (torch.sum(mask_occ) + 1e-6)
+            
+            loss = loss + self.lambda_coord * loss_coord_vis + self.lambda_coord_occluded * loss_coord_occ
+            metrics["loss_coord_vis"] = loss_coord_vis.item()
+            metrics["loss_coord_occ"] = loss_coord_occ.item()
 
         if self.lambda_anatomical > 0:
             curr_lambda = self._get_current_lambda_ana(self.current_epoch)
