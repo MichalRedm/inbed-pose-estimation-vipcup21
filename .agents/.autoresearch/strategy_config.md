@@ -2,17 +2,17 @@
 
 ## Repository Architecture Map
 - `src/data/`: Dataset and Augmentations.
-- `src/models/`: HRNet architecture.
-- `src/training/`: Training logic.
-- `scripts/`: Entry points.
+- `src/models/`: HRNet architecture and SoftArgmax layers.
+- `src/training/`: Training logic (StandardTrainer, AnatomicalLoss).
+- `scripts/`: Remote and local entry points.
 
 ## Hard Constraints
 - Use remote GPU for training.
-- Inform user if remote GPU is unavailable.
 - Training set = Uncovered, Validation set = Covered.
+- Anatomical priors MUST use normalized [0, 1] coordinate space.
 
 ## Discovered Mechanics & Quirks
-- **Remote Training Paths**: Kaggle GPU instances require absolute paths (e.g., `/root/project/data/raw`) for `data_root` to correctly initialize the `VIPCupDataset`.
-- **Coordinate Transformations**: PIL `Image.rotate` is CCW. In `src/data/augmentations.py`, the joint transformation must use `new_x = x*cos + y*sin` and `new_y = -x*sin + y*cos` to match CCW image rotation in a y-down coordinate system.
-- **Validation set**: Subjects 81-90 are used for "covered" modality validation (testing) while training is on subjects 1-80 (uncovered).
-- **Model**: HRNet-W32 (W32_256x256).
+- **Foreshortening**: 2D projection bone lengths are variable. Use Hinge Loss (Upper Bound) instead of MSE to avoid accuracy penalties on non-planar poses.
+- **Curriculum**: Structural constraints need a ~10 epoch warmup to avoid gradient dominance in early training.
+- **Remote Scaling**: Kaggle T4 GPUs are very fast (40s/epoch) for this dataset.
+- **Checkpointing**: In curriculum training, `best_model.pth` might represent the unconstrained warmup phase. Always verify against `epoch_30.pth`.
