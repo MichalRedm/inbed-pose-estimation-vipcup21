@@ -167,12 +167,20 @@ class VIPCupDataset(Dataset):
         joints = sample["joints"].get(target_mod)
 
         # Apply data augmentation if provided (affects both image and joints)
+        image_source = None
         if self.augmenter and self.split == "train":
+            # For UDA, we want both the occluded (target) and clean (source) versions
+            image, image_source, joints = self.augmenter(
+                image, joints, is_ir=(target_mod == "IR"), return_pair=True
+            )
+        elif self.augmenter:
             image, joints = self.augmenter(image, joints, is_ir=(target_mod == "IR"))
 
         # Resize to standard size if not already handled by augmentation
         if image.size != self.image_size:
             image = image.resize(self.image_size)
+            if image_source:
+                image_source = image_source.resize(self.image_size)
 
         if joints is not None:
             # Need to scale joints if image was resized
@@ -187,32 +195,47 @@ class VIPCupDataset(Dataset):
 
         if self.transform:
             image = self.transform(image)
+            if image_source:
+                image_source = self.transform(image_source)
         else:
             # Default to tensor conversion
             if target_mod == "IR":
                 # (1, H, W)
                 image = torch.from_numpy(np.array(image)).unsqueeze(0).float() / 255.0
+                if image_source:
+                    image_source = (
+                        torch.from_numpy(np.array(image_source)).unsqueeze(0).float()
+                        / 255.0
+                    )
             else:
                 # (3, H, W)
                 image = (
                     torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0
                 )
+                if image_source:
+                    image_source = (
+                        torch.from_numpy(np.array(image_source))
+                        .permute(2, 0, 1)
+                        .float()
+                        / 255.0
+                    )
 
         target_heatmaps = None
         if joints is not None:
             target_heatmaps = self._generate_heatmaps(joints)
 
-        return {
+        res = {
             "image": image,
             "joints": joints,
             "target": target_heatmaps,
             "subject": sample["subject"],
             "modality": target_mod,
             "cover": sample["cover"],
-            "image_paths": {
-                k: str(v) for k, v in sample["image_paths"].items()
-            },  # For dashboard/API
+            "image_paths": {k: str(v) for k, v in sample["image_paths"].items()},
         }
+        if image_source is not None:
+            res["image_source"] = image_source
+        return res
 
     def _generate_heatmaps(self, joints):
         """

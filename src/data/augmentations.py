@@ -126,22 +126,32 @@ class DataAugmenter:
         )
 
     def __call__(
-        self, image: Image.Image, joints: Optional[np.ndarray], is_ir: bool = False
-    ) -> Tuple[Image.Image, Optional[np.ndarray]]:
+        self,
+        image: Image.Image,
+        joints: Optional[np.ndarray],
+        is_ir: bool = False,
+        return_pair: bool = False,
+    ) -> Any:
         """
         Apply enabled augmentations.
         image: PIL Image
         joints: numpy array of shape (3, 14) -> (x, y, visibility)
         is_ir: boolean flag indicating if the current image is an Infrared/Thermal modality
-        returns: (transformed_image, transformed_joints)
+        return_pair: if True, returns (augmented_image, source_image, joints) for UDA
+        returns: (transformed_image, transformed_joints) OR (aug, src, joints)
         """
         if not self.enabled:
+            if return_pair:
+                return image, image, joints
             return image, joints
 
-        # 1. Spatial/Geometric transforms (would affect both image and joints)
+        # 1. Spatial/Geometric transforms (affects both image and joints)
         image, joints = self._random_flip(image, joints)
         image, joints = self._random_rotate(image, joints)
         image, joints = self._random_scale(image, joints)
+
+        # Keep a copy of the geometrically transformed image before pixel-level/thermal changes
+        source_image = image.copy()
 
         # 2. Pixel-level transforms (affects only image, joints stay the same)
         # image, joints = self._color_jitter(image, joints)
@@ -150,6 +160,8 @@ class DataAugmenter:
         if self.thermal_augmenter:
             image = self.thermal_augmenter(image, joints=joints, is_ir=is_ir)
 
+        if return_pair:
+            return image, source_image, joints
         return image, joints
 
     def _random_flip(self, image: Image.Image, joints: Any) -> Tuple[Image.Image, Any]:

@@ -312,7 +312,7 @@ class HRNet(BaseModel):
                 result.append(layer(x_list[-1]))
         return result
 
-    def forward(self, x):
+    def forward(self, x, return_features=False):
         # Stem
         x = self.relu(self.bn1(self.conv1(x)))
         x = self.relu(self.bn2(self.conv2(x)))
@@ -338,5 +338,9 @@ class HRNet(BaseModel):
             F.interpolate(xi, size=target_size, mode="bilinear", align_corners=True)
             for xi in x
         ]
-        x = torch.cat(upsampled, dim=1)
-        return self.head(x)
+        features = torch.cat(upsampled, dim=1)
+        heatmaps = self.head(features)
+        
+        if return_features:
+            return heatmaps, features
+        return heatmaps
