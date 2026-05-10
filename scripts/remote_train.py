@@ -34,6 +34,7 @@ def main():
     parser.add_argument(
         "--run_id", type=str, default=None, help="Unique ID for this run"
     )
+    parser.add_argument("--uda", action="store_true", help="Run Adversarial Domain Adaptation training")
     args_cli, other_args = parser.parse_known_args()
 
     json_path = "gpu_connection.json"
@@ -112,10 +113,11 @@ def main():
 
         master_port = random.randint(20000, 29999)
 
+        training_script = "scripts/train_uda.py" if args_cli.uda else "scripts/train.py"
         cmd = (
             f"cd /root/project && {env_setup} && "
             f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
-            f"scripts/train.py --data_root /root/project/data/raw {resume_flag} {run_id_flag} {passthrough}"
+            f"{training_script} --data_root /root/project/data/raw {resume_flag} {run_id_flag} {passthrough}"
         )
 
         # --- Step 4: Smart Cleanup & State Tracking ---
@@ -192,13 +194,16 @@ def main():
                 (remote_history_path, local_history_path),
                 (remote_config_path, local_config_path),
             ]:
+                # Use run_id in the temp filename to avoid collision/stale files in /tmp
+                suffix = args_cli.run_id if args_cli.run_id else "default"
+                tmp_remote = f"/tmp/sync_{suffix}_{os.path.basename(r_path)}"
                 session.run(
-                    f"if [ -f {r_path} ]; then cp {r_path} /tmp/sync_tmp.json; fi",
+                    f"if [ -f {r_path} ]; then cp {r_path} {tmp_remote}; else rm -f {tmp_remote}; fi",
                     stream=False,
                 )
                 try:
                     session.download(
-                        "/tmp/sync_tmp.json",
+                        tmp_remote,
                         str(l_path),
                         recursive=False,
                     )
