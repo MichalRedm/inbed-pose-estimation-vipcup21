@@ -63,9 +63,9 @@ const Inference: React.FC = () => {
 
     const img = new Image();
     img.onload = () => {
-      // Fit to container width, max 580px tall (matches original dropzone)
+      // Match original dropzone: contain within panel, capped at 70vh
       const maxW = containerRef.current?.clientWidth ?? 520;
-      const maxH = 580;
+      const maxH = window.innerHeight * 0.7;
       const scale = Math.min(maxW / origW, maxH / origH);
       const displayW = Math.round(origW * scale);
       const displayH = Math.round(origH * scale);
@@ -189,12 +189,12 @@ const Inference: React.FC = () => {
               style={{ display: 'none' }}
             />
 
-            {/* Canvas — only shown after inference (contains both image and skeleton) */}
+            {/* Canvas — always mounted so canvasRef is valid; shown only after inference */}
             <canvas
               ref={canvasRef}
               style={{
                 display: result ? 'block' : 'none',
-                width: '100%',
+                maxWidth: '100%',
                 borderRadius: '8px',
               }}
             />
@@ -204,7 +204,7 @@ const Inference: React.FC = () => {
               <img
                 src={previewUrl}
                 alt="Preview"
-                style={{ width: '100%', height: 'auto', borderRadius: '8px', display: 'block' }}
+                style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain', borderRadius: '8px', display: 'block' }}
               />
             )}
 
