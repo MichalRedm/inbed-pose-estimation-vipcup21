@@ -737,6 +737,14 @@ async def predict(
                 / "checkpoints"
                 / checkpoint_name
             )
+        elif model_name:
+            checkpoint_path = project_root / "models" / "checkpoints" / model_name
+        else:
+            # Fallback to latest global checkpoint if nothing selected
+            checkpoint_dir = Path(project_root) / "models" / "checkpoints"
+            checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
+            if checkpoints:
+                checkpoint_path = checkpoints[-1]
         
         # Determine image size from config if possible
         model_image_size = (256, 256)
@@ -750,14 +758,6 @@ async def predict(
         img_tensor = (
             torch.from_numpy(np.array(image_resized)).unsqueeze(0).unsqueeze(0).float() / 255.0
         ).to(model_container["device"])
-        elif model_name:
-            checkpoint_path = project_root / "models" / "checkpoints" / model_name
-        else:
-            # Fallback to latest global checkpoint if nothing selected
-            checkpoint_dir = Path(project_root) / "models" / "checkpoints"
-            checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
-            if checkpoints:
-                checkpoint_path = checkpoints[-1]
 
         # Check if file exists and get mtime
         if checkpoint_path and not os.path.exists(checkpoint_path):
