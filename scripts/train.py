@@ -53,6 +53,7 @@ def train():
     parser.add_argument("--lr", type=float, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--lambda_anatomical", type=float, default=None)
+    parser.add_argument("--lambda_coord", type=float, default=None)
     parser.add_argument(
         "--uda", action="store_true", help="Enable Unsupervised Domain Adaptation"
     )
@@ -72,6 +73,8 @@ def train():
         config["training"]["batch_size"] = args.batch_size
     if args.lambda_anatomical is not None:
         config["training"]["lambda_anatomical"] = args.lambda_anatomical
+    if args.lambda_coord is not None:
+        config["training"]["lambda_coord"] = args.lambda_coord
 
     if args.uda:
         config["training_type"] = "uda"
