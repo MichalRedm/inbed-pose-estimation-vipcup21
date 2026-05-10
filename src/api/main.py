@@ -826,7 +826,8 @@ async def predict(
         with torch.no_grad():
             outputs = model(img_tensor)
             if model.output_type == "heatmap":
-                preds = decode_heatmaps(outputs.cpu(), model_container["image_size"])
+                # Use soft-argmax for better precision and robustness to noise
+                preds = decode_heatmaps(outputs.cpu(), model_container["image_size"], method="soft-argmax")
             else:
                 # Direct coordinates (1, 14, 2)
                 preds = outputs.cpu()

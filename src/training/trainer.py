@@ -143,7 +143,7 @@ class PoseTrainer:
 
             # Decode predictions
             if self.model.output_type == "heatmap":
-                preds = decode_heatmaps(outputs.cpu(), image_size)  # (B, 14, 2)
+                preds = decode_heatmaps(outputs.cpu(), image_size, method="soft-argmax")  # (B, 14, 2)
             else:
                 # If coordinates are predicted directly, they are already (B, 14, 2)
                 preds = outputs.cpu()

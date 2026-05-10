@@ -193,7 +193,7 @@ def evaluate(
                 if is_distributed
                 else model.output_type == "heatmap"
             ):
-                preds = decode_heatmaps(outputs.cpu(), image_size)  # (B, J, 2)
+                preds = decode_heatmaps(outputs.cpu(), image_size, method="soft-argmax")  # (B, J, 2)
             else:
                 preds = outputs.cpu()
 

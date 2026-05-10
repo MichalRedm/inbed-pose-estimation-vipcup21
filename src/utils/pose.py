@@ -38,26 +38,47 @@ LSP_JOINT_NAMES = [
 ]
 
 
-def decode_heatmaps(heatmaps, image_size):
+def decode_heatmaps(heatmaps, image_size, method="argmax"):
     """
     Convert heatmaps (B, J, H, W) to joint coordinates (B, J, 2) in image space.
-    Uses argmax followed by upscaling to image resolution.
+    
+    Methods:
+      - "argmax": Standard peak detection (fast, sensitive to noise)
+      - "soft-argmax": Expected value / Center of mass (precise, robust)
     """
     if isinstance(heatmaps, np.ndarray):
         heatmaps = torch.from_numpy(heatmaps)
 
     B, J, H, W = heatmaps.shape
-    flat = heatmaps.view(B, J, -1)
-    idx = flat.argmax(dim=-1)  # (B, J)
-    y = (idx // W).float()
-    x = (idx % W).float()
-
-    # Scale to image space
     img_h, img_w = image_size
-    x = x * (img_w / W)
-    y = y * (img_h / H)
 
-    return torch.stack([x, y], dim=-1)
+    if method == "soft-argmax":
+        # Apply softmax to get probability distribution
+        flat = heatmaps.view(B, J, -1)
+        probs = torch.softmax(flat, dim=-1)
+        probs = probs.view(B, J, H, W)
+
+        # Coordinate grids
+        grid_x = torch.arange(W, device=heatmaps.device).float()
+        grid_y = torch.arange(H, device=heatmaps.device).float()
+
+        # Expected values
+        expected_x = torch.sum(torch.sum(probs, dim=2) * grid_x, dim=2)
+        expected_y = torch.sum(torch.sum(probs, dim=3) * grid_y, dim=2)
+
+        x = expected_x * (img_w / W)
+        y = expected_y * (img_h / H)
+        return torch.stack([x, y], dim=-1)
+    else:
+        # Standard argmax
+        flat = heatmaps.view(B, J, -1)
+        idx = flat.argmax(dim=-1)
+        y = (idx // W).float()
+        x = (idx % W).float()
+        
+        x = x * (img_w / W)
+        y = y * (img_h / H)
+        return torch.stack([x, y], dim=-1)
 
 
 def draw_pose(
