@@ -149,6 +149,8 @@ class TrainingManager:
                     cmd.extend(["--batch_size", str(config_overrides["batch_size"])])
                 if config_overrides.get("resume"):
                     cmd.append("--resume")
+                if "lambda_anatomical" in config_overrides:
+                    cmd.extend(["--lambda_anatomical", str(config_overrides["lambda_anatomical"])])
                 if config_overrides.get("uda"):
                     cmd.append("--uda")
                     if "lambda_adv" in config_overrides:

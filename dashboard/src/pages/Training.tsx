@@ -37,6 +37,8 @@ interface TrainingConfig {
   };
   uda: boolean;
   lambda_adv: number;
+  anatomical: boolean;
+  lambda_anatomical: number;
 }
 
 interface TrainingStatus {
@@ -67,7 +69,9 @@ const Training: React.FC = () => {
       scaling_range: [0.8, 1.2]
     },
     uda: false,
-    lambda_adv: 0.1
+    lambda_adv: 0.1,
+    anatomical: false,
+    lambda_anatomical: 0.01
   });
 
   // Load initial config
@@ -84,6 +88,10 @@ const Training: React.FC = () => {
             if (savedConfig.remote !== undefined) next.remote = savedConfig.remote;
             if (savedConfig.uda !== undefined) next.uda = savedConfig.uda;
             if (savedConfig.lambda_adv !== undefined) next.lambda_adv = savedConfig.lambda_adv;
+            if (savedConfig.lambda_anatomical !== undefined) {
+              next.lambda_anatomical = savedConfig.lambda_anatomical;
+              next.anatomical = savedConfig.lambda_anatomical > 0;
+            }
             
             if (savedConfig.augmentation) {
               next.augmentation = {
@@ -170,7 +178,8 @@ const Training: React.FC = () => {
         remote: config.remote,
         augmentation: config.augmentation,
         uda: config.uda,
-        lambda_adv: config.lambda_adv
+        lambda_adv: config.lambda_adv,
+        lambda_anatomical: config.anatomical ? config.lambda_anatomical : 0
       });
 
       // Start training with the current configuration
@@ -178,6 +187,7 @@ const Training: React.FC = () => {
         augmentation: config.augmentation,
         uda: config.uda,
         lambda_adv: config.lambda_adv,
+        lambda_anatomical: config.anatomical ? config.lambda_anatomical : 0,
         remote: config.remote
       });
       fetchStatus();
@@ -343,13 +353,50 @@ const Training: React.FC = () => {
               </div>
 
               {config.uda && (
-                <div className="input-field" style={{ marginBottom: '16px' }}>
+                <div className="input-field" style={{ marginBottom: '16px', marginLeft: '12px' }}>
                   <label>Lambda Adv</label>
                   <input 
                     type="number" 
                     value={config.lambda_adv} 
                     onChange={(e) => updateConfig(prev => ({...prev, lambda_adv: parseFloat(e.target.value)}))}
                     step="0.05" min="0"
+                  />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Activity size={18} color="var(--accent-lime)" />
+                  <span style={{ fontSize: '0.85rem' }}>Anatomical Constraints</span>
+                </div>
+                <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '40px', height: '20px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.anatomical}
+                    onChange={(e) => updateConfig(prev => ({...prev, anatomical: e.target.checked}))}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span className="slider" style={{ 
+                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, 
+                    backgroundColor: config.anatomical ? 'var(--accent-lime)' : '#555', 
+                    transition: '.4s', borderRadius: '20px' 
+                  }}>
+                    <span style={{ 
+                      position: 'absolute', height: '16px', width: '16px', left: config.anatomical ? '22px' : '2px', 
+                      bottom: '2px', backgroundColor: 'white', transition: '.4s', borderRadius: '50%' 
+                    }}></span>
+                  </span>
+                </label>
+              </div>
+
+              {config.anatomical && (
+                <div className="input-field" style={{ marginBottom: '16px', marginLeft: '12px' }}>
+                  <label>Lambda Anatomical</label>
+                  <input 
+                    type="number" 
+                    value={config.lambda_anatomical} 
+                    onChange={(e) => updateConfig(prev => ({...prev, lambda_anatomical: parseFloat(e.target.value)}))}
+                    step="0.01" min="0"
                   />
                 </div>
               )}
