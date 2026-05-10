@@ -205,14 +205,14 @@ const Evaluation: React.FC = () => {
                     <span className="text-secondary micro-label">MPJPE</span>
                     <InfoTooltip text="Mean Per Joint Position Error. Average Euclidean distance between predicted and ground truth joints (in pixels)." />
                   </div>
-                  <div className="metric-value" style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{results.mpjpe.toFixed(2)} <span className="unit" style={{ fontSize: '0.8rem', opacity: 0.5 }}>px</span></div>
+                  <div className="metric-value" style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{results.mpjpe?.toFixed(2) ?? '0.00'} <span className="unit" style={{ fontSize: '0.8rem', opacity: 0.5 }}>px</span></div>
                 </div>
                 <div className="metric-item" style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <span className="text-secondary micro-label">PCK @ 0.5 (Torso)</span>
                     <InfoTooltip text="Percentage of Correct Keypoints. The percentage of joints where the error is below 50% of the torso diameter (Standard research metric)." />
                   </div>
-                  <div className="metric-value" style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{(results.pck * 100).toFixed(1)} <span className="unit" style={{ fontSize: '0.8rem', opacity: 0.5 }}>%</span></div>
+                  <div className="metric-value" style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{(results.pck * 100)?.toFixed(1) ?? '0.0'} <span className="unit" style={{ fontSize: '0.8rem', opacity: 0.5 }}>%</span></div>
                 </div>
               </div>
               
@@ -221,7 +221,7 @@ const Evaluation: React.FC = () => {
                   <span className="text-secondary micro-label">Avg Loss</span>
                   <InfoTooltip text="Average Mean Squared Error (MSE) of the predicted heatmaps compared to the ground truth." />
                 </div>
-                <div className="metric-value" style={{ fontSize: '1.1rem' }}>{results.loss.toFixed(6)}</div>
+                <div className="metric-value" style={{ fontSize: '1.1rem' }}>{results.loss?.toFixed(6) ?? '0.000000'}</div>
               </div>
             </div>
           )}
@@ -252,7 +252,7 @@ const Evaluation: React.FC = () => {
                         itemStyle={{ color: 'var(--accent-lime)', fontSize: '0.9rem' }}
                         labelStyle={{ color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '4px' }}
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        formatter={(value: any) => [`${Number(value).toFixed(2)} %`, 'PCK']}
+                        formatter={(value: any) => [`${(Number(value) || 0).toFixed(2)} %`, 'PCK']}
                       />
                       <Bar dataKey="pck" radius={[0, 4, 4, 0]}>
                         {pckData.map((entry, index) => (
@@ -286,7 +286,7 @@ const Evaluation: React.FC = () => {
                         itemStyle={{ color: 'var(--accent-pink)', fontSize: '0.9rem' }}
                         labelStyle={{ color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '4px' }}
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        formatter={(value: any) => [`${Number(value).toFixed(2)} px`, 'Error']}
+                        formatter={(value: any) => [`${(Number(value) || 0).toFixed(2)} px`, 'Error']}
                       />
                       <Bar dataKey="error" fill="var(--accent-pink)" radius={[4, 4, 0, 0]} />
                     </BarChart>

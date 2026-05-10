@@ -30,7 +30,7 @@ interface RunSummary {
 interface RunDetails {
   id: string;
   config?: Record<string, unknown>;
-  history?: { epoch: number; train_loss: number; val_loss?: number }[];
+  history?: { epoch: number; train_loss: number; adv_loss?: number; val_loss?: number }[];
   checkpoints?: { name: string; size_mb: number }[];
 }
 
@@ -85,7 +85,7 @@ const RunsHistory: React.FC = () => {
     setEvaluating(runId);
     try {
       const result = await evaluateModel('val', 'best_model.pth', runId);
-      alert(`Evaluation complete!\nMPJPE: ${result.mpjpe.toFixed(2)}\nPCK: ${result.pck.toFixed(2)}`);
+      alert(`Evaluation complete!\nMPJPE: ${result.mpjpe?.toFixed(2) ?? 'N/A'}\nPCK: ${result.pck?.toFixed(2) ?? 'N/A'}`);
     } catch (error) {
       console.error('Evaluation failed:', error);
       alert('Evaluation failed');
@@ -97,6 +97,7 @@ const RunsHistory: React.FC = () => {
   const chartData = selectedRun?.history?.map((entry) => ({
     epoch: entry.epoch,
     loss: entry.train_loss,
+    adv_loss: entry.adv_loss,
     val_loss: entry.val_loss
   })) || [];
 
@@ -159,10 +160,10 @@ const RunsHistory: React.FC = () => {
                       )}
                     </div>
                     
-                    {run.final_loss !== undefined && (
+                    {typeof run.final_loss === 'number' && (
                       <div style={{ marginTop: '8px', display: 'flex', gap: '12px' }}>
                         <div className="metric-tag">Loss: {run.final_loss.toFixed(4)}</div>
-                        {run.final_val_loss !== undefined && (
+                        {typeof run.final_val_loss === 'number' && (
                           <div className="metric-tag" style={{ background: 'rgba(132, 204, 22, 0.1)', color: 'var(--accent-lime)' }}>Val: {run.final_val_loss.toFixed(4)}</div>
                         )}
                       </div>
@@ -212,6 +213,7 @@ const RunsHistory: React.FC = () => {
                             }} 
                           />
                           <Line type="monotone" dataKey="loss" stroke="var(--accent-primary)" strokeWidth={2} dot={false} name="Train Loss" />
+                          <Line type="monotone" dataKey="adv_loss" stroke="var(--accent-pink)" strokeWidth={1.5} dot={false} name="Adv Loss" strokeDasharray="5 5" />
                           <Line type="monotone" dataKey="val_loss" stroke="var(--accent-lime)" strokeWidth={2} dot={false} name="Val Loss" />
                         </LineChart>
                       </ResponsiveContainer>
@@ -258,7 +260,7 @@ const RunsHistory: React.FC = () => {
                           <span style={{ color: ckpt.name === 'best_model.pth' ? 'var(--accent-lime)' : 'inherit', fontWeight: ckpt.name === 'best_model.pth' ? 600 : 400 }}>
                             {ckpt.name}
                           </span>
-                          <span className="text-secondary" style={{ fontSize: '0.7rem' }}>{ckpt.size_mb.toFixed(1)} MB</span>
+                          <span className="text-secondary" style={{ fontSize: '0.7rem' }}>{ckpt.size_mb?.toFixed(1) ?? '0.0'} MB</span>
                         </div>
                       ))}
                     </div>
