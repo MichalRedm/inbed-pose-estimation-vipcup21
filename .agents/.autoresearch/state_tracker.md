@@ -1,8 +1,8 @@
 # State Tracker
 
-- **Current Loop**: Loop 10 (Planned: Multimodal Fusion)
-- **Phase**: Phase 0 (Workspace Initialization)
-- **Status**: Ready for Loop 10.
+- **Current Loop**: Loop 14 (Planned: Heatmap Refinement)
+- **Phase**: Phase 1 (Brainstorming)
+- **Status**: Automated evaluation enabled via `--eval` flag.
 - **Baseline**: Loop 9 (76.4% PCK, 25.8px MPJPE)
 
 ### Loop 8: Anatomical Curriculum Warmup - FAILURE
@@ -22,3 +22,7 @@
 | 3       | PCK@0.5: 74.9%, MPJPE: 27.4 | 3, loop3_improved_thermal_full_data, SUCCESS, Improved Thermal Diffusion (wavy edges, full cover) + Full Dataset (80 subjects). |
 | 8       | PCK@0.5: 73.1%, MPJPE: 35.3 | 8, loop8_anatomical_curriculum, FAILURE, Curriculum stabilized but fixed 2D lengths hurt foreshortened poses. |
 | 9       | PCK@0.5: 76.4%, MPJPE: 25.8 | 9, loop9_anatomical_hinge, SUCCESS, Using hinge loss to allow for natural limb foreshortening. |
+| 10      | PCK@0.5: 67.0%, MPJPE: 33.4 | 10, loop10_angle_constraints, FAILURE, 2D angle hinge loss over-regularized foreshortened poses. |
+| 11      | PCK@0.5: 73.1%, MPJPE: 28.0 | 11, loop11_joint_weighting, FAILURE, Joint weighting focused on extremities but destabilized core pose. |
+| 12      | PCK@0.5: 75.6%, MPJPE: 26.2 | 12, loop12_consistency, FAILURE, Consistency helped hips but not ankles/wrists. |
+| 13      | PCK@0.5: 74.3%, MPJPE: 26.7 | 13, loop13_multi_scale, FAILURE, Multi-scale supervision added gradient noise. |
