@@ -113,11 +113,12 @@ def main():
 
         master_port = random.randint(20000, 29999)
 
-        training_script = "scripts/train_uda.py" if args_cli.uda else "scripts/train.py"
+        training_script = "scripts/train.py"
+        uda_flag = "--uda" if args_cli.uda else ""
         cmd = (
             f"cd /root/project && {env_setup} && "
             f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
-            f"{training_script} --data_root /root/project/data/raw {resume_flag} {run_id_flag} {passthrough}"
+            f"{training_script} --data_root /root/project/data/raw {resume_flag} {run_id_flag} {uda_flag} {passthrough}"
         )
 
         # --- Step 4: Smart Cleanup & State Tracking ---
