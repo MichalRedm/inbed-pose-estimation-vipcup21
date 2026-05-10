@@ -746,12 +746,21 @@ async def predict(
             if checkpoints:
                 checkpoint_path = checkpoints[-1]
         
-        # Determine image size from config if possible
+        # Determine image size and decoding method from run config
         model_image_size = (256, 256)
+        decode_method = "argmax"  # safe default for standard heatmap MSE models
         if checkpoint_path and (checkpoint_path.parent.parent / "config.json").exists():
             with open(checkpoint_path.parent.parent / "config.json", "r") as f:
                 run_cfg = json.load(f)
                 model_image_size = tuple(run_cfg.get("dataset", {}).get("image_size", [256, 256]))
+                # Use soft-argmax only for models trained with sigma curriculum
+                # (sigma_start/sigma_end keys present in training config)
+                train_cfg = run_cfg.get("training", {})
+                if "sigma_start" in train_cfg or "sigma_end" in train_cfg:
+                    decode_method = "soft-argmax"
+                    print(f"[API] Using soft-argmax decoding for {run_id} (sigma curriculum detected)")
+                else:
+                    print(f"[API] Using argmax decoding for {run_id} (standard heatmap model)")
 
         image_resized = image.resize(model_image_size)
         # (1, 1, H, W)
@@ -833,8 +842,7 @@ async def predict(
         with torch.no_grad():
             outputs = model(img_tensor)
             if model.output_type == "heatmap":
-                # Use soft-argmax for better precision and robustness to noise
-                preds = decode_heatmaps(outputs.cpu(), model_image_size, method="soft-argmax")
+                preds = decode_heatmaps(outputs.cpu(), model_image_size, method=decode_method)
             else:
                 # Direct coordinates (1, 14, 2)
                 preds = outputs.cpu()
