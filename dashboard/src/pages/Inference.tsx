@@ -63,9 +63,9 @@ const Inference: React.FC = () => {
 
     const img = new Image();
     img.onload = () => {
-      // Fit to container width, max 600px tall
+      // Fit to container width, max 580px tall (matches original dropzone)
       const maxW = containerRef.current?.clientWidth ?? 520;
-      const maxH = 600;
+      const maxH = 580;
       const scale = Math.min(maxW / origW, maxH / origH);
       const displayW = Math.round(origW * scale);
       const displayH = Math.round(origH * scale);
