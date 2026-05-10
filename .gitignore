@@ -176,3 +176,5 @@ artifacts/
 dashboard/lint_output.txt
 node_modules/
 .npm/
+pretrained_models/
+configs/loop*_anatomical.yaml
