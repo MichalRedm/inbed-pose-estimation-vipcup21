@@ -205,6 +205,10 @@ def verify_gpu():
 
 # In-memory model cache: {model_key: {"model": model, "mtime": timestamp}}
 model_container = {}
+
+@app.get("/hello")
+async def hello():
+    return {"message": "Hello from API"}
 dataset_container = {}
 
 
@@ -678,7 +682,6 @@ async def startup_event():
         )
         val_ds = VIPCupDataset(
             root=root_path,
-            # Set the range to cover all domain adaptation subjects (31 to 70)
             subjects=range(
                 dataset_cfg.get("subjects_val", [81, 90])[0],
                 dataset_cfg.get("subjects_val", [81, 90])[1] + 1,
@@ -703,7 +706,8 @@ async def predict(
     run_id: str = Form(None),
     checkpoint: str = Form(None),
 ):
-    if not file.content_type.startswith("image/"):
+    content_type = file.content_type or ""
+    if not content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image.")
 
     try:
@@ -851,6 +855,10 @@ async def predict(
         }
 
     except Exception as e:
+        with open("api.log", "a") as log:
+            log.write(f"  ERROR in predict: {str(e)}\n")
+            import traceback
+            log.write(traceback.format_exc() + "\n")
         raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
 
 

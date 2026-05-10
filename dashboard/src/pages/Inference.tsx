@@ -59,9 +59,10 @@ const Inference: React.FC = () => {
     try {
       const data = await predictPose(selectedFile, selectedModel, selectedRun);
       setResult(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Inference failed:', error);
-      alert('Inference failed. Is the backend running?');
+      const errorMsg = error.response?.data?.detail || error.message || 'Inference failed. Is the backend running?';
+      alert(`Inference failed: ${errorMsg}`);
     } finally {
       setLoading(false);
     }
