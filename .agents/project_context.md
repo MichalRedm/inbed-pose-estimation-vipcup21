@@ -1,20 +1,20 @@
 # Project Context - In-Bed Pose Estimation
 
-This folder contains the consolidated project state, implementation plans, and task tracking. This information is stored in the `.agents` directory (ignored by Git) to ensure persistence across sessions and potential system crashes.
+This folder contains the consolidated project state, implementation plans, and task tracking. This information is stored in the `.agents` directory and is tracked by Git to ensure persistent alignment between agent and repository state.
 
 ## Current Goal
-Implement a professional React-based ML Dashboard for training monitoring and inference visualization, following Sentry-inspired design guidelines.
+Enhance the pose estimation pipeline with Adversarial Domain Adaptation and Anatomical Constraints, while maintaining a unified, test-driven architecture.
 
 ## Repository Status
 - [x] Refactored package structure (`src/`, `scripts/`, `configs/`).
-- [x] Implemented `VIPCupDataset` (PyTorch).
-- [x] Implemented Dataset Downloader (`scripts/download_dataset.py`).
-- [x] Implemented HRNet Model (`src/models/hrnet.py`).
-- [x] Implemented Training Logic (`scripts/train.py`).
-- [x] Cleaned up legacy files and updated `.gitignore`.
-- [x] Implemented Inference API (FastAPI) and runner script.
-- [x] Implemented ML Dashboard (React + Vite) with training monitor and inference visualizer.
-- [x] Added Remote GPU Configuration and Training support via Dashboard.
+- [x] Implemented `VIPCupDataset` (PyTorch) with modality support.
+- [x] Implemented simplified HRNet Model (`src/models/hrnet.py`).
+- [x] Unified Training Pipeline with Factory Pattern (`src/training/factory.py`).
+- [x] Implemented Unsupervised Domain Adaptation (UDATrainer).
+- [x] Integrated Anatomical Constraints weighting.
+- [x] ML Dashboard with training monitor and inference visualizer.
+- [x] Established TDD standards and comprehensive test suite.
+- [x] Full support for local and remote (Kaggle) training.
 
 
 ## Critical Secrets Required
