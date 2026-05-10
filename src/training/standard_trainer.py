@@ -33,8 +33,11 @@ class StandardTrainer(BaseTrainer):
         self.anatomical_mode = training_cfg.get("anatomical_mode", "hinge")
         self.lambda_coord = training_cfg.get("lambda_coord", 0.0)
         self.lambda_coord_occluded = training_cfg.get("lambda_coord_occluded", 0.0)
+        self.sigma_start = training_cfg.get("sigma_start", 2.0)
+        self.sigma_end = training_cfg.get("sigma_end", 2.0)
+        self.heatmap_size = config.get("model", {}).get("heatmap_size", (64, 64))
 
-        if self.lambda_anatomical > 0 or self.lambda_coord > 0:
+        if self.lambda_anatomical > 0 or self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
             self.soft_argmax = SoftArgmax2D().to(device)
 
         if self.lambda_anatomical > 0:
@@ -51,20 +54,67 @@ class StandardTrainer(BaseTrainer):
             return self.lambda_anatomical * (epoch / self.warmup_epochs)
         return self.lambda_anatomical
 
+    def _get_current_sigma(self, epoch: int) -> float:
+        num_epochs = self.config.get("training", {}).get("epochs", 30)
+        if num_epochs <= 1:
+            return self.sigma_start
+        
+        # Linear decay
+        progress = min(epoch / (num_epochs * 0.7), 1.0) # Reach sigma_end at 70% of training
+        return self.sigma_start + (self.sigma_end - self.sigma_start) * progress
+
+    def _generate_heatmaps_torch(self, joints: torch.Tensor, sigma: float) -> torch.Tensor:
+        """
+        Generate Gaussian heatmaps in PyTorch.
+        joints: (B, 3, 14) -> (x, y, vis) in image space (256x256)
+        sigma: Gaussian spread
+        Returns: (B, 14, 64, 64)
+        """
+        B, _, J = joints.shape
+        H, W = self.heatmap_size
+        device = joints.device
+        
+        # Grid of coordinates
+        grid_y = torch.arange(H, device=device).float().view(1, 1, H, 1)
+        grid_x = torch.arange(W, device=device).float().view(1, 1, 1, W)
+        
+        # Scale joints to heatmap resolution (256 -> 64)
+        # Assuming image_size is (256, 256)
+        mu_x = joints[:, 0, :].unsqueeze(-1).unsqueeze(-1) / 4.0
+        mu_y = joints[:, 1, :].unsqueeze(-1).unsqueeze(-1) / 4.0
+        vis = joints[:, 2, :].view(B, J, 1, 1)
+        
+        # Gaussian formula: exp(-((x-mu_x)^2 + (y-mu_y)^2) / (2 * sigma^2))
+        dist_sq = (grid_x - mu_x) ** 2 + (grid_y - mu_y) ** 2
+        heatmaps = torch.exp(-dist_sq / (2 * sigma**2))
+        
+        # Mask out missing joints (vis == 2)
+        # Note: In VIP Cup, we supervise both visible (0) and occluded (1) with heatmaps
+        heatmaps = heatmaps * (vis < 2).float()
+        
+        return heatmaps
+
     def train_epoch(self, dataloader, epoch: int) -> Dict[str, float]:
         self.current_epoch = epoch  # Store current epoch for steps
         return super().train_epoch(dataloader, epoch)
 
     def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
         images = batch["image"].to(self.device)
-        targets = batch["target"].to(self.device)
         joints = batch["joints"].to(self.device)  # (B, 3, 14)
+        
+        # Decide which targets to use
+        if self.sigma_start != 2.0 or self.sigma_end != 2.0:
+            sigma = self._get_current_sigma(self.current_epoch)
+            targets = self._generate_heatmaps_torch(joints, sigma)
+        else:
+            targets = batch["target"].to(self.device)
+            sigma = 2.0
 
         outputs = self.model(images)
         loss_pose = self.criterion(outputs, targets)
 
         loss = loss_pose
-        metrics = {"loss_pose": loss_pose.item()}
+        metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
 
         if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
             pred_coords = self.soft_argmax(outputs)  # (B, 14, 2)
@@ -106,14 +156,20 @@ class StandardTrainer(BaseTrainer):
 
     def _val_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
         images = batch["image"].to(self.device)
-        targets = batch["target"].to(self.device)
         joints = batch["joints"].to(self.device)
+        
+        if self.sigma_start != 2.0 or self.sigma_end != 2.0:
+            sigma = self._get_current_sigma(self.current_epoch)
+            targets = self._generate_heatmaps_torch(joints, sigma)
+        else:
+            targets = batch["target"].to(self.device)
+            sigma = 2.0
 
         outputs = self.model(images)
         loss_pose = self.criterion(outputs, targets)
 
         loss = loss_pose
-        metrics = {"loss_pose": loss_pose.item()}
+        metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
 
         if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
             pred_coords = self.soft_argmax(outputs)
