@@ -360,9 +360,11 @@ async def evaluate_model(
             raise HTTPException(
                 status_code=404, detail=f"Checkpoint not found at {checkpoint_path}"
             )
-        model.load_state_dict(
-            torch.load(checkpoint_path, map_location=device, weights_only=True)
-        )
+        state = torch.load(checkpoint_path, map_location=device)
+        if isinstance(state, dict) and "model_state_dict" in state:
+            model.load_state_dict(state["model_state_dict"])
+        else:
+            model.load_state_dict(state)
 
     if remote:
         if not run_id:
@@ -647,7 +649,11 @@ async def startup_event():
     else:
         latest_checkpoint = checkpoints[-1]
         print(f"Loading checkpoint: {latest_checkpoint}")
-        model.load_state_dict(torch.load(latest_checkpoint, map_location=device))
+        state = torch.load(latest_checkpoint, map_location=device)
+        if isinstance(state, dict) and "model_state_dict" in state:
+            model.load_state_dict(state["model_state_dict"])
+        else:
+            model.load_state_dict(state)
 
     model.eval()
 
@@ -782,7 +788,11 @@ async def predict(
             # Build new model
             model = build_model(current_config).to(device)
             # Load state dict
-            model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+            state = torch.load(checkpoint_path, map_location=device)
+            if isinstance(state, dict) and "model_state_dict" in state:
+                model.load_state_dict(state["model_state_dict"])
+            else:
+                model.load_state_dict(state)
             model.eval()
 
             # Update container
