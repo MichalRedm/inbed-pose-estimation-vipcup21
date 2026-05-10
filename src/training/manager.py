@@ -150,11 +150,18 @@ class TrainingManager:
                 if config_overrides.get("resume"):
                     cmd.append("--resume")
                 if "lambda_anatomical" in config_overrides:
-                    cmd.extend(["--lambda_anatomical", str(config_overrides["lambda_anatomical"])])
+                    cmd.extend(
+                        [
+                            "--lambda_anatomical",
+                            str(config_overrides["lambda_anatomical"]),
+                        ]
+                    )
                 if config_overrides.get("uda"):
                     cmd.append("--uda")
                     if "lambda_adv" in config_overrides:
-                        cmd.extend(["--lambda_adv", str(config_overrides["lambda_adv"])])
+                        cmd.extend(
+                            ["--lambda_adv", str(config_overrides["lambda_adv"])]
+                        )
 
             if self.current_run_id:
                 cmd.extend(["--run_id", self.current_run_id])

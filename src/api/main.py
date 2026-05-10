@@ -206,9 +206,12 @@ def verify_gpu():
 # In-memory model cache: {model_key: {"model": model, "mtime": timestamp}}
 model_container = {}
 
+
 @app.get("/hello")
 async def hello():
     return {"message": "Hello from API"}
+
+
 dataset_container = {}
 
 
@@ -594,40 +597,42 @@ async def get_dataset_image(
         modality = list(sample["image_paths"].keys())[0]
 
     image_path = sample["image_paths"][modality]
-    
+
     if not augment:
         return FileResponse(image_path)
-        
+
     # Apply augmentation for preview
     image = Image.open(image_path)
     if modality == "IR":
         image = image.convert("L")
     else:
         image = image.convert("RGB")
-        
+
     joints = sample["joints"].get(modality)
-    
+
     # Use the global training config for augmentation settings
     config = model_container.get("config", {})
     aug_cfg = config.get("training", {}).get("augmentation", {})
-    
+
     from src.data.augmentations import DataAugmenter
+
     augmenter = DataAugmenter(
         enabled=True,
-        occlusion_prob=1.0, # Force occlusion for preview if it's the goal
+        occlusion_prob=1.0,  # Force occlusion for preview if it's the goal
         flip_prob=aug_cfg.get("flip_prob", 0.5),
         rotation_range=aug_cfg.get("rotation_range", [-30, 30]),
-        scaling_range=aug_cfg.get("scaling_range", [0.8, 1.2])
+        scaling_range=aug_cfg.get("scaling_range", [0.8, 1.2]),
     )
-    
+
     augmented_image, _ = augmenter(image, joints, is_ir=(modality == "IR"))
-    
+
     # Return as streaming response
     img_byte_arr = io.BytesIO()
-    augmented_image.save(img_byte_arr, format='PNG')
+    augmented_image.save(img_byte_arr, format="PNG")
     img_byte_arr.seek(0)
-    
+
     from fastapi.responses import StreamingResponse
+
     return StreamingResponse(img_byte_arr, media_type="image/png")
 
 
@@ -858,6 +863,7 @@ async def predict(
         with open("api.log", "a") as log:
             log.write(f"  ERROR in predict: {str(e)}\n")
             import traceback
+
             log.write(traceback.format_exc() + "\n")
         raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
 

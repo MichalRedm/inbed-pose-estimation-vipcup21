@@ -27,7 +27,10 @@ def main():
         "--max_gpus", type=int, default=None, help="Maximum number of GPUs to use"
     )
     parser.add_argument(
-        "--checkpoint_name", type=str, default="best_model.pth", help="Checkpoint filename"
+        "--checkpoint_name",
+        type=str,
+        default="best_model.pth",
+        help="Checkpoint filename",
     )
     args_cli, other_args = parser.parse_known_args()
 

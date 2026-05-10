@@ -340,7 +340,7 @@ class HRNet(BaseModel):
         ]
         features = torch.cat(upsampled, dim=1)
         heatmaps = self.head(features)
-        
+
         if return_features:
             return heatmaps, features
         return heatmaps

@@ -1,6 +1,7 @@
 import torch.nn as nn
 from torch.autograd import Function
 
+
 class GradientReversalFunction(Function):
     @staticmethod
     def forward(ctx, x, alpha):
@@ -12,6 +13,7 @@ class GradientReversalFunction(Function):
         output = grad_output.neg() * ctx.alpha
         return output, None
 
+
 class GRL(nn.Module):
     def __init__(self, alpha=1.0):
         super(GRL, self).__init__()
@@ -20,6 +22,7 @@ class GRL(nn.Module):
     def forward(self, x):
         return GradientReversalFunction.apply(x, self.alpha)
 
+
 class DomainDiscriminator(nn.Module):
     def __init__(self, in_channels=480):
         super(DomainDiscriminator, self).__init__()
@@ -27,18 +30,18 @@ class DomainDiscriminator(nn.Module):
             nn.Conv2d(in_channels, 256, kernel_size=3, stride=2, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
-            nn.Dropout2d(0.2)
+            nn.Dropout2d(0.2),
         )
         self.ad_layer2 = nn.Sequential(
             nn.Conv2d(256, 128, kernel_size=3, stride=2, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
-            nn.Dropout2d(0.2)
+            nn.Dropout2d(0.2),
         )
         self.ad_layer3 = nn.Sequential(
             nn.Conv2d(128, 64, kernel_size=3, stride=2, padding=1),
             nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
         self.classifier = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
@@ -46,7 +49,7 @@ class DomainDiscriminator(nn.Module):
             nn.Linear(64, 32),
             nn.ReLU(inplace=True),
             nn.Linear(32, 1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
 
     def forward(self, x, alpha=None):

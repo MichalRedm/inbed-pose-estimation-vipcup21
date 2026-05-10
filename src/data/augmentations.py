@@ -29,7 +29,12 @@ class ThermalDiffusionAugmenter:
         if joints is not None:
             # Check visibility/annotation (0=visible, 1=occluded, 2=missing)
             # We look for the Y coordinate of various joint pairs
-            for pair in [(0, 5), (1, 4), (2, 3), (8, 9)]:  # ankles, knees, hips, shoulders
+            for pair in [
+                (0, 5),
+                (1, 4),
+                (2, 3),
+                (8, 9),
+            ]:  # ankles, knees, hips, shoulders
                 if joints[2, pair[0]] < 2 and joints[2, pair[1]] < 2:
                     coverage_options.append(min(joints[1, pair[0]], joints[1, pair[1]]))
 
@@ -48,13 +53,13 @@ class ThermalDiffusionAugmenter:
         # Create a wavy blanket edge using sine waves
         mask = Image.new("L", image.size, 0)
         draw = ImageDraw.Draw(mask)
-        
+
         points = []
         num_points = 20
         freq = random.uniform(2, 5)
         amp = random.uniform(5, 20)
         phase = random.uniform(0, 2 * np.pi)
-        
+
         for i in range(num_points + 1):
             x = int(i * w / num_points)
             # Add some sine-based waviness
@@ -62,7 +67,7 @@ class ThermalDiffusionAugmenter:
             # Clamp to image bounds
             y = max(0, min(h - 1, y))
             points.append((x, y))
-        
+
         # Close the polygon to the bottom
         points.append((w, h))
         points.append((0, h))
@@ -79,7 +84,7 @@ class ThermalDiffusionAugmenter:
         # 2. Create a dampened version (lower intensity)
         # Convert to numpy for intensity manipulation
         img_np = np.array(image).astype(np.float32)
-        
+
         # Random dampening factor
         damp_factor = random.uniform(0.4, 0.7)
         dampened_np = img_np * damp_factor
@@ -87,7 +92,7 @@ class ThermalDiffusionAugmenter:
         # Add thermal noise (Gaussian noise + random hot/cold spots)
         noise = np.random.normal(0, 5, dampened_np.shape).astype(np.float32)
         dampened_np = np.clip(dampened_np + noise, 0, 255)
-        
+
         # Occasionally add "sensor noise" or "blanket texture"
         if random.random() < 0.3:
             grid_y, grid_x = np.mgrid[0:h, 0:w]
@@ -105,7 +110,6 @@ class ThermalDiffusionAugmenter:
         final_image = Image.composite(blanket_layer, image, mask)
 
         return final_image
-
 
 
 class DataAugmenter:

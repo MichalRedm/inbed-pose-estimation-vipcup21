@@ -6,11 +6,13 @@ from tqdm import tqdm
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 
+
 class BaseTrainer(ABC):
     """
     Abstract base class for trainers, providing common infrastructure for
     distributed training, checkpointing, and evaluation.
     """
+
     def __init__(
         self,
         model: torch.nn.Module,
@@ -24,13 +26,13 @@ class BaseTrainer(ABC):
         self.device = device
         self.rank = rank
         self.world_size = world_size
-        self.is_main = (rank == 0)
+        self.is_main = rank == 0
 
         # Training parameters
         train_cfg = config.get("training", {})
         self.epochs = train_cfg.get("epochs", 30)
         self.save_dir = train_cfg.get("save_dir", "results/runs/default")
-        
+
         if self.is_main:
             os.makedirs(self.save_dir, exist_ok=True)
             os.makedirs(os.path.join(self.save_dir, "checkpoints"), exist_ok=True)
@@ -53,25 +55,25 @@ class BaseTrainer(ABC):
         self.model.train()
         if hasattr(dataloader.sampler, "set_epoch"):
             dataloader.sampler.set_epoch(epoch)
-            
+
         metrics_sum = {}
         count = 0
-        
+
         pbar = None
         if self.is_main:
-            pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{self.epochs}")
+            pbar = tqdm(dataloader, desc=f"Epoch {epoch + 1}/{self.epochs}")
 
         for batch in dataloader:
             if batch is None:
                 continue
-            
+
             step_metrics = self._train_step(batch)
-            
+
             # Accumulate metrics
             for k, v in step_metrics.items():
                 metrics_sum[k] = metrics_sum.get(k, 0.0) + v
             count += 1
-            
+
             if pbar:
                 pbar.set_postfix({k: f"{v:.4f}" for k, v in step_metrics.items()})
                 pbar.update(1)
@@ -98,7 +100,7 @@ class BaseTrainer(ABC):
             count += 1
 
         avg_metrics = {k: v / max(count, 1) for k, v in metrics_sum.items()}
-        
+
         # In DDP, we should average metrics across all processes
         if self.world_size > 1:
             for k in avg_metrics:
@@ -111,19 +113,21 @@ class BaseTrainer(ABC):
     def save_checkpoint(self, name: str, is_best: bool = False):
         if not self.is_main:
             return
-        
+
         checkpoint = {
-            "model_state_dict": self.model.module.state_dict() if hasattr(self.model, "module") else self.model.state_dict(),
+            "model_state_dict": self.model.module.state_dict()
+            if hasattr(self.model, "module")
+            else self.model.state_dict(),
             "config": self.config,
-            "best_val_loss": self.best_val_loss
+            "best_val_loss": self.best_val_loss,
         }
-        
+
         # Let subclasses add their own state (optimizers, etc.)
         checkpoint.update(self._get_extra_checkpoint_data())
-        
+
         path = os.path.join(self.save_dir, "checkpoints", f"{name}.pth")
         torch.save(checkpoint, path)
-        
+
         if is_best:
             best_path = os.path.join(self.save_dir, "checkpoints", "best_model.pth")
             torch.save(checkpoint, best_path)

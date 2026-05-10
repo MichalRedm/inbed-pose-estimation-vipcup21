@@ -34,7 +34,9 @@ def main():
     parser.add_argument(
         "--run_id", type=str, default=None, help="Unique ID for this run"
     )
-    parser.add_argument("--uda", action="store_true", help="Run Adversarial Domain Adaptation training")
+    parser.add_argument(
+        "--uda", action="store_true", help="Run Adversarial Domain Adaptation training"
+    )
     args_cli, other_args = parser.parse_known_args()
 
     json_path = "gpu_connection.json"

@@ -5,53 +5,50 @@ from src.training.factory import create_trainer
 from src.training.standard_trainer import StandardTrainer
 from src.training.uda_trainer import UDATrainer
 
+
 @pytest.fixture
 def base_config():
     return {
-        "model": {
-            "name": "hrnet",
-            "hrnet": {
-                "num_joints": 14,
-                "in_channels": 1
-            }
-        },
+        "model": {"name": "hrnet", "hrnet": {"num_joints": 14, "in_channels": 1}},
         "training": {
             "lr": 0.0001,
             "weight_decay": 0.0001,
-            "save_dir": "models/checkpoints"
+            "save_dir": "models/checkpoints",
         },
-        "dataset": {
-            "image_size": [256, 256]
-        }
+        "dataset": {"image_size": [256, 256]},
     }
+
 
 def test_create_standard_trainer(base_config):
     device = torch.device("cpu")
     trainer, model = create_trainer(base_config, device)
-    
+
     assert isinstance(trainer, StandardTrainer)
     assert isinstance(model, nn.Module)
     assert trainer.device == device
 
+
 def test_create_uda_trainer(base_config):
     base_config["training_type"] = "uda"
     base_config["uda"] = {"enabled": True, "lambda_adv": 0.1}
-    
+
     device = torch.device("cpu")
     trainer, model = create_trainer(base_config, device)
-    
+
     assert isinstance(trainer, UDATrainer)
     assert hasattr(trainer, "discriminator")
     assert trainer.lambda_adv == 0.1
+
 
 def test_anatomical_constraints_config(base_config):
     base_config["training"]["lambda_anatomical"] = 0.5
     device = torch.device("cpu")
     trainer, model = create_trainer(base_config, device)
-    
+
     # StandardTrainer should have lambda_anatomical if it uses it
     # We check if it's passed through the config
     assert trainer.config["training"]["lambda_anatomical"] == 0.5
+
 
 def test_factory_invalid_config():
     # Test fallback or error handling if needed
