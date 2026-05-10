@@ -5,12 +5,18 @@ import torch.distributed as dist
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 from typing import Dict, Any
+import numpy as np
+
+from src.utils.pose import decode_heatmaps
 
 
 class BaseTrainer(ABC):
     """
     Abstract base class for trainers, providing common infrastructure for
     distributed training, checkpointing, and evaluation.
+
+    Checkpoint saving is based on **validation PCK** (higher = better),
+    falling back to val_loss (lower = better) if PCK is unavailable.
     """
 
     def __init__(
@@ -37,6 +43,8 @@ class BaseTrainer(ABC):
             os.makedirs(self.save_dir, exist_ok=True)
             os.makedirs(os.path.join(self.save_dir, "checkpoints"), exist_ok=True)
 
+        # Track best by PCK (primary) and loss (fallback)
+        self.best_val_pck = -1.0
         self.best_val_loss = float("inf")
         self.history = []
         self.history_path = os.path.join(self.save_dir, "history.json")
@@ -110,6 +118,65 @@ class BaseTrainer(ABC):
 
         return avg_metrics
 
+    @torch.no_grad()
+    def compute_val_pck(self, dataloader, decode_method: str = "argmax") -> float:
+        """
+        Compute PCK@0.5 (torso-relative, covered validation images only).
+        Used as the primary criterion for saving best_model.pth.
+
+        Args:
+            dataloader:    Validation DataLoader.
+            decode_method: 'argmax' or 'soft-argmax' — must match training decoder.
+
+        Returns:
+            mean_pck: float in [0, 1].
+        """
+        self.model.eval()
+        image_size = tuple(
+            self.config.get("dataset", {}).get("image_size", [256, 256])
+        )
+
+        all_preds, all_gts, all_vis = [], [], []
+
+        for batch in dataloader:
+            if batch is None:
+                continue
+
+            images = batch["image"].to(self.device)
+            joints = batch["joints"]  # (B, 3, 14)
+
+            raw_model = self.model.module if hasattr(self.model, "module") else self.model
+            outputs = raw_model(images)
+
+            if raw_model.output_type == "heatmap":
+                preds = decode_heatmaps(outputs.cpu(), image_size, method=decode_method)
+            else:
+                preds = outputs.cpu()
+
+            gt_xy = joints[:, :2, :].permute(0, 2, 1).numpy()   # (B, 14, 2)
+            vis = (joints[:, 2, :] <= 1).numpy()                  # (B, 14) visible+occluded
+
+            all_preds.append(preds.numpy())
+            all_gts.append(gt_xy)
+            all_vis.append(vis)
+
+        if not all_preds:
+            return 0.0
+
+        P = np.concatenate(all_preds)   # (N, 14, 2)
+        G = np.concatenate(all_gts)     # (N, 14, 2)
+        V = np.concatenate(all_vis)     # (N, 14)
+
+        # Torso diameter: R_Shoulder (8) to L_Hip (3)
+        torso = np.linalg.norm(G[:, 8, :] - G[:, 3, :], axis=-1, keepdims=True)
+        torso = np.maximum(torso, 1e-6)  # (N, 1)
+
+        dist = np.linalg.norm(P - G, axis=-1)   # (N, 14)
+        correct = (dist < 0.5 * torso) * V
+
+        mean_pck = float(correct.sum() / np.maximum(V.sum(), 1))
+        return mean_pck
+
     def save_checkpoint(self, name: str, is_best: bool = False):
         if not self.is_main:
             return
@@ -119,6 +186,7 @@ class BaseTrainer(ABC):
             if hasattr(self.model, "module")
             else self.model.state_dict(),
             "config": self.config,
+            "best_val_pck": self.best_val_pck,
             "best_val_loss": self.best_val_loss,
         }
 

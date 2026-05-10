@@ -202,12 +202,24 @@ class StandardTrainer(BaseTrainer):
         return {"optimizer_state_dict": self.optimizer.state_dict()}
 
     def fit(self, train_loader, val_loader=None):
+        # Choose decode method based on whether sigma curriculum is active
+        decode_method = (
+            "soft-argmax"
+            if (self.sigma_start != self.sigma_end)
+            else "argmax"
+        )
+        if self.is_main:
+            print(f"[Trainer] Checkpoint saving criterion: best val PCK (decoder: {decode_method})")
+
         for epoch in range(self.epochs):
+            self.current_epoch = epoch
             train_metrics = self.train_epoch(train_loader, epoch)
             val_metrics = {}
+            val_pck = None
 
             if val_loader:
                 val_metrics = self.evaluate(val_loader)
+                val_pck = self.compute_val_pck(val_loader, decode_method=decode_method)
 
             if self.is_main:
                 log_str = f"Epoch {epoch + 1}: "
@@ -216,11 +228,20 @@ class StandardTrainer(BaseTrainer):
                     log_str += " | " + " ".join(
                         [f"val_{k}={v:.4f}" for k, v in val_metrics.items()]
                     )
+                if val_pck is not None:
+                    log_str += f" | val_pck={val_pck*100:.2f}%"
                 print(log_str)
 
+                # is_best: PCK improved (primary) or loss improved if no PCK yet
                 val_loss = val_metrics.get("loss", float("inf"))
-                is_best = val_loss < self.best_val_loss
-                if is_best:
+                if val_pck is not None:
+                    is_best = val_pck > self.best_val_pck
+                    if is_best:
+                        self.best_val_pck = val_pck
+                else:
+                    is_best = val_loss < self.best_val_loss
+
+                if val_loss < self.best_val_loss:
                     self.best_val_loss = val_loss
 
                 self.save_checkpoint(f"epoch_{epoch + 1}", is_best=is_best)
@@ -230,4 +251,6 @@ class StandardTrainer(BaseTrainer):
                     **train_metrics,
                     **{f"val_{k}": v for k, v in val_metrics.items()},
                 }
+                if val_pck is not None:
+                    epoch_data["val_pck"] = val_pck
                 self.update_history(epoch_data)
