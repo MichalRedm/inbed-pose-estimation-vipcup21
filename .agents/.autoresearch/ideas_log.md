@@ -1,20 +1,20 @@
 # Ideas Log
 
 ## Hypothesis Queue
-1. **Improved Occlusion Augmentation**: The current occlusion is just a polygon at the bottom. We need more realistic blanket simulations (textures, varying opacity, different shapes).
-2. **Domain Adaptation (UDA)**: Since the goal is uncovered -> covered, we could use methods like entropy minimization or adversarial training to align features.
-3. **Multi-Modal Pre-training**: If RGB is available for training but IR is used for covered, we can use RGB to help. But the user said Training (uncovered) -> Validation (covered).
+1. **Multimodal Fusion (Uncovered RGB/Pressure)**: Fuse features from available modalities to disambiguate occluded joints.
+2. **Joint-Specific Loss Weighting**: Increase penalty for ankle/knee prediction errors.
+3. **Adaptive Lambda**: Scale λ_ana based on the ratio of loss_pose / loss_ana.
+4. **Consistency Regularization**: Force predictions to be invariant to occlusion-style augmentations.
 
 ## Web Research Syntheses
-- **Synthetic Occlusion**: Pasting external objects or random masks over the subject forces the model to learn context.
-- **SLP Dataset Specifics**: SLP features systematic cover (blankets). For IR, blankets act as insulators, diffusing and dampening the heat signature.
-- **Multimodal Fusion**: Leveraging Pressure Maps or RGB can help, but since we are training on uncovered IR to predict covered IR, we need to bridge the domain gap via augmentation or UDA.
+- **Foreshortening Priors**: 2D bone lengths are upper-bounded by physical 3D length but lower-bounded by 0. Using a Hinge loss (ReLU) on length exceeding the max effectively models this projection constraint.
+- **Curriculum Learning for Priors**: Enforcing structural constraints too early can lead to poor local minima. A linear warmup allows the model to find the correct spatial basins first.
+- **SLP Dataset Specifics**: The insulating effect of blankets in IR means joint heat signatures are blurred and shifted. Structural priors are essential to "glue" the limbs together.
 
 ## Graveyard
-- **Thermal Diffusion (Initial)**: Failed due to a critical rotation sign error in `src/data/augmentations.py` which corrupted training coordinates. Root cause: Image rotation was CCW but joint rotation was effectively CW.
-- **Relative Data Paths (Remote)**: Failed on Kaggle GPU instances. Root cause: Execution context in Kaggle notebooks/scripts requires absolute paths for dataset discovery.
+- **Adversarial UDA (Global)**: Loop 5. Caused feature washout.
+- **Fixed-Length MSE Anatomical Loss**: Loops 6-8. Over-regularized foreshortened poses, leading to -3.0% PCK regression.
+- **Thermal Diffusion (Initial)**: Sign error in rotation augmentations.
 
-## Hypothesis Queue (Prioritized)
-1. **Adversarial Domain Alignment**: Use a Discriminator to make the feature representations of "uncovered" (source) and "covered" (target) images indistinguishable.
-2. **Joint-Aware Masking**: Randomly occlude specific limbs or the entire lower/upper body to simulate various blanket positions, combined with the fixed Thermal Diffusion.
-3. **Multi-Scale Heatmap Regression**: Adjust the heatmap sigma based on joint type (larger sigma for lower body joints which are harder to localize under covers).
+## Current Iteration
+- **Loop 9**: Foreshortening-Aware Hinge Loss (SUCCESS). Reached 76.4% PCK.

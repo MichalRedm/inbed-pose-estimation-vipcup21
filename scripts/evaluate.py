@@ -109,7 +109,12 @@ def evaluate(
     if rank <= 0:
         print(f"Loading: {checkpoint_path}")
 
-    state_dict = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    if "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+    else:
+        state_dict = checkpoint
+
     # Handle both DDP and non-DDP checkpoints
     if any(k.startswith("module.") for k in state_dict.keys()):
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
@@ -288,7 +293,15 @@ if __name__ == "__main__":
 
     checkpoint_path = args.checkpoint
     if args.run_id:
-        checkpoint_path = f"results/runs/{args.run_id}/checkpoints/best_model.pth"
+        # If --checkpoint is provided, it's an absolute path.
+        # If not, we construct it using run_id and checkpoint_name.
+        if args.checkpoint == "models/checkpoints/hrnet_epoch_100.pth":
+            checkpoint_name = os.environ.get("CHECKPOINT_NAME", "best_model.pth")
+            checkpoint_path = (
+                f"results/runs/{args.run_id}/checkpoints/{checkpoint_name}"
+            )
+        else:
+            checkpoint_path = args.checkpoint
 
     if not os.path.exists(checkpoint_path):
         # Try best_model.pth in models/checkpoints as fallback

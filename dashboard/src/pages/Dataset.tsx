@@ -156,6 +156,7 @@ const Dataset: React.FC = () => {
   const [selectedSample, setSelectedSample] = useState<SampleDetail | null>(null);
   const [viewModality, setViewModality] = useState<string>('IR');
   const [loading, setLoading] = useState(true);
+  const [showAugmented, setShowAugmented] = useState(false);
 
   const fetchStats = React.useCallback(async () => {
     try {
@@ -417,6 +418,51 @@ const Dataset: React.FC = () => {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
+
+        /* Toggle Switch */
+        .switch {
+          position: relative;
+          display: inline-block;
+          width: 40px;
+          height: 20px;
+        }
+        .switch input {
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+        .slider {
+          position: absolute;
+          cursor: pointer;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: rgba(255,255,255,0.1);
+          transition: .4s;
+        }
+        .slider:before {
+          position: absolute;
+          content: "";
+          height: 14px;
+          width: 14px;
+          left: 3px;
+          bottom: 3px;
+          background-color: white;
+          transition: .4s;
+        }
+        input:checked + .slider {
+          background-color: var(--accent-primary);
+        }
+        input:checked + .slider:before {
+          transform: translateX(20px);
+        }
+        .slider.round {
+          border-radius: 20px;
+        }
+        .slider.round:before {
+          border-radius: 50%;
+        }
       `}</style>
 
       <div className="dataset-header">
@@ -535,7 +581,7 @@ const Dataset: React.FC = () => {
             <div className="modal-main">
               <div className="modal-image-wrapper">
                 <img
-                  src={getDatasetImageUrl(split, selectedSample.id, viewModality)}
+                  src={getDatasetImageUrl(split, selectedSample.id, viewModality, showAugmented)}
                   alt={String(selectedSample.id)}
                 />
                 {selectedSample.joints_per_modality[viewModality] && (
@@ -563,6 +609,21 @@ const Dataset: React.FC = () => {
                       {m}
                     </button>
                   ))}
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', padding: '12px', background: 'rgba(168, 85, 247, 0.1)', borderRadius: '8px', border: '1px solid var(--accent-primary)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Layers size={16} color="var(--accent-primary)" />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Augmentation Preview</span>
+                  </div>
+                  <label className="switch">
+                    <input 
+                      type="checkbox" 
+                      checked={showAugmented} 
+                      onChange={(e) => setShowAugmented(e.target.checked)} 
+                    />
+                    <span className="slider round"></span>
+                  </label>
                 </div>
               </div>
 

@@ -205,6 +205,13 @@ def verify_gpu():
 
 # In-memory model cache: {model_key: {"model": model, "mtime": timestamp}}
 model_container = {}
+
+
+@app.get("/hello")
+async def hello():
+    return {"message": "Hello from API"}
+
+
 dataset_container = {}
 
 
@@ -360,9 +367,11 @@ async def evaluate_model(
             raise HTTPException(
                 status_code=404, detail=f"Checkpoint not found at {checkpoint_path}"
             )
-        model.load_state_dict(
-            torch.load(checkpoint_path, map_location=device, weights_only=True)
-        )
+        state = torch.load(checkpoint_path, map_location=device)
+        if isinstance(state, dict) and "model_state_dict" in state:
+            model.load_state_dict(state["model_state_dict"])
+        else:
+            model.load_state_dict(state)
 
     if remote:
         if not run_id:
@@ -575,7 +584,9 @@ async def get_sample_detail(split: str, idx: int):
 
 
 @app.get("/dataset/image/{split}/{idx}")
-async def get_dataset_image(split: str, idx: int, modality: str = "IR"):
+async def get_dataset_image(
+    split: str, idx: int, modality: str = "IR", augment: bool = False
+):
     ds = dataset_container.get(split)
     if not ds or idx >= len(ds):
         raise HTTPException(status_code=404, detail="Sample not found")
@@ -585,7 +596,44 @@ async def get_dataset_image(split: str, idx: int, modality: str = "IR"):
         # Fallback to first available if requested not found
         modality = list(sample["image_paths"].keys())[0]
 
-    return FileResponse(sample["image_paths"][modality])
+    image_path = sample["image_paths"][modality]
+
+    if not augment:
+        return FileResponse(image_path)
+
+    # Apply augmentation for preview
+    image = Image.open(image_path)
+    if modality == "IR":
+        image = image.convert("L")
+    else:
+        image = image.convert("RGB")
+
+    joints = sample["joints"].get(modality)
+
+    # Use the global training config for augmentation settings
+    config = model_container.get("config", {})
+    aug_cfg = config.get("training", {}).get("augmentation", {})
+
+    from src.data.augmentations import DataAugmenter
+
+    augmenter = DataAugmenter(
+        enabled=True,
+        occlusion_prob=1.0,  # Force occlusion for preview if it's the goal
+        flip_prob=aug_cfg.get("flip_prob", 0.5),
+        rotation_range=aug_cfg.get("rotation_range", [-30, 30]),
+        scaling_range=aug_cfg.get("scaling_range", [0.8, 1.2]),
+    )
+
+    augmented_image, _ = augmenter(image, joints, is_ir=(modality == "IR"))
+
+    # Return as streaming response
+    img_byte_arr = io.BytesIO()
+    augmented_image.save(img_byte_arr, format="PNG")
+    img_byte_arr.seek(0)
+
+    from fastapi.responses import StreamingResponse
+
+    return StreamingResponse(img_byte_arr, media_type="image/png")
 
 
 @app.on_event("startup")
@@ -610,7 +658,11 @@ async def startup_event():
     else:
         latest_checkpoint = checkpoints[-1]
         print(f"Loading checkpoint: {latest_checkpoint}")
-        model.load_state_dict(torch.load(latest_checkpoint, map_location=device))
+        state = torch.load(latest_checkpoint, map_location=device)
+        if isinstance(state, dict) and "model_state_dict" in state:
+            model.load_state_dict(state["model_state_dict"])
+        else:
+            model.load_state_dict(state)
 
     model.eval()
 
@@ -635,7 +687,6 @@ async def startup_event():
         )
         val_ds = VIPCupDataset(
             root=root_path,
-            # Set the range to cover all domain adaptation subjects (31 to 70)
             subjects=range(
                 dataset_cfg.get("subjects_val", [81, 90])[0],
                 dataset_cfg.get("subjects_val", [81, 90])[1] + 1,
@@ -660,7 +711,8 @@ async def predict(
     run_id: str = Form(None),
     checkpoint: str = Form(None),
 ):
-    if not file.content_type.startswith("image/"):
+    content_type = file.content_type or ""
+    if not content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image.")
 
     try:
@@ -745,7 +797,11 @@ async def predict(
             # Build new model
             model = build_model(current_config).to(device)
             # Load state dict
-            model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+            state = torch.load(checkpoint_path, map_location=device)
+            if isinstance(state, dict) and "model_state_dict" in state:
+                model.load_state_dict(state["model_state_dict"])
+            else:
+                model.load_state_dict(state)
             model.eval()
 
             # Update container
@@ -804,6 +860,11 @@ async def predict(
         }
 
     except Exception as e:
+        with open("api.log", "a") as log:
+            log.write(f"  ERROR in predict: {str(e)}\n")
+            import traceback
+
+            log.write(traceback.format_exc() + "\n")
         raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
 
 

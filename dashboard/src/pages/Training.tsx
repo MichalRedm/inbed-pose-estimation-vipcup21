@@ -35,6 +35,10 @@ interface TrainingConfig {
     rotation_range: [number, number];
     scaling_range: [number, number];
   };
+  uda: boolean;
+  lambda_adv: number;
+  anatomical: boolean;
+  lambda_anatomical: number;
 }
 
 interface TrainingStatus {
@@ -43,6 +47,7 @@ interface TrainingStatus {
   current_epoch: number;
   total_epochs: number;
   loss_history: number[];
+  adv_loss_history: number[];
   log_history: string[];
   status_message: string;
 }
@@ -62,7 +67,11 @@ const Training: React.FC = () => {
       flip_prob: 0.5,
       rotation_range: [-30, 30],
       scaling_range: [0.8, 1.2]
-    }
+    },
+    uda: false,
+    lambda_adv: 0.1,
+    anatomical: false,
+    lambda_anatomical: 0.01
   });
 
   // Load initial config
@@ -71,17 +80,27 @@ const Training: React.FC = () => {
       try {
         const savedConfig = await getTrainingConfig();
         if (savedConfig) {
-          setConfig(prev => ({
-            ...prev,
-            lr: savedConfig.lr ?? prev.lr,
-            epochs: savedConfig.epochs ?? prev.epochs,
-            batch_size: savedConfig.batch_size ?? prev.batch_size,
-            remote: savedConfig.remote ?? prev.remote,
-            augmentation: savedConfig.augmentation ? {
-              ...prev.augmentation,
-              ...savedConfig.augmentation
-            } : prev.augmentation
-          }));
+          setConfig(prev => {
+            const next = { ...prev };
+            if (savedConfig.lr !== undefined) next.lr = savedConfig.lr;
+            if (savedConfig.epochs !== undefined) next.epochs = savedConfig.epochs;
+            if (savedConfig.batch_size !== undefined) next.batch_size = savedConfig.batch_size;
+            if (savedConfig.remote !== undefined) next.remote = savedConfig.remote;
+            if (savedConfig.uda !== undefined) next.uda = savedConfig.uda;
+            if (savedConfig.lambda_adv !== undefined) next.lambda_adv = savedConfig.lambda_adv;
+            if (savedConfig.lambda_anatomical !== undefined) {
+              next.lambda_anatomical = savedConfig.lambda_anatomical;
+              next.anatomical = savedConfig.lambda_anatomical > 0;
+            }
+            
+            if (savedConfig.augmentation) {
+              next.augmentation = {
+                ...prev.augmentation,
+                ...savedConfig.augmentation
+              };
+            }
+            return next;
+          });
         }
       } catch (error) {
         console.error('Failed to load training config:', error);
@@ -157,17 +176,18 @@ const Training: React.FC = () => {
         epochs: config.epochs,
         batch_size: config.batch_size,
         remote: config.remote,
-        augmentation: config.augmentation
+        augmentation: config.augmentation,
+        uda: config.uda,
+        lambda_adv: config.lambda_adv,
+        lambda_anatomical: config.anatomical ? config.lambda_anatomical : 0
       });
 
       // Start training with the current configuration
       await startTraining({
-        training: {
-          lr: config.lr,
-          epochs: config.epochs,
-          batch_size: config.batch_size,
-          augmentation: config.augmentation
-        },
+        augmentation: config.augmentation,
+        uda: config.uda,
+        lambda_adv: config.lambda_adv,
+        lambda_anatomical: config.anatomical ? config.lambda_anatomical : 0,
         remote: config.remote
       });
       fetchStatus();
@@ -189,7 +209,8 @@ const Training: React.FC = () => {
 
   const chartData = status?.loss_history.map((loss, index) => ({
     epoch: index + 1,
-    loss: loss
+    loss: loss,
+    adv_loss: status.adv_loss_history ? status.adv_loss_history[index] : 0
   })) || [];
 
   return (
@@ -238,7 +259,18 @@ const Training: React.FC = () => {
                     strokeWidth={3} 
                     dot={{ r: 4, fill: 'var(--accent-lime)' }}
                     activeDot={{ r: 6, stroke: 'white', strokeWidth: 2 }}
+                    name="Pose Loss"
                   />
+                  {config.uda && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="adv_loss" 
+                      stroke="var(--accent-pink)" 
+                      strokeWidth={2} 
+                      dot={false}
+                      name="Adv Loss"
+                    />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -294,6 +326,80 @@ const Training: React.FC = () => {
                   </span>
                 </label>
               </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Activity size={18} color="var(--accent-pink)" />
+                  <span style={{ fontSize: '0.85rem' }}>Adversarial Alignment (UDA)</span>
+                </div>
+                <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '40px', height: '20px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.uda}
+                    onChange={(e) => updateConfig(prev => ({...prev, uda: e.target.checked}))}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span className="slider" style={{ 
+                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, 
+                    backgroundColor: config.uda ? 'var(--accent-pink)' : '#555', 
+                    transition: '.4s', borderRadius: '20px' 
+                  }}>
+                    <span style={{ 
+                      position: 'absolute', height: '16px', width: '16px', left: config.uda ? '22px' : '2px', 
+                      bottom: '2px', backgroundColor: 'white', transition: '.4s', borderRadius: '50%' 
+                    }}></span>
+                  </span>
+                </label>
+              </div>
+
+              {config.uda && (
+                <div className="input-field" style={{ marginBottom: '16px', marginLeft: '12px' }}>
+                  <label>Lambda Adv</label>
+                  <input 
+                    type="number" 
+                    value={config.lambda_adv} 
+                    onChange={(e) => updateConfig(prev => ({...prev, lambda_adv: parseFloat(e.target.value)}))}
+                    step="0.05" min="0"
+                  />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Activity size={18} color="var(--accent-lime)" />
+                  <span style={{ fontSize: '0.85rem' }}>Anatomical Constraints</span>
+                </div>
+                <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '40px', height: '20px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.anatomical}
+                    onChange={(e) => updateConfig(prev => ({...prev, anatomical: e.target.checked}))}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span className="slider" style={{ 
+                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, 
+                    backgroundColor: config.anatomical ? 'var(--accent-lime)' : '#555', 
+                    transition: '.4s', borderRadius: '20px' 
+                  }}>
+                    <span style={{ 
+                      position: 'absolute', height: '16px', width: '16px', left: config.anatomical ? '22px' : '2px', 
+                      bottom: '2px', backgroundColor: 'white', transition: '.4s', borderRadius: '50%' 
+                    }}></span>
+                  </span>
+                </label>
+              </div>
+
+              {config.anatomical && (
+                <div className="input-field" style={{ marginBottom: '16px', marginLeft: '12px' }}>
+                  <label>Lambda Anatomical</label>
+                  <input 
+                    type="number" 
+                    value={config.lambda_anatomical} 
+                    onChange={(e) => updateConfig(prev => ({...prev, lambda_anatomical: parseFloat(e.target.value)}))}
+                    step="0.01" min="0"
+                  />
+                </div>
+              )}
 
               {status?.is_running ? (
 

@@ -18,6 +18,7 @@ class TrainingManager:
         self.current_epoch = 0
         self.total_epochs = 0
         self.loss_history: List[float] = []
+        self.adv_loss_history: List[float] = []
         self.log_history: List[str] = []
         self.status_message = "Idle"
         self.current_run_id: Optional[str] = None
@@ -55,11 +56,12 @@ class TrainingManager:
 
         # Load existing history if resuming
         if actual_overrides and actual_overrides.get("resume"):
-            self.loss_history = self._load_history()
+            self.loss_history, self.adv_loss_history = self._load_history_dual()
             if self.loss_history:
                 self.current_epoch = len(self.loss_history)
         else:
             self.loss_history = []
+            self.adv_loss_history = []
 
         self._thread = threading.Thread(
             target=self._run_training, args=(actual_overrides,)
@@ -78,9 +80,10 @@ class TrainingManager:
     def get_status(self):
         # Refresh loss history from file if it's more complete than our in-memory version
         # (Especially useful for remote training where history.json is synced periodically)
-        file_history = self._load_history()
+        file_history, file_adv_history = self._load_history_dual()
         if len(file_history) > len(self.loss_history):
             self.loss_history = file_history
+            self.adv_loss_history = file_adv_history
 
         return {
             "is_running": self.is_running,
@@ -89,11 +92,12 @@ class TrainingManager:
             "current_epoch": self.current_epoch,
             "total_epochs": self.total_epochs,
             "loss_history": self.loss_history,
+            "adv_loss_history": self.adv_loss_history,
             "log_history": self.log_history,
             "status_message": self.status_message,
         }
 
-    def _load_history(self) -> List[float]:
+    def _load_history_dual(self) -> tuple[List[float], List[float]]:
         try:
             project_root = Path(__file__).parent.parent.parent
             if self.current_run_id:
@@ -110,10 +114,12 @@ class TrainingManager:
             if history_path.exists():
                 with open(history_path, "r") as f:
                     data = json.load(f)
-                    return [float(entry.get("train_loss", 0)) for entry in data]
+                    train_losses = [float(entry.get("train_loss", 0)) for entry in data]
+                    adv_losses = [float(entry.get("adv_loss", 0)) for entry in data]
+                    return train_losses, adv_losses
         except Exception as e:
             print(f"[TrainingManager] Error loading history: {e}")
-        return []
+        return [], []
 
     def _run_training(self, config_overrides):
         try:
@@ -143,6 +149,19 @@ class TrainingManager:
                     cmd.extend(["--batch_size", str(config_overrides["batch_size"])])
                 if config_overrides.get("resume"):
                     cmd.append("--resume")
+                if "lambda_anatomical" in config_overrides:
+                    cmd.extend(
+                        [
+                            "--lambda_anatomical",
+                            str(config_overrides["lambda_anatomical"]),
+                        ]
+                    )
+                if config_overrides.get("uda"):
+                    cmd.append("--uda")
+                    if "lambda_adv" in config_overrides:
+                        cmd.extend(
+                            ["--lambda_adv", str(config_overrides["lambda_adv"])]
+                        )
 
             if self.current_run_id:
                 cmd.extend(["--run_id", self.current_run_id])
@@ -233,27 +252,33 @@ class TrainingManager:
                         )
                         continue
 
-                    # 5. Parse loss: "train_loss=0.1234" or "Epoch 1: train_loss=0.1234  val_loss=0.5678"
+                    # 5. Parse loss: "train_loss=0.1234" or "Epoch 1: train_loss=0.1234  adv_loss=0.05 val_loss=0.5678"
                     loss_match = re.search(
-                        r"(?:Epoch (\d+): )?train_loss=([0-9.]+)(?:\s+val_loss=([0-9.]+))?",
+                        r"(?:Epoch (\d+): )?train_loss=([0-9.]+)(?:\s+adv_loss=([0-9.]+))?(?:\s+val_loss=([0-9.]+))?",
                         line,
                     )
                     if loss_match:
                         epoch_num = loss_match.group(1)
                         train_loss = float(loss_match.group(2))
-                        val_loss = loss_match.group(3)
+                        adv_loss_str = loss_match.group(3)
+                        val_loss = loss_match.group(4)
 
                         msg = f"Last loss: {train_loss:.4f}"
+                        if adv_loss_str:
+                            msg += f" | Adv: {float(adv_loss_str):.4f}"
                         if val_loss:
                             msg += f" | Val: {float(val_loss):.4f}"
                         self.status_message = msg
 
                         if epoch_num:
                             idx = int(epoch_num) - 1
-                            # Ensure list is long enough
-                            while len(self.loss_history) <= idx:
-                                self.loss_history.append(0.0)
+                            # Ensure lists are long enough
+                            for lst in [self.loss_history, self.adv_loss_history]:
+                                while len(lst) <= idx:
+                                    lst.append(0.0)
                             self.loss_history[idx] = train_loss
+                            if adv_loss_str:
+                                self.adv_loss_history[idx] = float(adv_loss_str)
                         else:
                             # Fallback to appending if no epoch number
                             if (
@@ -261,6 +286,10 @@ class TrainingManager:
                                 or self.loss_history[-1] != train_loss
                             ):
                                 self.loss_history.append(train_loss)
+                                if adv_loss_str:
+                                    self.adv_loss_history.append(float(adv_loss_str))
+                                else:
+                                    self.adv_loss_history.append(0.0)
                         continue
 
                     # 6. Remote Sync & Prep

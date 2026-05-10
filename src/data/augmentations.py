@@ -24,62 +24,90 @@ class ThermalDiffusionAugmenter:
 
         w, h = image.size
 
-        # Create a mask for the "covered" area
-        mask = Image.new("L", image.size, 0)
-        draw = ImageDraw.Draw(mask)
-
-        # Determine coverage level (e.g., from ankles to knees, hips, or chest)
-        # LSP indices: 0,5: ankles | 1,4: knees | 2,3: hips | 8,9: shoulders
+        # Determine coverage level
         coverage_options = []
         if joints is not None:
-            # Check visibility/annotation
-            if joints[2, 0] < 2 and joints[2, 5] < 2:  # ankles
-                coverage_options.append(min(joints[1, 0], joints[1, 5]))
-            if joints[2, 1] < 2 and joints[2, 4] < 2:  # knees
-                coverage_options.append(min(joints[1, 1], joints[1, 4]))
-            if joints[2, 2] < 2 and joints[2, 3] < 2:  # hips
-                coverage_options.append(min(joints[1, 2], joints[1, 3]))
-            if joints[2, 8] < 2 and joints[2, 9] < 2:  # shoulders
-                coverage_options.append(min(joints[1, 8], joints[1, 9]))
+            # Check visibility/annotation (0=visible, 1=occluded, 2=missing)
+            # We look for the Y coordinate of various joint pairs
+            for pair in [
+                (0, 5),
+                (1, 4),
+                (2, 3),
+                (8, 9),
+            ]:  # ankles, knees, hips, shoulders
+                if joints[2, pair[0]] < 2 and joints[2, pair[1]] < 2:
+                    coverage_options.append(min(joints[1, pair[0]], joints[1, pair[1]]))
 
-        if coverage_options:
+        # Probability of full coverage
+        full_coverage = random.random() < 0.1
+
+        if full_coverage:
+            base_y = 0
+        elif coverage_options:
             # Pick a random joint level to start the blanket from
             base_y = random.choice(coverage_options)
         else:
             # Fallback to random height if no joints are visible
-            base_y = random.randint(int(h * 0.2), int(h * 0.6))
+            base_y = random.randint(int(h * 0.1), int(h * 0.7))
 
-        # Add slight randomization to the top edge
-        left_y = base_y + random.randint(-20, 20)
-        right_y = base_y + random.randint(-20, 20)
+        # Create a wavy blanket edge using sine waves
+        mask = Image.new("L", image.size, 0)
+        draw = ImageDraw.Draw(mask)
 
-        polygon = [(0, left_y), (w, right_y), (w, h), (0, h)]
-        draw.polygon(polygon, fill=255)
+        points = []
+        num_points = 20
+        freq = random.uniform(2, 5)
+        amp = random.uniform(5, 20)
+        phase = random.uniform(0, 2 * np.pi)
 
-        # Soften the mask edge
-        mask = mask.filter(ImageFilter.GaussianBlur(radius=10))
+        for i in range(num_points + 1):
+            x = int(i * w / num_points)
+            # Add some sine-based waviness
+            y = int(base_y + amp * np.sin(freq * (x / w) * 2 * np.pi + phase))
+            # Clamp to image bounds
+            y = max(0, min(h - 1, y))
+            points.append((x, y))
 
-        # 1. Create a blurred version of the image
-        blurred = image.filter(ImageFilter.GaussianBlur(radius=random.uniform(3, 7)))
+        # Close the polygon to the bottom
+        points.append((w, h))
+        points.append((0, h))
+        draw.polygon(points, fill=255)
+
+        # Soften the mask edge slightly
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(5, 10)))
+
+        # 1. Create a variable blurred version
+        # We'll use a strong blur for the "blanket" area
+        blur_radius = random.uniform(4, 10)
+        blurred = image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
 
         # 2. Create a dampened version (lower intensity)
         # Convert to numpy for intensity manipulation
         img_np = np.array(image).astype(np.float32)
-        dampened_np = img_np * random.uniform(0.5, 0.8)
 
-        # Add slight thermal noise
-        noise = np.random.normal(0, 3, dampened_np.shape).astype(np.float32)
-        dampened_np = np.clip(dampened_np + noise, 0, 255).astype(np.uint8)
-        dampened = Image.fromarray(dampened_np)
+        # Random dampening factor
+        damp_factor = random.uniform(0.4, 0.7)
+        dampened_np = img_np * damp_factor
 
-        # 3. Combine blur and dampening
-        # We blend the original with the blurred+dampened version using the mask
-        blurred_dampened = Image.composite(
+        # Add thermal noise (Gaussian noise + random hot/cold spots)
+        noise = np.random.normal(0, 5, dampened_np.shape).astype(np.float32)
+        dampened_np = np.clip(dampened_np + noise, 0, 255)
+
+        # Occasionally add "sensor noise" or "blanket texture"
+        if random.random() < 0.3:
+            grid_y, grid_x = np.mgrid[0:h, 0:w]
+            texture = 5 * np.sin(grid_x / 5) * np.cos(grid_y / 5)
+            dampened_np = np.clip(dampened_np + texture, 0, 255)
+
+        dampened = Image.fromarray(dampened_np.astype(np.uint8))
+
+        # 3. Combine: the "blanket" version is both blurred and dampened
+        blanket_layer = Image.composite(
             dampened.filter(ImageFilter.GaussianBlur(radius=2)), blurred, mask
         )
 
         # Final composition: original image blended with the "under-blanket" version
-        final_image = Image.composite(blurred_dampened, image, mask)
+        final_image = Image.composite(blanket_layer, image, mask)
 
         return final_image
 
@@ -102,22 +130,32 @@ class DataAugmenter:
         )
 
     def __call__(
-        self, image: Image.Image, joints: Optional[np.ndarray], is_ir: bool = False
-    ) -> Tuple[Image.Image, Optional[np.ndarray]]:
+        self,
+        image: Image.Image,
+        joints: Optional[np.ndarray],
+        is_ir: bool = False,
+        return_pair: bool = False,
+    ) -> Any:
         """
         Apply enabled augmentations.
         image: PIL Image
         joints: numpy array of shape (3, 14) -> (x, y, visibility)
         is_ir: boolean flag indicating if the current image is an Infrared/Thermal modality
-        returns: (transformed_image, transformed_joints)
+        return_pair: if True, returns (augmented_image, source_image, joints) for UDA
+        returns: (transformed_image, transformed_joints) OR (aug, src, joints)
         """
         if not self.enabled:
+            if return_pair:
+                return image, image, joints
             return image, joints
 
-        # 1. Spatial/Geometric transforms (would affect both image and joints)
+        # 1. Spatial/Geometric transforms (affects both image and joints)
         image, joints = self._random_flip(image, joints)
         image, joints = self._random_rotate(image, joints)
         image, joints = self._random_scale(image, joints)
+
+        # Keep a copy of the geometrically transformed image before pixel-level/thermal changes
+        source_image = image.copy()
 
         # 2. Pixel-level transforms (affects only image, joints stay the same)
         # image, joints = self._color_jitter(image, joints)
@@ -126,6 +164,8 @@ class DataAugmenter:
         if self.thermal_augmenter:
             image = self.thermal_augmenter(image, joints=joints, is_ir=is_ir)
 
+        if return_pair:
+            return image, source_image, joints
         return image, joints
 
     def _random_flip(self, image: Image.Image, joints: Any) -> Tuple[Image.Image, Any]:

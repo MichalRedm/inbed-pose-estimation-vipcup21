@@ -27,7 +27,10 @@ def main():
         "--max_gpus", type=int, default=None, help="Maximum number of GPUs to use"
     )
     parser.add_argument(
-        "--checkpoint", type=str, default="best_model.pth", help="Checkpoint filename"
+        "--checkpoint_name",
+        type=str,
+        default="best_model.pth",
+        help="Checkpoint filename",
     )
     args_cli, other_args = parser.parse_known_args()
 
@@ -108,7 +111,7 @@ def main():
         )
 
         cmd = (
-            f"cd /root/project && {env_setup} && "
+            f"cd /root/project && {env_setup} && export CHECKPOINT_NAME={args_cli.checkpoint_name} && "
             f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
             f"scripts/evaluate.py --run_id {args_cli.run_id} --save_json {remote_results_path} "
             f"{' '.join(other_args)}"
