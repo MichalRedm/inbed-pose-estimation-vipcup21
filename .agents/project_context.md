@@ -19,6 +19,7 @@ Enhance the pose estimation pipeline with Adversarial Domain Adaptation and Anat
 - [x] Implemented Occlusion-Aware training for under-blanket joints.
 - [x] Implemented Gaussian Sigma Curriculum (3.0 -> 1.0).
 - [x] Automated evaluation trigger in remote training pipeline.
+- [x] Implemented Soft-Argmax decoding for robust inference.
 
 
 ## Critical Secrets Required

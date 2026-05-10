@@ -99,14 +99,27 @@ const Inference: React.FC = () => {
           <div className={`dropzone ${selectedFile ? 'has-file' : ''}`}>
             <input type="file" id="file-upload" onChange={handleFileChange} accept="image/*" />
             <label htmlFor="file-upload">
-              {previewUrl ? (
-                <div className="preview-container">
-                  <img ref={imageRef} src={previewUrl} alt="Preview" className="image-preview" />
+            {previewUrl ? (
+                <div className="preview-container" style={{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
+                  <img 
+                    ref={imageRef} 
+                    src={previewUrl} 
+                    alt="Preview" 
+                    className="image-preview" 
+                    style={{ display: 'block', maxWidth: '100%', maxHeight: '70vh', borderRadius: '8px' }} 
+                  />
                   {result && (
                     <svg 
                       className="pose-overlay"
                       viewBox={`0 0 ${result.original_size.width} ${result.original_size.height}`}
-                      preserveAspectRatio="xMidYMid meet"
+                      style={{ 
+                        position: 'absolute', 
+                        top: 0, 
+                        left: 0, 
+                        width: '100%', 
+                        height: '100%', 
+                        pointerEvents: 'none' 
+                      }}
                     >
                       {/* Connections */}
                       {SKELETON_CONNECTIONS.map(([idx1, idx2], i) => {
@@ -120,7 +133,7 @@ const Inference: React.FC = () => {
                             x2={j2.x} y2={j2.y}
                             stroke="white"
                             strokeWidth={result.original_size.width / 300}
-                            strokeOpacity="0.5"
+                            strokeOpacity="0.7"
                           />
                         );
                       })}
@@ -131,10 +144,10 @@ const Inference: React.FC = () => {
                           <circle
                             cx={pred.x}
                             cy={pred.y}
-                            r={result.original_size.width / 100}
+                            r={result.original_size.width / 120}
                             fill={JOINT_COLORS[i] || 'var(--accent-lime)'}
                             stroke="white"
-                            strokeWidth={result.original_size.width / 400}
+                            strokeWidth={result.original_size.width / 500}
                           />
                         </g>
                       ))}

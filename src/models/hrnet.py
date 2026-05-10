@@ -243,7 +243,12 @@ class HRNet(BaseModel):
 
     def __init__(self, config):
         super().__init__(config)
-        config_model = config.get("model", {}).get("hrnet", {})
+        # Handle both full config and sub-config
+        if "model" in config:
+            config_model = config.get("model", {}).get("hrnet", {})
+        else:
+            config_model = config
+            
         num_joints = config_model.get("num_joints", 14)
         in_channels = config_model.get("in_channels", 1)
         C = self.W32  # shorthand

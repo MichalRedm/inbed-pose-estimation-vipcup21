@@ -11,6 +11,7 @@
 - [x] **Metrics**: Standardized on PCK@0.5 (torso-relative) and MPJPE.
 - [x] **Unified Training Pipeline**: Consolidated all training setups (Standard, UDA, Anatomical) into a single entry point using a factory pattern.
 - [x] **Adversarial Domain Alignment**: Implemented UDATrainer and DomainDiscriminator to bridge the gap between clean and covered IR images.
+- [x] **Soft-Argmax Decoding**: Implemented robust, sub-pixel coordinate decoding in the API and training pipeline.
 
 ## Current Technical Debts / Placeholders
 - `src/models/hrnet.py` uses a simplified parallel stream architecture; could be extended to full HRNet-W32 for better performance.

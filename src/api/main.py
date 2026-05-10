@@ -723,14 +723,8 @@ async def predict(
         )  # Convert to Grayscale (1-channel)
 
         # Preprocess
-        original_size = image.size
-        image_resized = image.resize(model_container["image_size"])
-        # (1, H, W)
-        img_tensor = (
-            torch.from_numpy(np.array(image_resized)).unsqueeze(0).float() / 255.0
-        )
-        img_tensor = img_tensor.unsqueeze(0).to(model_container["device"])
-
+        original_size = image.size # (W, H)
+        
         # Determine checkpoint path
         checkpoint_path = None
         if run_id:
@@ -743,6 +737,19 @@ async def predict(
                 / "checkpoints"
                 / checkpoint_name
             )
+        
+        # Determine image size from config if possible
+        model_image_size = (256, 256)
+        if checkpoint_path and (checkpoint_path.parent.parent / "config.json").exists():
+            with open(checkpoint_path.parent.parent / "config.json", "r") as f:
+                run_cfg = json.load(f)
+                model_image_size = tuple(run_cfg.get("dataset", {}).get("image_size", [256, 256]))
+
+        image_resized = image.resize(model_image_size)
+        # (1, 1, H, W)
+        img_tensor = (
+            torch.from_numpy(np.array(image_resized)).unsqueeze(0).unsqueeze(0).float() / 255.0
+        ).to(model_container["device"])
         elif model_name:
             checkpoint_path = project_root / "models" / "checkpoints" / model_name
         else:
@@ -827,19 +834,20 @@ async def predict(
             outputs = model(img_tensor)
             if model.output_type == "heatmap":
                 # Use soft-argmax for better precision and robustness to noise
-                preds = decode_heatmaps(outputs.cpu(), model_container["image_size"], method="soft-argmax")
+                preds = decode_heatmaps(outputs.cpu(), model_image_size, method="soft-argmax")
             else:
                 # Direct coordinates (1, 14, 2)
                 preds = outputs.cpu()
 
         # Rescale predictions to original image size
-        # preds is (1, 14, 2)
-        scale_x = original_size[0] / model_container["image_size"][0]
-        scale_y = original_size[1] / model_container["image_size"][1]
+        # preds is (1, 14, 2) in model_image_size space
+        scale_x = original_size[0] / model_image_size[0]
+        scale_y = original_size[1] / model_image_size[1]
 
-        scaled_preds = preds[0].numpy()
-        scaled_preds[:, 0] *= scale_x
-        scaled_preds[:, 1] *= scale_y
+        scaled_preds = preds[0].cpu().numpy().copy()
+        for i in range(len(scaled_preds)):
+            scaled_preds[i, 0] = float(scaled_preds[i, 0]) * scale_x
+            scaled_preds[i, 1] = float(scaled_preds[i, 1]) * scale_y
 
         # Format response
         results = []
