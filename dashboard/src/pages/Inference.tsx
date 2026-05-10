@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Upload, Play, RefreshCw, Download, Layers } from 'lucide-react';
 import { predictPose } from '../services/api';
 import { useGlobalState } from '../context/GlobalStateContext';
@@ -51,15 +51,19 @@ const Inference: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const drawPoseOnCanvas = (imgSrc: string, predictions: Prediction[], origW: number, origH: number) => {
+  // Draw pose after React re-renders the canvas into the DOM
+  useEffect(() => {
+    if (!result || !previewUrl) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const { predictions, original_size: { width: origW, height: origH } } = result;
+
     const img = new Image();
     img.onload = () => {
-      // Fit image within available container width, max 600px tall
+      // Fit to container width, max 600px tall
       const maxW = containerRef.current?.clientWidth ?? 520;
       const maxH = 600;
       const scale = Math.min(maxW / origW, maxH / origH);
@@ -69,7 +73,7 @@ const Inference: React.FC = () => {
       canvas.width = displayW;
       canvas.height = displayH;
 
-      // Draw image first
+      // Draw image
       ctx.drawImage(img, 0, 0, displayW, displayH);
 
       // Scale: original image px → canvas display px
@@ -96,7 +100,6 @@ const Inference: React.FC = () => {
         const pred = predictions[i];
         const color = JOINT_COLORS[i] ?? '#c2ef4e';
         const { r, g, b } = hexToRgb(color);
-
         ctx.beginPath();
         ctx.arc(pred.x * sx, pred.y * sy, radius, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.9)`;
@@ -106,8 +109,9 @@ const Inference: React.FC = () => {
         ctx.stroke();
       }
     };
-    img.src = imgSrc;
-  };
+    img.src = previewUrl;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -119,18 +123,11 @@ const Inference: React.FC = () => {
   };
 
   const handleRunInference = async () => {
-    if (!selectedFile || !previewUrl) return;
-
+    if (!selectedFile) return;
     setLoading(true);
     try {
       const data = await predictPose(selectedFile, selectedModel, selectedRun);
-      setResult(data);
-      drawPoseOnCanvas(
-        previewUrl,
-        data.predictions,
-        data.original_size.width,
-        data.original_size.height
-      );
+      setResult(data); // triggers useEffect which draws on canvas after re-render
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string };
       console.error('Inference failed:', error);
@@ -168,7 +165,7 @@ const Inference: React.FC = () => {
             )}
           </div>
 
-          {/* Image / Canvas display area */}
+          {/* Display area — shows image before inference, canvas (image + pose) after */}
           <div
             ref={containerRef}
             style={{
@@ -192,25 +189,39 @@ const Inference: React.FC = () => {
               style={{ display: 'none' }}
             />
 
-            {result ? (
-              /* Canvas renders image + skeleton together — perfect alignment guaranteed */
-              <canvas
-                ref={canvasRef}
-                style={{ display: 'block', maxWidth: '100%', borderRadius: '8px' }}
-              />
-            ) : previewUrl ? (
+            {/* Canvas — only shown after inference (contains both image and skeleton) */}
+            <canvas
+              ref={canvasRef}
+              style={{
+                display: result ? 'block' : 'none',
+                width: '100%',
+                borderRadius: '8px',
+              }}
+            />
+
+            {/* Raw image preview — shown after file selected, before inference */}
+            {!result && previewUrl && (
               <img
                 src={previewUrl}
                 alt="Preview"
-                style={{ maxWidth: '100%', maxHeight: '580px', objectFit: 'contain', borderRadius: '8px', display: 'block' }}
+                style={{ width: '100%', height: 'auto', borderRadius: '8px', display: 'block' }}
               />
-            ) : (
-              <label htmlFor="file-upload" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px' }}>
+            )}
+
+            {/* Upload placeholder — shown when no file */}
+            {!previewUrl && !result && (
+              <label
+                htmlFor="file-upload"
+                style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px' }}
+              >
                 <Upload size={48} color="var(--accent-primary)" />
-                <p className="text-uppercase" style={{ marginTop: '16px', fontWeight: '600' }}>Drop image here or click to upload</p>
+                <p className="text-uppercase" style={{ marginTop: '16px', fontWeight: '600' }}>
+                  Drop image here or click to upload
+                </p>
               </label>
             )}
 
+            {/* Change image button */}
             {(previewUrl || result) && (
               <label
                 htmlFor="file-upload"
