@@ -26,4 +26,6 @@
 - **Loop 11**: Joint-Specific Loss Weighting (FAILURE). Regression to 73.1% PCK.
 - **Loop 12**: Consistency Regularization (FAILURE). 75.6% PCK.
 - **Loop 13**: Multi-Scale Heatmap Supervision (FAILURE). 74.3% PCK.
-- **Loop 14**: Differentiable Heatmap Refinement - PLANNED.
+- **Loop 14**: Differentiable Heatmap Refinement (SUCCESS). 78.5% PCK.
+- **Loop 15**: Occlusion-Aware Integral Regression (SUCCESS). 81.0% PCK.
+- **Loop 16**: Adaptive Gaussian Sigma Curriculum (SUCCESS). 84.6% PCK. Narrowing sigma sharpened localization.

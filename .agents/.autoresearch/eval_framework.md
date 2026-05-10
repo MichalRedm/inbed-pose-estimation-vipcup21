@@ -23,3 +23,6 @@
 | Loop 11: Joint Weighting | 73.1% | 28.0 | 2026-05-10 |
 | Loop 12: Consistency | 75.6% | 26.2 | 2026-05-10 |
 | Loop 13: Multi-Scale | 74.3% | 26.7 | 2026-05-10 |
+| Loop 14: Integral Reg | 78.5% | 22.6 | 2026-05-10 |
+| Loop 15: Occl-Aware | 81.0% | 20.7 | 2026-05-10 |
+| Loop 16: Sigma Curric | 84.6% | 18.5 | 2026-05-10 |

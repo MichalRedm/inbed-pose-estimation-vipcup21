@@ -15,6 +15,10 @@ Enhance the pose estimation pipeline with Adversarial Domain Adaptation and Anat
 - [x] ML Dashboard with training monitor and inference visualizer.
 - [x] Established TDD standards and comprehensive test suite.
 - [x] Full support for local and remote (Kaggle) training.
+- [x] Implemented Integral Coordinate Regression (Soft-Argmax).
+- [x] Implemented Occlusion-Aware training for under-blanket joints.
+- [x] Implemented Gaussian Sigma Curriculum (3.0 -> 1.0).
+- [x] Automated evaluation trigger in remote training pipeline.
 
 
 ## Critical Secrets Required

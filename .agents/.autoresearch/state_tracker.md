@@ -1,9 +1,9 @@
 # State Tracker
 
-- **Current Loop**: Loop 14 (Planned: Heatmap Refinement)
-- **Phase**: Phase 1 (Brainstorming)
-- **Status**: Automated evaluation enabled via `--eval` flag.
-- **Baseline**: Loop 9 (76.4% PCK, 25.8px MPJPE)
+- **Current Loop**: Optimization Complete
+- **Phase**: Evaluation & Reporting
+- **Status**: Pipeline stabilized at 84.6% PCK. 8.2% improvement over baseline.
+- **Baseline**: Loop 16 (84.6% PCK, 18.5px MPJPE)
 
 ### Loop 8: Anatomical Curriculum Warmup - FAILURE
 - [x] Implement linear warmup for `lambda_anatomical` in `StandardTrainer`.
@@ -26,3 +26,6 @@
 | 11      | PCK@0.5: 73.1%, MPJPE: 28.0 | 11, loop11_joint_weighting, FAILURE, Joint weighting focused on extremities but destabilized core pose. |
 | 12      | PCK@0.5: 75.6%, MPJPE: 26.2 | 12, loop12_consistency, FAILURE, Consistency helped hips but not ankles/wrists. |
 | 13      | PCK@0.5: 74.3%, MPJPE: 26.7 | 13, loop13_multi_scale, FAILURE, Multi-scale supervision added gradient noise. |
+| 14      | PCK@0.5: 78.5%, MPJPE: 22.6 | 14, loop14_integral_regression, SUCCESS, Soft-argmax coordinate regression improved precision. |
+| 15      | PCK@0.5: 81.0%, MPJPE: 20.7 | 15, loop15_occlusion_aware_integral, SUCCESS, Supervising occluded joints stabilized extremities. |
+| 16      | PCK@0.5: 84.6%, MPJPE: 18.5 | 16, loop16_sigma_curriculum, SUCCESS, Decaying sigma pinpointed joints. |
