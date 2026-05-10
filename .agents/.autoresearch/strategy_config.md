@@ -6,7 +6,7 @@
 - `src/training/`: `BaseTrainer` (abstract, PCK-based checkpointing), `StandardTrainer` (heatmap MSE + optional anatomical + coord regression), `AnatomicalLoss` (`losses.py`)
 - `src/utils/`: `decode_heatmaps()` (argmax + soft-argmax), `compute_pck()`, `compute_mpjpe()`, `LSP_JOINT_NAMES`
 - `src/api/main.py`: FastAPI inference server; auto-selects decoder per run; caches loaded models by run_id key
-- `scripts/`: `train.py` (local), `remote_train.py` (Kaggle), `evaluate.py` (⚠️ buggy — see eval_framework.md)
+- `scripts/`: Remote and local entry points. `evaluate.py` is fixed and recommended for post-training validation.
 - `dashboard/`: React/Vite frontend; inference uses canvas-based overlay; model selected globally via header
 - `results/runs/<run_id>/`: `config.json` (run-specific config), `checkpoints/best_model.pth`, `history.json`
 - `.agents/`: Agent context, autoresearch state, architecture docs

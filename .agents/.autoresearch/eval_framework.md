@@ -15,31 +15,12 @@
   - `argmax` otherwise (standard heatmap MSE)
 
 ### Running Evaluation
-Fresh evaluation on a run (use this instead of `scripts/evaluate.py`):
-```python
-# In scratch/eval_<run_id>.py — see base_trainer.compute_val_pck() for reference impl.
-from src.models import build_model
-from src.data.dataset import VIPCupDataset, collate_skip_none
-from src.utils.pose import decode_heatmaps
-import torch, json, numpy as np
-from pathlib import Path
-from torch.utils.data import DataLoader
+- [x] **Evaluation Script Fixed**: `scripts/evaluate.py` now loads run-specific configs, auto-selects decoders, and uses the correct `vis<=1` mask.
 
-run_id = "loop16_sigma_curriculum"
-run_dir = Path(f"results/runs/{run_id}")
-state = torch.load(run_dir / "checkpoints/best_model.pth", map_location="cpu")
-cfg = state["config"]  # always use run's own config, NOT load_config()
-model = build_model(cfg); model.load_state_dict(state["model_state_dict"]); model.eval()
-image_size = tuple(cfg["dataset"].get("image_size", [256, 256]))
-s_val = cfg["dataset"].get("subjects_val", [81, 90])
-decode_method = "soft-argmax" if cfg["training"].get("sigma_start", 2.0) != cfg["training"].get("sigma_end", 2.0) else "argmax"
-ds = VIPCupDataset(root=cfg["dataset"]["root"], subjects=range(s_val[0], s_val[1]+1),
-                   modalities=["IR"], covers=["cover1", "cover2"], split="val", image_size=image_size)
-loader = DataLoader(ds, batch_size=16, shuffle=False, collate_fn=collate_skip_none)
-# ... decode and compute PCK with vis <= 1, torso = R_Shoulder(8) - L_Hip(3)
+```bash
+# Evaluate a specific run (auto-saves results to the run directory)
+python scripts/evaluate.py --run_id loop16_sigma_curriculum
 ```
-
-> ⚠️ **Do NOT use `scripts/evaluate.py`** directly — it loads the global default config instead of the run's config, uses `vis==0` only (misses occluded joints), and hardcodes `soft-argmax` for all models. These bugs cause inflated/incorrect metrics.
 
 ### Training-integrated Evaluation
 From next run onward, `val_pck` is logged each epoch in `history.json` and `best_model.pth` is saved at the epoch of highest `val_pck`. See `src/training/base_trainer.py → compute_val_pck()`.

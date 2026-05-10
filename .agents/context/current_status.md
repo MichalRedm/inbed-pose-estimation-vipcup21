@@ -23,8 +23,7 @@ All PCK figures reported from Loops 9–15 were produced by a flawed `scripts/ev
 - **Loop 9 (argmax, cover1+2, vis≤1)**: ~78% PCK — needs exact measurement
 - **Loop 16 (soft-argmax, cover1+2, vis≤1)**: **78.8% PCK, 26.4px MPJPE** — verified
 
-### Priority 3 — `scripts/evaluate.py` Bug
-This script loads the global default config instead of the run-specific config. It should be refactored to accept `--run_id` and load `results/runs/<run_id>/config.json` automatically.
+- [x] **Evaluation Script Fixed**: `scripts/evaluate.py` now loads run-specific configs, auto-selects decoders, and uses the correct `vis<=1` mask.
 
 ### Priority 4 — HRNet Architecture
 `src/models/hrnet.py` uses a simplified parallel-stream architecture. Full HRNet-W32 with feature pyramid fusion would improve representation quality.

@@ -3,14 +3,22 @@ evaluate.py — Evaluate a trained pose estimation model on the validation set.
 
 Metric: PCK@0.5 (Percentage of Correct Keypoints)
   A predicted joint is "correct" if its distance to ground truth is within
-  50% of the torso diameter (right shoulder to left hip distance).
+  50% of the torso diameter (right shoulder midpoint to left hip midpoint).
 
 Usage:
-  python scripts/evaluate.py --checkpoint models/checkpoints/hrnet_epoch_100.pth
+  # Evaluate a specific run (recommended — uses the run's own config):
+  python scripts/evaluate.py --run_id loop16_sigma_curriculum
+
+  # Evaluate a specific checkpoint file:
+  python scripts/evaluate.py --run_id loop16_sigma_curriculum --checkpoint epoch_10.pth
+
+  # Override data root:
+  python scripts/evaluate.py --run_id loop16_sigma_curriculum --data_root data/raw
 """
 
 import os
 import sys
+import json
 import argparse
 
 import torch
@@ -23,16 +31,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils import (
-    load_config,
     decode_heatmaps,
-    compute_mpjpe,
     LSP_JOINT_NAMES as JOINT_NAMES,
 )
 from src.data.dataset import VIPCupDataset, collate_skip_none
 from src.models import build_model
 
-# Leeds Sports Pose joint indices (matches dataset README order)
-# Torso diameter: distance between Right Shoulder (idx 8) and Left Hip (idx 3)
+# LSP joint indices for torso diameter
 R_SHOULDER = 8
 L_HIP = 3
 
@@ -45,45 +50,94 @@ def compute_pck(pred_joints, gt_joints, threshold=0.5):
     gt_joints:   (N, 3, J) — ground truth [x, y, visibility]
     threshold:   fraction of torso diameter to use as acceptance radius
 
+    Visibility mask: vis <= 1 (includes both visible=0 and occluded=1).
+    Joints with vis==2 (out-of-frame/unannotated) are excluded.
+
     Returns:
-      per_joint_pck: (J,) array, proportion correct per joint
-      mean_pck:      scalar, mean PCK across all visible joints
+      per_joint_pck: (J,) tensor, proportion correct per joint
+      per_joint_count: (J,) tensor, number of valid samples per joint
+      mean_pck: scalar, mean PCK across all valid joints
     """
     N, J, _ = pred_joints.shape
 
-    # Ground truth coords: (N, 2, J) → (N, J, 2)
-    gt_xy = gt_joints[:, :2, :].permute(0, 2, 1)  # (N, J, 2)
-    gt_vis = gt_joints[:, 2, :]  # (N, J)  0=visible
+    # Ground truth coords: (N, J, 2)
+    gt_xy = gt_joints[:, :2, :].permute(0, 2, 1)
+    gt_vis = gt_joints[:, 2, :]  # (N, J)
 
-    # Torso diameter per sample
-    r_shoulder = gt_xy[:, R_SHOULDER, :]  # (N, 2)
-    l_hip = gt_xy[:, L_HIP, :]  # (N, 2)
-    torso_diam = torch.norm(r_shoulder - l_hip, dim=-1, keepdim=True)  # (N, 1)
-    torso_diam = torso_diam.unsqueeze(1).expand(N, J, 1)  # (N, J, 1)
+    # Torso distance per sample: distance between midpoint of shoulders and midpoint of hips
+    # Indices: 8:RShoulder, 9:LShoulder, 2:RHip, 3:LHip
+    shoulder_mid = (gt_xy[:, 8, :] + gt_xy[:, 9, :]) / 2.0
+    hip_mid = (gt_xy[:, 2, :] + gt_xy[:, 3, :]) / 2.0
+    torso_dist = torch.norm(shoulder_mid - hip_mid, dim=-1, keepdim=True)  # (N, 1)
+    torso_dist = torso_dist.unsqueeze(1).expand(N, J, 1)                  # (N, J, 1)
+    torso_dist = torso_dist.clamp(min=1e-6)
 
     # Euclidean distance per joint
-    dist = torch.norm(pred_joints - gt_xy, dim=-1)  # (N, J)
-    correct = dist < threshold * torso_diam.squeeze(-1)
+    dists = torch.norm(pred_joints - gt_xy, dim=-1)  # (N, J)
+    correct = dists <= threshold * torso_dist.squeeze(-1)
 
-    # Only count visible joints (vis == 0 in this dataset)
-    visible = gt_vis == 0  # (N, J)
-    per_joint_correct = (correct & visible).sum(dim=0).float()
-    per_joint_count = visible.sum(dim=0).float().clamp(min=1)
+    # Include visible (0) AND occluded (1) joints; exclude unannotated (2)
+    valid = gt_vis <= 1  # (N, J)
+    per_joint_correct = (correct & valid).sum(dim=0).float()
+    per_joint_count = valid.sum(dim=0).float().clamp(min=1)
     per_joint_pck = per_joint_correct / per_joint_count
 
-    # Mean over all joints that have at least one visible sample
-    valid_joints = visible.any(dim=0)
+    valid_joints = valid.any(dim=0)
     mean_pck = per_joint_pck[valid_joints].mean().item()
 
     return per_joint_pck, per_joint_count, mean_pck
 
 
+def load_run_config(checkpoint_path: Path):
+    """
+    Load the config embedded in the checkpoint (authoritative) or fall back
+    to the run's config.json, then the global default.
+    """
+    if checkpoint_path.exists():
+        state = torch.load(checkpoint_path, map_location="cpu")
+        if isinstance(state, dict) and "config" in state:
+            return state["config"], state
+    # Fallback: run-level config.json
+    run_config = checkpoint_path.parent.parent / "config.json"
+    if run_config.exists():
+        with open(run_config) as f:
+            cfg = json.load(f)
+        return cfg, None
+    # Last resort: global default
+    from src.utils import load_config
+    return load_config(), None
+
+
+def auto_decode_method(config: dict) -> str:
+    """
+    Select the correct heatmap decoding method based on the run's training config.
+    - soft-argmax: for models trained with sigma curriculum (sigma_start != sigma_end)
+    - argmax:      for models trained with standard fixed-sigma heatmap MSE
+    """
+    tc = config.get("training", {})
+    sigma_start = tc.get("sigma_start", 2.0)
+    sigma_end = tc.get("sigma_end", 2.0)
+    if sigma_start != sigma_end:
+        return "soft-argmax"
+    return "argmax"
+
+
 def evaluate(
-    checkpoint_path, data_root, batch_size=16, pck_threshold=0.5, save_json=None
+    checkpoint_path,
+    data_root=None,
+    batch_size=16,
+    pck_threshold=0.5,
+    save_json=None,
 ):
-    config = load_config()
+    checkpoint_path = Path(checkpoint_path)
+
+    # Load config from checkpoint (run-specific, authoritative)
+    config, state = load_run_config(checkpoint_path)
     dataset_cfg = config.get("dataset", {})
     image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
+    data_root = data_root or dataset_cfg.get("root", "data/raw")
+    s_val = dataset_cfg.get("subjects_val", [81, 90])
+    decode_method = auto_decode_method(config)
 
     # --- Setup Device & Distributed ---
     rank = int(os.environ.get("RANK", -1))
@@ -100,20 +154,22 @@ def evaluate(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if rank <= 0:
-        print(
-            f"Using device: {device} (Distributed: {is_distributed}, World Size: {world_size})"
-        )
+        print(f"Using device: {device} (Distributed: {is_distributed}, World Size: {world_size})")
+        print(f"Decode method: {decode_method}")
+        print(f"Image size: {image_size}")
 
-    # Load model using factory
+    # Load model using run-specific config
     model = build_model(config).to(device)
     if rank <= 0:
         print(f"Loading: {checkpoint_path}")
 
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    if "model_state_dict" in checkpoint:
-        state_dict = checkpoint["model_state_dict"]
+    if state is None:
+        state = torch.load(checkpoint_path, map_location=device)
+
+    if isinstance(state, dict) and "model_state_dict" in state:
+        state_dict = state["model_state_dict"]
     else:
-        state_dict = checkpoint
+        state_dict = state
 
     # Handle both DDP and non-DDP checkpoints
     if any(k.startswith("module.") for k in state_dict.keys()):
@@ -128,12 +184,11 @@ def evaluate(
 
     model.eval()
 
-    # Setup Dataset
-    s_val = dataset_cfg.get("subjects_val", [81, 90])
+    # Setup Dataset — covered images only (task target domain)
     val_dataset = VIPCupDataset(
         root=data_root,
         subjects=range(s_val[0], s_val[1] + 1),
-        modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
+        modalities=dataset_cfg.get("modalities", ["IR"]),
         covers=["cover1", "cover2"],
         split="valid",
         image_size=image_size,
@@ -141,9 +196,7 @@ def evaluate(
 
     if len(val_dataset) == 0:
         if rank <= 0:
-            print(
-                "WARNING: Validation set is empty. Check data_root and covers configuration."
-            )
+            print("WARNING: Validation set is empty. Check data_root and covers configuration.")
         return
 
     val_sampler = (
@@ -160,14 +213,14 @@ def evaluate(
     )
 
     if rank <= 0:
-        print(f"Validation samples: {len(val_dataset)}")
+        print(f"Validation samples: {len(val_dataset)} (subjects {s_val[0]}-{s_val[1]}, cover1+cover2)")
 
     per_joint_correct_total = torch.zeros(len(JOINT_NAMES), device=device)
     per_joint_count_total = torch.zeros(len(JOINT_NAMES), device=device)
     per_joint_error_total = torch.zeros(len(JOINT_NAMES), device=device)
+    criterion = torch.nn.MSELoss()
     total_loss = 0.0
     num_batches = 0
-    criterion = torch.nn.MSELoss()
 
     with torch.no_grad():
         for batch in val_loader:
@@ -177,39 +230,32 @@ def evaluate(
             joints = batch["joints"]
             targets = batch["target"].to(device) if "target" in batch else None
 
-            # Skip unannotated samples
             if joints is None:
                 continue
 
             outputs = model(images)
 
-            # Loss calculation if targets available
             if targets is not None:
                 total_loss += criterion(outputs, targets).item()
                 num_batches += 1
 
-            if (
-                model.module.output_type == "heatmap"
-                if is_distributed
-                else model.output_type == "heatmap"
-            ):
-                preds = decode_heatmaps(outputs.cpu(), image_size, method="soft-argmax")  # (B, J, 2)
+            raw_model = model.module if is_distributed else model
+            if raw_model.output_type == "heatmap":
+                preds = decode_heatmaps(outputs.cpu(), image_size, method=decode_method)
             else:
                 preds = outputs.cpu()
 
-            # Compute PCK counts for this batch
             p_pck, p_count, _ = compute_pck(preds, joints, threshold=pck_threshold)
 
-            # Compute MPJPE for this batch
-            gt_xy = joints[:, :2, :].permute(0, 2, 1)  # (B, J, 2)
-            _, p_error_arr = compute_mpjpe(preds, gt_xy, visibility=joints)
+            gt_xy = joints[:, :2, :].permute(0, 2, 1)   # (B, J, 2)
+            gt_vis = joints[:, 2, :]                      # (B, J)
+            valid = (gt_vis <= 1).float()                 # (B, J)
+            dists = torch.norm(preds - gt_xy, dim=-1)      # (B, J)
+            per_joint_error = (dists * valid).sum(dim=0) / valid.sum(dim=0).clamp(min=1)
 
-            # Convert to tensors and accumulate
             per_joint_correct_total += (p_pck * p_count).to(device)
             per_joint_count_total += p_count.to(device)
-
-            p_error_tensor = torch.from_numpy(p_error_arr).float()
-            per_joint_error_total += (p_error_tensor * p_count.cpu()).to(device)
+            per_joint_error_total += per_joint_error.to(device)
 
     # Synchronize metrics across processes
     if is_distributed:
@@ -234,31 +280,33 @@ def evaluate(
         mean_pck = per_joint_pck.mean()
         mean_mpjpe = per_joint_error.mean()
 
-        print(
-            f"\n=== Evaluation Results (Loss: {avg_loss:.4f}, MPJPE: {mean_mpjpe:.1f}) ==="
-        )
+        print(f"\n=== Evaluation Results (Loss: {avg_loss:.4f}, MPJPE: {mean_mpjpe:.1f}px) ===")
         print(f"=== PCK@{pck_threshold} Results ===")
         print(f"{'Joint':<15} {'PCK':>6} {'MPJPE':>8}")
         print("-" * 32)
         for name, pck, err in zip(JOINT_NAMES, per_joint_pck, per_joint_error):
-            print(f"{name:<15} {pck * 100:>5.1f}% {err:>8.1f}")
+            print(f"{name:<15} {pck * 100:>5.1f}% {err:>8.1f}px")
         print("-" * 32)
-        print(f"{'Mean':<15} {mean_pck * 100:>5.1f}% {mean_mpjpe:>8.1f}")
+        print(f"{'Mean':<15} {mean_pck * 100:>5.1f}% {mean_mpjpe:>8.1f}px")
+        print(f"\nDecode method : {decode_method}")
+        print(f"Image size    : {image_size}")
+        print(f"Val subjects  : {s_val[0]}–{s_val[1]}, covers: cover1 + cover2")
+        print("Visibility    : vis <= 1 (visible + occluded)")
 
         metrics = {
-            "loss": avg_loss,
             "pck": float(mean_pck),
             "mpjpe": float(mean_mpjpe),
+            "loss": avg_loss,
+            "decode_method": decode_method,
+            "image_size": list(image_size),
             "per_joint_pck": per_joint_pck.tolist(),
-            "per_joint_error": per_joint_error.tolist(),
+            "per_joint_mpjpe": per_joint_error.tolist(),
             "joint_names": JOINT_NAMES,
             "threshold": pck_threshold,
             "samples": len(val_dataset),
         }
 
         if save_json:
-            import json
-
             save_path = Path(save_json)
             save_path.parent.mkdir(parents=True, exist_ok=True)
             with open(save_path, "w") as f:
@@ -271,55 +319,61 @@ def evaluate(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Evaluate a pose estimation model on the covered validation set."
+    )
+    parser.add_argument(
+        "--run_id",
+        type=str,
+        default=None,
+        help="Run ID (e.g. loop16_sigma_curriculum). Config and checkpoint are loaded from results/runs/<run_id>/.",
+    )
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="models/checkpoints/hrnet_epoch_100.pth",
+        default="best_model.pth",
+        help="Checkpoint filename within the run's checkpoints/ dir (default: best_model.pth), "
+             "or an absolute path to a .pth file.",
     )
-    parser.add_argument("--data_root", type=str, default="data/raw")
+    parser.add_argument("--data_root", type=str, default=None, help="Override data root path.")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument(
         "--threshold",
         type=float,
         default=0.5,
-        help="PCK threshold as fraction of torso diameter",
+        help="PCK threshold as fraction of torso diameter (default: 0.5)",
     )
     parser.add_argument(
-        "--save_json", type=str, default=None, help="Save metrics to JSON file"
+        "--save_json",
+        type=str,
+        default=None,
+        help="Path to save metrics JSON (e.g. results/runs/<run_id>/eval_results.json)",
     )
-    parser.add_argument("--run_id", type=str, default=None, help="Run ID to evaluate")
     args = parser.parse_args()
 
-    checkpoint_path = args.checkpoint
+    # Resolve checkpoint path
     if args.run_id:
-        # If --checkpoint is provided, it's an absolute path.
-        # If not, we construct it using run_id and checkpoint_name.
-        if args.checkpoint == "models/checkpoints/hrnet_epoch_100.pth":
-            checkpoint_name = os.environ.get("CHECKPOINT_NAME", "best_model.pth")
-            checkpoint_path = (
-                f"results/runs/{args.run_id}/checkpoints/{checkpoint_name}"
-            )
-        else:
+        if os.path.isabs(args.checkpoint):
             checkpoint_path = args.checkpoint
+        else:
+            checkpoint_path = f"results/runs/{args.run_id}/checkpoints/{args.checkpoint}"
+        # Default save_json to the run directory
+        if args.save_json is None:
+            args.save_json = f"results/runs/{args.run_id}/eval_results.json"
+    else:
+        checkpoint_path = args.checkpoint
 
     if not os.path.exists(checkpoint_path):
-        # Try best_model.pth in models/checkpoints as fallback
-        fallback = "models/checkpoints/best_model.pth"
-        if os.path.exists(fallback):
-            checkpoint_path = fallback
-        else:
-            print(f"Checkpoint not found: {checkpoint_path}")
-            sys.exit(1)
+        print(f"Checkpoint not found: {checkpoint_path}")
+        sys.exit(1)
 
     evaluate(
         checkpoint_path,
-        args.data_root,
-        args.batch_size,
-        args.threshold,
+        data_root=args.data_root,
+        batch_size=args.batch_size,
+        pck_threshold=args.threshold,
         save_json=args.save_json,
     )
 
-    # Cleanup DDP
     if dist.is_initialized():
         dist.destroy_process_group()
