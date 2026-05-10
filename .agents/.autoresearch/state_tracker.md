@@ -1,8 +1,10 @@
 # State Tracker
 
-- **Current Loop**: 16 (COMPLETE — metrics under revision)
-- **Phase**: Pre-Research Audit / Prerequisite Cleanup
-- **Status**: Loop 16 completed, but post-hoc audit revealed that ALL reported metrics from Loops 9–16 were computed by a flawed evaluation pipeline. True metrics established via fresh evaluation. Infrastructure bugs corrected; next loop must resolve the loss-metric alignment problem FIRST.
+- **Current Loop**: 16 (UNDER RE-EVALUATION)
+- **Phase**: Audit & Baseline Recovery
+- **Status**: ALL PREVIOUS METRICS ARE SUSPECT. Discovered bugs in `evaluate.py` (wrong config, wrong mask, wrong decoder) and `BaseTrainer` (saved best by loss, not PCK). 
+- **Absolute Priority**: Re-evaluate past runs and stabilize loss-metric alignment.
+- **Baseline**: Loop 9 (Verified argmax) vs Loop 16 (Verified soft-argmax).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 

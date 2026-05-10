@@ -28,9 +28,8 @@ All PCK figures reported from Loops 9–15 were produced by a flawed `scripts/ev
 ### Priority 4 — HRNet Architecture
 `src/models/hrnet.py` uses a simplified parallel-stream architecture. Full HRNet-W32 with feature pyramid fusion would improve representation quality.
 
-## Next Steps (for next `/ml-autoresearch` session)
+## Next Steps (MANDATORY for next `/ml-autoresearch` session)
 
-1. **Phase 0**: Read all `.agents/.autoresearch/` files. Note the PREREQUISITE flag on Hypothesis #1.
-2. **Phase 1**: Implement loss-metric alignment (uncertainty weighting or loss normalization). Run loop17 with this fix and verify that val_pck trajectory in `history.json` now matches intuitive training progress.
-3. **Phase 2**: Once loss is reliable, re-establish a clean baseline by re-running loop9 or loop16 with the corrected saving criterion to get a solid reference point.
-4. **Phase 3+**: Continue with architecture / augmentation improvements using reliable metrics.
+1. **Phase 0 (MANDATORY)**: **Re-evaluate all local runs**. Run `python scripts/evaluate.py --run_id [ID]` for Loop 9, 14, 15, and 16. Update `eval_framework.md` and `state_tracker.md` with the verified numbers.
+2. **Phase 1 (MANDATORY)**: **Fix Loss-Metric Alignment**. Modify `StandardTrainer` to use uncertainty-based weighting or normalized auxiliary losses.
+3. **Phase 2**: **Confirm Peak Performance**. Re-train Loop 16 with the fixed loss and PCK-based checkpointing.

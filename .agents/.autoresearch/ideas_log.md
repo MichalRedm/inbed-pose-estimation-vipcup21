@@ -2,9 +2,12 @@
 
 ## Hypothesis Queue
 
-> ⚠️ **Hypothesis #1 is a PREREQUISITE** — it must be attempted before any architecture/augmentation experiments. The validity of all future comparisons depends on having a reliable loss function.
+> ⚠️ **Hypothesis #1 is an ABSOLUTE PREREQUISITE** — All previous results are suspect due to bugs in the evaluation script and loss landscape issues. No new experimental work should be done until the baseline is solidly re-established.
 
-1. **[PREREQUISITE] Loss-Metric Alignment via Uncertainty Weighting**: The combined training loss (`MSE_heatmap + λ_coord * L1 + λ_ana * L_hinge`) does not correlate with val PCK because the auxiliary terms operate at different scales and can dominate. Implement homoscedastic uncertainty weighting (Kendall et al., 2018, "Multi-Task Learning Using Uncertainty to Weigh Losses") so each loss component is automatically re-scaled by a learned log-variance. This removes hand-tuned λ values and ensures the total loss gradient is proportional to its contribution to pose accuracy. Alternative simpler fix: normalize each auxiliary loss by its own running mean so it stays in the same [0, 0.01] range as heatmap MSE.
+1. **[PREREQUISITE] Systematic Re-evaluation & Loss Alignment**: 
+   - **Step A**: Re-evaluate all locally available runs (Loops 9, 14, 15, 16) using the fixed `scripts/evaluate.py`. Update the Results Tracker in `eval_framework.md` with these verified numbers.
+   - **Step B**: Resolve the Loss-Metric Alignment issue. The current combined loss doesn't match val PCK. Implement uncertainty-based weighting or loss normalization so that future "best" models are actually better at pose estimation.
+   - **Step C**: Re-run the most promising setup (likely Loop 16) with the new PCK-based checkpoint saving to confirm the absolute peak performance.
 
 2. **Multimodal Fusion (IR + PM)**: Fuse features from IR (high-res texture) and Pressure Maps (absolute contact priors) to disambiguate joints under thick covers. Requires loading the `PM` modality in `VIPCupDataset`.
 
