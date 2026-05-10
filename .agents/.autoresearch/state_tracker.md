@@ -1,31 +1,56 @@
 # State Tracker
 
-- **Current Loop**: Optimization Complete
-- **Phase**: Evaluation & Reporting
-- **Status**: Pipeline stabilized at 84.6% PCK. 8.2% improvement over baseline.
-- **Baseline**: Loop 16 (84.6% PCK, 18.5px MPJPE)
+- **Current Loop**: 16 (COMPLETE — metrics under revision)
+- **Phase**: Pre-Research Audit / Prerequisite Cleanup
+- **Status**: Loop 16 completed, but post-hoc audit revealed that ALL reported metrics from Loops 9–16 were computed by a flawed evaluation pipeline. True metrics established via fresh evaluation. Infrastructure bugs corrected; next loop must resolve the loss-metric alignment problem FIRST.
 
-### Loop 8: Anatomical Curriculum Warmup - FAILURE
-- [x] Implement linear warmup for `lambda_anatomical` in `StandardTrainer`.
-- [x] Execute `loop8_anatomical_curriculum` (λ=0.5 target, 10-epoch warmup).
-- [x] **RESULT: FAILURE (PCK@0.5: 73.1%)**.
-- [x] **ROOT CAUSE**: Improved over Loop 7 (+1.2%) but still below baseline (-1.8%). MSE bone length prior is too rigid and penalizes natural 2D foreshortening, particularly for the L_Knee.
+## ⚠️ CRITICAL: Metric Audit Results
 
-### Loop 9: Foreshortening-Aware Hinge Loss - SUCCESS
-- [x] Implement `AnatomicalHingeLoss` (penalize only length > target).
-- [x] Execute `loop9_anatomical_hinge` (λ=0.5 target, 10-epoch warmup).
-- [x] **RESULT: SUCCESS (PCK@0.5: 76.4%)**.
-- [x] **ACTION**: Surpassed baseline (74.9%). Hinge loss allows for 2D foreshortening while maintaining structural integrity.
+All previously reported PCK values in this tracker were computed by `scripts/evaluate.py` running on the **remote Kaggle environment** using **global default config** (not run-specific config), and using **soft-argmax for all models** regardless of training decoder. The numbers **cannot be trusted as absolute baselines**.
 
-| Loop ID | Baseline Metrics Table | Iteration Log (Loop ID, Hypothesis, Result, Action) |
-|---------|------------------------|---------------------------------------------------|
-| 3       | PCK@0.5: 74.9%, MPJPE: 27.4 | 3, loop3_improved_thermal_full_data, SUCCESS, Improved Thermal Diffusion (wavy edges, full cover) + Full Dataset (80 subjects). |
-| 8       | PCK@0.5: 73.1%, MPJPE: 35.3 | 8, loop8_anatomical_curriculum, FAILURE, Curriculum stabilized but fixed 2D lengths hurt foreshortened poses. |
-| 9       | PCK@0.5: 76.4%, MPJPE: 25.8 | 9, loop9_anatomical_hinge, SUCCESS, Using hinge loss to allow for natural limb foreshortening. |
-| 10      | PCK@0.5: 67.0%, MPJPE: 33.4 | 10, loop10_angle_constraints, FAILURE, 2D angle hinge loss over-regularized foreshortened poses. |
-| 11      | PCK@0.5: 73.1%, MPJPE: 28.0 | 11, loop11_joint_weighting, FAILURE, Joint weighting focused on extremities but destabilized core pose. |
-| 12      | PCK@0.5: 75.6%, MPJPE: 26.2 | 12, loop12_consistency, FAILURE, Consistency helped hips but not ankles/wrists. |
-| 13      | PCK@0.5: 74.3%, MPJPE: 26.7 | 13, loop13_multi_scale, FAILURE, Multi-scale supervision added gradient noise. |
-| 14      | PCK@0.5: 78.5%, MPJPE: 22.6 | 14, loop14_integral_regression, SUCCESS, Soft-argmax coordinate regression improved precision. |
-| 15      | PCK@0.5: 81.0%, MPJPE: 20.7 | 15, loop15_occlusion_aware_integral, SUCCESS, Supervising occluded joints stabilized extremities. |
-| 16      | PCK@0.5: 84.6%, MPJPE: 18.5 | 16, loop16_sigma_curriculum, SUCCESS, Decaying sigma pinpointed joints. |
+Fresh local re-evaluation established the following **corrected baselines** (cover1+cover2 val set, correct decoder per model):
+
+| Run | Decoder | PCK@0.5 (corrected) | MPJPE (corrected) |
+|-----|---------|--------------------|--------------------|
+| loop9_anatomical_hinge | argmax | ~73% (all covers) / ~78% (cover1+2 only, vis==0) | ~27 px |
+| loop16_sigma_curriculum | soft-argmax | **78.8%** (cover1+2, vis≤1) | 26.4 px |
+
+The loop16 `best_model.pth` was saved based on **combined val loss** (heatmap MSE + coord L1 + anatomical), NOT on PCK. Combined loss is dominated by the anatomical term (lambda=0.5) and does not align with PCK. The actual best PCK epoch for loop16 is unknown because only epoch_1.pth (corrupted) and best_model.pth were downloaded.
+
+## ⚠️ CRITICAL: Prerequisite Issue Before Next Loop
+
+The training pipeline has a **fundamental loss-metric alignment problem** that must be resolved BEFORE continuing the autoresearch loop:
+
+**Problem**: The combined training loss `L = MSE_heatmap + λ_coord * L1_coord + λ_ana * L_anatomical` does not monotonically correlate with val PCK. The auxiliary terms (anatomical, coordinate regression) operate at different scales and can dominate the loss landscape, causing `best_model.pth` to capture the epoch with the best auxiliary constraint satisfaction — not the epoch with the best pose accuracy.
+
+**Consequence**: Comparing run results is unreliable; a "new best" checkpoint may actually be a worse predictor.
+
+**Fix required (Phase 0 of next loop)**:
+1. Normalize all auxiliary loss terms so they are dimensionless / same scale as heatmap MSE.
+2. OR: restructure losses with adaptive weighting (e.g., uncertainty weighting by Kendall et al.).
+3. OR: simplify — remove auxiliary losses that aren't clearly helping (the Graveyard shows anatomical loss rarely helps), and train clean baselines.
+
+The `best_model.pth` saving criterion has been fixed to use **val PCK** (implemented 2026-05-11 in `base_trainer.py`). This fix takes effect from the next training run onward.
+
+## Infrastructure Fixes Applied (2026-05-11)
+
+- **Dashboard**: Canvas-based inference overlay fully working. Image sizing restored. Skeleton overlay pixel-accurate.
+- **API**: Auto-selects `argmax` vs `soft-argmax` decoding per run based on `sigma_start`/`sigma_end` keys in run config.json.
+- **Trainer**: `BaseTrainer.compute_val_pck()` added; `StandardTrainer.fit()` now saves `best_model.pth` based on highest val PCK rather than lowest combined loss.
+- **Evaluation**: `eval_framework.md` updated with corrected metric computation procedures.
+
+## Iteration Log
+
+| Loop ID | Hypothesis | Result | Corrected PCK | Action |
+|---------|-----------|--------|--------------|--------|
+| 3 | Improved Thermal + Full Dataset | SUCCESS | N/A (pre-audit) | Baseline established |
+| 7 | Anatomical V1 (MSE length) | FAILURE | N/A | Fixed-length MSE over-regularizes |
+| 8 | Anatomical Curriculum Warmup | FAILURE | N/A | Improves over 7 but below baseline |
+| 9 | Foreshortening Hinge Loss | SUCCESS | ~78% (cover1+2, vis==0) | Best clean model to date |
+| 10 | Angle Constraints (2D Hinge) | FAILURE | N/A | 2D angle != 3D ROM |
+| 11 | Joint-Specific Weighting | FAILURE | N/A | Destabilized core structure |
+| 12 | Occlusion Consistency Reg. | FAILURE | N/A | No extremity improvement |
+| 13 | Multi-Scale Heatmap Supervision | FAILURE | N/A | Gradient noise |
+| 14 | Soft-Argmax Integral Regression | SUCCESS | N/A (metrics suspect) | Sub-pixel accuracy claimed |
+| 15 | Occlusion-Aware Integral Reg. | SUCCESS | N/A (metrics suspect) | Occluded joint supervision |
+| 16 | Adaptive Sigma Curriculum | SUCCESS | **78.8%** (verified) | Sharp heatmaps via σ decay |

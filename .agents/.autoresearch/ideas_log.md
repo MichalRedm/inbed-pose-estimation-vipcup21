@@ -1,10 +1,14 @@
 # Ideas Log
 
 ## Hypothesis Queue
-1. **Multimodal Fusion (IR + PM)**: Fuse features from IR (high-res) and Pressure Maps (absolute contact) to disambiguate joints under thick covers.
-2. **Anatomical Angle Constraints**: Implement hinge losses for joint angles (e.g. elbows, knees) to prevent anatomically impossible poses.
-3. **Joint-Specific Uncertainty Weighting**: Learn per-joint uncertainty to adaptively weigh the loss, focusing on unambiguous joints.
-4. **Consistency Regularization**: Force predictions to be invariant to occlusion-style and spatial augmentations.
+
+> ⚠️ **Hypothesis #1 is a PREREQUISITE** — it must be attempted before any architecture/augmentation experiments. The validity of all future comparisons depends on having a reliable loss function.
+
+1. **[PREREQUISITE] Loss-Metric Alignment via Uncertainty Weighting**: The combined training loss (`MSE_heatmap + λ_coord * L1 + λ_ana * L_hinge`) does not correlate with val PCK because the auxiliary terms operate at different scales and can dominate. Implement homoscedastic uncertainty weighting (Kendall et al., 2018, "Multi-Task Learning Using Uncertainty to Weigh Losses") so each loss component is automatically re-scaled by a learned log-variance. This removes hand-tuned λ values and ensures the total loss gradient is proportional to its contribution to pose accuracy. Alternative simpler fix: normalize each auxiliary loss by its own running mean so it stays in the same [0, 0.01] range as heatmap MSE.
+
+2. **Multimodal Fusion (IR + PM)**: Fuse features from IR (high-res texture) and Pressure Maps (absolute contact priors) to disambiguate joints under thick covers. Requires loading the `PM` modality in `VIPCupDataset`.
+
+3. **Per-Joint Adaptive Sigma**: Instead of a global sigma curriculum, use a per-joint sigma that decays faster for high-confidence joints (shoulders, head) and slower for occluded extremities (ankles). Requires per-joint sigma tracking in `_generate_heatmaps_torch`.
 
 ## Web Research Syntheses
 - **Foreshortening Priors**: 2D bone lengths are upper-bounded by physical 3D length but lower-bounded by 0. Using a Hinge loss (ReLU) on length exceeding the max effectively models this projection constraint.
