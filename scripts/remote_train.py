@@ -37,6 +37,9 @@ def main():
     parser.add_argument(
         "--uda", action="store_true", help="Run Adversarial Domain Adaptation training"
     )
+    parser.add_argument(
+        "--eval", action="store_true", help="Run evaluation immediately after training"
+    )
     args_cli, other_args = parser.parse_known_args()
 
     json_path = "gpu_connection.json"
@@ -263,6 +266,35 @@ def main():
             )
             print(safe_stderr)
             sys.exit(result.exit_code if result else 1)
+
+        # --- Step 5: Automated Evaluation ---
+        if args_cli.eval and args_cli.run_id:
+            print("\n" + "=" * 40)
+            print("--- Starting Automated Evaluation ---")
+            print("=" * 40)
+
+            eval_results_remote = (
+                f"/root/project/results/runs/{args_cli.run_id}/evaluation.json"
+            )
+            eval_cmd = (
+                f"cd /root/project && {env_setup} && "
+                f"torchrun --nproc_per_node={num_gpus} --master_port={master_port + 1} "
+                f"scripts/evaluate.py --run_id {args_cli.run_id} --save_json {eval_results_remote}"
+            )
+
+            eval_res = gpu.run(eval_cmd)
+            if eval_res.ok():
+                print("\n[sync] Downloading evaluation results...")
+                local_eval_path = local_run_dir / "evaluation.json"
+                try:
+                    gpu.download(
+                        eval_results_remote, str(local_eval_path), recursive=False
+                    )
+                    print(f"[sync] Evaluation results saved to {local_eval_path}")
+                except Exception as e:
+                    print(f"[sync] Error downloading evaluation results: {e}")
+            else:
+                print("\nEvaluation failed. Check stderr above.")
 
     print("--- Remote Training Session Complete ---")
 

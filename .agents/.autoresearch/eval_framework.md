@@ -5,8 +5,8 @@
 - **MPJPE**: Mean Per Joint Position Error (in pixels).
 
 ## Execution Commands
-- Remote training: `python scripts/remote_train.py --run_id [ID] --lambda_anatomical [VAL]`
-- Remote evaluation: `python scripts/remote_evaluate.py --run_id [ID] --checkpoint_name epoch_30.pth`
+- Remote training: `python scripts/remote_train.py --run_id [ID] --eval` (Automatically triggers evaluation)
+- Remote evaluation (Manual): `python scripts/remote_evaluate.py --run_id [ID] --checkpoint_name epoch_30.pth`
 
 ## Advanced Diagnostics
 - **Anatomical Integrity**: Check `loss_ana` in history. Successful models should reach 0.0 with Hinge Loss.
@@ -19,3 +19,7 @@
 | Loop 7: Anatomical V1 | 71.9% | 36.1 | 2026-05-09 |
 | Loop 8: Curriculum | 73.1% | 35.3 | 2026-05-10 |
 | Loop 9: Hinge Loss | 76.4% | 25.8 | 2026-05-10 |
+| Loop 10: Angle Constraints | 67.0% | 33.4 | 2026-05-10 |
+| Loop 11: Joint Weighting | 73.1% | 28.0 | 2026-05-10 |
+| Loop 12: Consistency | 75.6% | 26.2 | 2026-05-10 |
+| Loop 13: Multi-Scale | 74.3% | 26.7 | 2026-05-10 |
