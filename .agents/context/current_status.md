@@ -9,13 +9,14 @@
 - [x] **Inference API**: Implemented FastAPI-based server for model access.
 - [x] **Dashboard**: Full UI for inference, evaluation, and training management with joint visualization.
 - [x] **Metrics**: Standardized on PCK@0.5 (torso-relative) and MPJPE.
-- [x] **Iteration Loop**: Successfully executed `loop2_fixed_aug` with corrected augmentation logic.
+- [x] **Unified Training Pipeline**: Consolidated all training setups (Standard, UDA, Anatomical) into a single entry point using a factory pattern.
+- [x] **Adversarial Domain Alignment**: Implemented UDATrainer and DomainDiscriminator to bridge the gap between clean and covered IR images.
 
 ## Current Technical Debts / Placeholders
 - `src/models/hrnet.py` uses a simplified parallel stream architecture; could be extended to full HRNet-W32 for better performance.
 
 ## Future Tasks
-- [ ] Implement Adversarial Domain Alignment to bridge the gap between uncovered and covered IR images.
 - [ ] Explore Multi-Scale Heatmap Regression (dynamic sigma per joint).
 - [ ] Fine-tune on specific cover types (e.g., thicker blankets).
 - [ ] Integrate full HRNet-W32 parallel stream architecture.
+- [ ] Implement Automated Hyperparameter Optimization (Optuna integration).

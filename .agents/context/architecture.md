@@ -20,5 +20,12 @@ The project uses the High-Resolution Net (HRNet) backbone, which is specifically
 ## Inference API
 - **Framework**: FastAPI
 - **Capability**: Serving the trained HRNet model for real-time keypoint prediction.
-- **Workflow**:
   - Image Upload -> Resize (256x256) -> Model Inference (Heatmaps) -> Decoding -> Coordinate Rescaling -> JSON Response.
+
+## Training Pipeline
+- **Unified Entry Point**: `scripts/train.py` handles all training setups via a polymorphic factory.
+- **Trainer Factory**: `src/training/factory.py` initializes the appropriate trainer based on configuration (Standard vs. UDA).
+- **Supported Methods**:
+    - **Standard Supervised**: MSE loss on heatmaps with optional anatomical constraints.
+    - **Unsupervised Domain Adaptation (UDA)**: Uses a Domain Discriminator and Gradient Reversal Layer (GRL) to align feature distributions between clean (Source) and occluded (Target) IR images.
+- **Orchestration**: `src/training/manager.py` manages training processes, supporting both local execution and remote GPU sessions (e.g., Kaggle) via SSH/Cloudflare tunnels.
