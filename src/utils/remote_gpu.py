@@ -280,32 +280,30 @@ class GPUSession:
 
     # ── Remote execution ──────────────────────────────────────────────────────
 
-    def run(self, command: str, timeout: int = 3600, stream: bool = True) -> RunResult:
+    # ── Remote execution ──────────────────────────────────────────────────────
+
+    def run(self, command: str, timeout: int = 3600, stream: bool = True, check: bool = False) -> RunResult:
         """
         Execute a shell command on the remote GPU and return a RunResult.
 
-        Parameters
-        ----------
-        command : shell command to run.
-        timeout : seconds before the remote command is killed.
-        stream  : if True, print stdout+stderr lines in real time.
+        Args:
+            command: The command string to execute
+            timeout: Command timeout in seconds
+            stream: If True, print stdout/stderr in real-time
+            check: If True, raise RuntimeError if exit code is non-zero
 
-        Notes
-        -----
-        Commands are wrapped in ``bash -l -c '...'`` (a login shell) so that
-        the remote ``~/.bash_profile`` is sourced automatically.  This is the
-        provider-agnostic standard: each GPU provider's setup script should
-        write PATH / LD_LIBRARY_PATH to ``~/.bash_profile``, not ``~/.bashrc``
-        (which is only sourced in interactive shells).
+        Notes:
+            Commands are wrapped in ``bash -l -c '...'`` (a login shell) so that
+            the remote ``~/.bash_profile`` is sourced automatically.
         """
         import sys
         import threading
+        import shlex
 
         if not self._ssh:
             raise RuntimeError("Not connected. Use GPUManager.use() context manager.")
 
-        # Wrap in a login shell so ~/.bash_profile is sourced — this is the
-        # standard way to pick up CUDA / conda / venv paths on any provider.
+        # Wrap in a login shell so ~/.bash_profile is sourced
         wrapped = f"bash -l -c {shlex.quote(command)}"
 
         _, stdout_f, stderr_f = self._ssh.exec_command(wrapped, timeout=timeout)
@@ -313,22 +311,20 @@ class GPUSession:
         stderr_lines: list[str] = []
 
         if stream:
-
             def _stream(channel_file, storage, prefix=""):
                 for line in channel_file:
                     storage.append(line)
-                    safe_line = line.encode(
-                        sys.stdout.encoding, errors="replace"
-                    ).decode(sys.stdout.encoding)
-                    if prefix:
-                        print(f"{prefix}{safe_line}", end="", flush=True)
-                    else:
-                        print(safe_line, end="", flush=True)
+                    try:
+                        safe_line = line.encode(sys.stdout.encoding, errors="replace").decode(sys.stdout.encoding)
+                        if prefix:
+                            print(f"{prefix}{safe_line}", end="", flush=True)
+                        else:
+                            print(safe_line, end="", flush=True)
+                    except Exception:
+                        pass
 
             t_out = threading.Thread(target=_stream, args=(stdout_f, stdout_lines, ""))
-            t_err = threading.Thread(
-                target=_stream, args=(stderr_f, stderr_lines, "[stderr] ")
-            )
+            t_err = threading.Thread(target=_stream, args=(stderr_f, stderr_lines, "[stderr] "))
             t_out.start()
             t_err.start()
             t_out.join()
@@ -339,11 +335,16 @@ class GPUSession:
 
         exit_code = stdout_f.channel.recv_exit_status()
 
-        return RunResult(
+        result = RunResult(
             stdout="".join(stdout_lines),
             stderr="".join(stderr_lines),
             exit_code=exit_code,
         )
+
+        if check and exit_code != 0:
+            raise RuntimeError(f"Command failed with exit code {exit_code}: {command}\nStderr: {result.stderr}")
+
+        return result
 
     def run_python(self, script: str, timeout: int = 3600) -> RunResult:
         """Run an inline Python script on the remote GPU."""
@@ -386,68 +387,47 @@ class GPUSession:
         import tempfile
         import tarfile
 
-        if exclude is None:
-            exclude = [
-                ".git",
-                ".venv",
-                "dashboard",
-                "data",
-                "__pycache__",
-                ".pytest_cache",
-                ".agents",
-                ".ipynb_checkpoints",
-                "results",
-                "artifacts",
-                "scratch",
-                ".gemini",
-            ]
-
-        print(f"Syncing project to {remote_dir}...")
-        # Priority directories/files to include
-        include = [
-            "src",
-            "scripts",
-            "configs",
-            "models",
-            "pretrained_models",
-            "tests",
-            "requirements.txt",
-            "requirements-dev.txt",
-            "README.md",
-            ".agents",
-            "gpu_connection.json",
-        ]
-
-        # Create a temporary directory for cleaned project structure
+        # 1. Prepare a clean temporary directory with only the necessary files
         with tempfile.TemporaryDirectory() as tmp_dir:
             target = os.path.join(tmp_dir, "sync_payload")
-            os.makedirs(target, exist_ok=True)
+            os.makedirs(target)
             
-            # 1. Copy only allowed items (fast, avoids results/data scanning)
+            include = [
+                "src", "scripts", "configs", "data",
+                "requirements.txt", "README.md", "gpu_connection.json", ".env"
+            ]
+            
+            print(f"Preparing project tarball (excluding large data)...")
             for item in include:
                 src_path = os.path.join(local_dir, item)
                 if not os.path.exists(src_path):
                     continue
-                
+                    
                 dst_path = os.path.join(target, item)
                 if os.path.isdir(src_path):
-                    shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                    # For data, we strictly exclude 'raw'
+                    if item == "data":
+                        shutil.copytree(src_path, dst_path, ignore=shutil.ignore_patterns("raw", "processed_cache"), dirs_exist_ok=True)
+                    else:
+                        shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
                 else:
                     shutil.copy2(src_path, dst_path)
 
-            # 2. Package into a tarball (fast)
+            # 2. Package into a tarball
             archive_path = os.path.join(tmp_dir, "project.tar.gz")
             with tarfile.open(archive_path, "w:gz") as tar:
                 tar.add(target, arcname=".")
 
-            # 3. Create remote dir and upload (one large file = much faster)
-            self.run(f"mkdir -p {remote_dir}")
+            # 3. Create remote dir and upload
+            self.run(f"mkdir -p {remote_dir}", check=True)
+            print(f"Uploading project tarball ({os.path.getsize(archive_path) / 1024 / 1024:.1f} MB)...")
             self.upload(archive_path, f"{remote_dir}/project.tar.gz", recursive=False)
 
-            # 4. Extract on remote (fast)
-            self.run(f"cd {remote_dir} && tar -xzf project.tar.gz && rm project.tar.gz")
+            # 4. Extract on remote
+            print(f"Extracting project on remote...")
+            self.run(f"cd {remote_dir} && tar -xzf project.tar.gz && rm project.tar.gz", check=True)
 
-        print(f"Project synced to {remote_dir}")
+        print(f"Project synced successfully to {remote_dir}")
 
     def write_file(self, remote_path: str, content: str):
         """Write a text string directly to a file on the remote GPU."""

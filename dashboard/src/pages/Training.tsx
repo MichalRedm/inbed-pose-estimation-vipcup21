@@ -293,7 +293,19 @@ const Training: React.FC = () => {
                 {status?.is_running && <RefreshCw size={14} className="spin" style={{ marginLeft: '12px', color: 'var(--accent-lime)' }} />}
               </div>
               {status?.is_running && (
-                <span className="micro-label" style={{ color: 'var(--accent-primary)' }}>LIVE TRACKING</span>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                  {status.current_metrics?.speed && (
+                    <span className="micro-label" style={{ color: 'var(--accent-primary)', background: 'rgba(56, 189, 248, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                      {status.current_metrics.speed} it/s
+                    </span>
+                  )}
+                  {status.current_metrics?.eta && (
+                    <span className="micro-label" style={{ opacity: 0.8 }}>
+                      ETA: {status.current_metrics.eta}
+                    </span>
+                  )}
+                  <span className="micro-label" style={{ color: 'var(--accent-primary)', fontWeight: 'bold' }}>LIVE</span>
+                </div>
               )}
             </div>
           </div>

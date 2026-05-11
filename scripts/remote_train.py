@@ -127,15 +127,6 @@ def main():
         )
 
         # --- Step 4: Smart Cleanup & State Tracking ---
-        if not args_cli.resume:
-            print("[clean] Starting fresh run, wiping remote checkpoints...")
-            gpu.run("rm -rf /root/project/models/checkpoints/* || true", stream=False)
-        else:
-            print("[resume] Resuming, preserving remote checkpoints...")
-
-        # Track which checkpoints have already been downloaded
-        downloaded: set[str] = set()
-
         # Determine local and remote paths based on run_id
         if args_cli.run_id:
             local_run_dir = Path("results/runs") / args_cli.run_id
@@ -158,6 +149,15 @@ def main():
             remote_ckpt_dir = "/root/project/models/checkpoints"
             remote_history_path = "/root/project/models/checkpoints/history.json"
             remote_config_path = "/root/project/models/checkpoints/config.json"
+
+        if not args_cli.resume:
+            print(f"[clean] Starting fresh run, wiping remote checkpoints in {remote_ckpt_dir}...")
+            gpu.run(f"rm -rf {remote_ckpt_dir}/* || true", stream=False)
+        else:
+            print(f"[resume] Resuming, preserving remote checkpoints in {remote_ckpt_dir}...")
+
+        # Track which checkpoints have already been downloaded
+        downloaded: set[str] = set()
 
         os.makedirs(local_ckpt_dir, exist_ok=True)
 

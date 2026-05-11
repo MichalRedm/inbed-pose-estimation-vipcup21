@@ -179,6 +179,11 @@ class TrainingManager:
 
             if self.current_run_id:
                 cmd.extend(["--run_id", self.current_run_id])
+            
+            # Propagate resume flag
+            is_resume = config_overrides.get("training", {}).get("resume") or config_overrides.get("resume")
+            if is_resume:
+                cmd.append("--resume")
 
             # If a full config was provided, save it to a temporary file and pass it
             if config_overrides:
@@ -296,6 +301,30 @@ class TrainingManager:
                         self.status_message = (
                             f"Progress: {pct}% (Batch {curr_batch}/{total_batches})"
                         )
+                        
+                        # Example: Epoch 1/30: 10%|# | 4/43 [00:02<00:27, 1.42it/s, loss=0.5]
+                        tqdm_match = re.search(r"(\d+)%\|.*\| (\d+)/(\d+) \[(.*)<(.*), (.*)it/s", line)
+                        if tqdm_match:
+                            pct, cur, tot, elapsed, eta, speed = tqdm_match.groups()
+                            self.progress = int(pct) / 100.0
+                            self.current_metrics.update({
+                                "speed": speed,
+                                "eta": eta,
+                                "elapsed": elapsed
+                            })
+
+                        metrics_match = re.search(r", (.*)\]$", line)
+                        if metrics_match:
+                            metrics_str = metrics_match.group(1)
+                            metrics = {}
+                            for pair in metrics_str.split(", "):
+                                if "=" in pair:
+                                    k, v = pair.split("=")
+                                    try:
+                                        metrics[k.strip()] = float(v.strip())
+                                    except ValueError:
+                                        metrics[k.strip()] = v.strip()
+                            self.current_metrics.update(metrics)
                         
                         # Extract all metrics from tqdm postfix (e.g., key=value)
                         metrics = re.findall(r"(\w+)=([\d\.]+)", line)
