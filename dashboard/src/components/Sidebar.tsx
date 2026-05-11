@@ -4,8 +4,7 @@ import axios from 'axios';
 import { 
   Activity, 
   Settings, 
-  BrainCircuit,
-  Terminal
+  Layers
 } from 'lucide-react';
 
 import { API_BASE_URL } from '../services/api';
@@ -30,8 +29,7 @@ const Sidebar: React.FC = () => {
 
   const navItems = [
     { name: 'Runs', path: '/', icon: Activity },
-    { name: 'Dataset', path: '/dataset', icon: BrainCircuit },
-    { name: 'Inference', path: '/inference', icon: Terminal },
+    { name: 'Dataset', path: '/dataset', icon: Layers },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
 
