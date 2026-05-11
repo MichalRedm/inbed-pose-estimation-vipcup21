@@ -1,15 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Play, 
   History, 
   Trash2, 
   Activity, 
   Target, 
   Eye, 
   Info,
-  Calendar,
-  CheckCircle2,
   Clock,
   Plus
 } from 'lucide-react';
@@ -28,7 +25,6 @@ const Overview: React.FC = () => {
   const [isStartingNew, setIsStartingNew] = useState(false);
   const [trainingStatus, setTrainingStatus] = useState<any>(null);
   const [runDetails, setRunDetails] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
 
   const fetchRuns = useCallback(async () => {
     try {
@@ -65,11 +61,9 @@ const Overview: React.FC = () => {
 
   useEffect(() => {
     if (selectedRun) {
-      setLoading(true);
       getRunDetails(selectedRun).then(details => {
         setRunDetails(details);
-        setLoading(false);
-      }).catch(() => setLoading(false));
+      });
     } else {
       setRunDetails(null);
     }

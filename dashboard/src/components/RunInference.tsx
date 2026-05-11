@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Play, RefreshCw, Download } from 'lucide-react';
+import { Upload, Play, RefreshCw } from 'lucide-react';
 import { predictPose } from '../services/api';
 
 interface Prediction {

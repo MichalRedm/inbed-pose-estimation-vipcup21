@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { 
   Target, 
   FileJson, 
-  BarChart3, 
   Activity, 
   Terminal, 
   Play, 

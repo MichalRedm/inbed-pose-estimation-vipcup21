@@ -25,7 +25,6 @@ interface TrainingFormProps {
 }
 
 const TrainingForm: React.FC<TrainingFormProps> = ({ onStarted }) => {
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [config, setConfig] = useState<TrainingConfig>({
     lr: 0.0001,
     epochs: 30,
@@ -62,13 +61,6 @@ const TrainingForm: React.FC<TrainingFormProps> = ({ onStarted }) => {
     initialize();
   }, []);
 
-  const updateConfig = (updater: (prev: TrainingConfig) => TrainingConfig) => {
-    setSaveStatus('saving');
-    const next = updater(config);
-    setConfig(next);
-    
-    // Auto-save debounce logic could go here or in a separate useEffect
-  };
 
   const handleStart = async () => {
     try {
