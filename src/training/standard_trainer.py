@@ -304,7 +304,7 @@ class StandardTrainer(BaseTrainer):
                 f"[Trainer] Checkpoint saving criterion: best val PCK (decoder: {decode_method})"
             )
 
-        for epoch in range(self.epochs):
+        for epoch in range(self.start_epoch, self.epochs):
             self.current_epoch = epoch
             train_metrics = self.train_epoch(train_loader, epoch)
             val_metrics = {}

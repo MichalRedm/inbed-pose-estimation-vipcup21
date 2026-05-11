@@ -37,6 +37,7 @@ class BaseTrainer(ABC):
         # Training parameters
         train_cfg = config.get("training", {})
         self.epochs = train_cfg.get("epochs", 30)
+        self.start_epoch = 0  # Default, can be set during resumption
         self.save_dir = train_cfg.get("save_dir", "results/runs/default")
 
         if self.is_main:
@@ -48,6 +49,12 @@ class BaseTrainer(ABC):
         self.best_val_loss = float("inf")
         self.history = []
         self.history_path = os.path.join(self.save_dir, "history.json")
+        if os.path.exists(self.history_path):
+            try:
+                with open(self.history_path, "r") as f:
+                    self.history = json.load(f)
+            except:
+                pass
 
     @abstractmethod
     def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
@@ -186,6 +193,7 @@ class BaseTrainer(ABC):
             if hasattr(self.model, "module")
             else self.model.state_dict(),
             "config": self.config,
+            "epoch": self.current_epoch,
             "best_val_pck": self.best_val_pck,
             "best_val_loss": self.best_val_loss,
         }

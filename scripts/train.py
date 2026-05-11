@@ -199,9 +199,26 @@ def train():
                 m = re.search(r"epoch_(\d+)", f.name)
                 return int(m.group(1)) if m else 0
 
-            latest_ckpt = max(ckpt_files, key=get_epoch)
+            latest_ckpt = max(ckpt_files, key=os.path.getmtime)
             if rank == 0:
-                print(f"Resuming from: {latest_ckpt}")
+                print(f"Loading checkpoint: {latest_ckpt}")
+
+            state = torch.load(latest_ckpt, map_location=device)
+            
+            # Get start_epoch from checkpoint state OR history (take max)
+            ckpt_epoch = state.get("epoch", 0)
+            hist_epoch = 0
+            history_path = Path(config["training"]["save_dir"]) / "history.json"
+            if history_path.exists():
+                try:
+                    with open(history_path, "r") as f:
+                        hist_epoch = len(json.load(f))
+                except: pass
+            
+            start_epoch = max(ckpt_epoch, hist_epoch)
+            trainer.start_epoch = start_epoch
+            if rank == 0:
+                print(f"Resuming from global epoch {start_epoch + 1}")
 
             state = torch.load(latest_ckpt, map_location=device)
             m_state = state.get("model_state_dict", state)

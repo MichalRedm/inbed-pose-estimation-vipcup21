@@ -131,7 +131,7 @@ class UDATrainer(BaseTrainer):
     def fit(self, train_loader, val_loader=None):
         self.num_batches_per_epoch = len(train_loader)
 
-        for epoch in range(self.epochs):
+        for epoch in range(self.start_epoch, self.epochs):
             train_metrics = self.train_epoch(train_loader, epoch)
             val_metrics = {}
 

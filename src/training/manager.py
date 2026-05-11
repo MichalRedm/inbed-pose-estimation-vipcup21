@@ -23,6 +23,7 @@ class TrainingManager:
         self.status_message = "Idle"
         self.current_metrics: Dict[str, float] = {}
         self.current_run_id: Optional[str] = None
+        self.last_run_id: Optional[str] = None
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -77,23 +78,31 @@ class TrainingManager:
             final_config.get("run_id") or 
             f"run_{time.strftime('%Y%m%d_%H%M%S')}"
         )
+        self.last_run_id = self.current_run_id
         self._stop_event.clear()
         self.log_history = []
         self.progress = 0.0
-        self.current_epoch = 0
-        self.total_epochs = 0
+        self.total_epochs = final_config.get("training", {}).get("epochs", 0)
 
         # Load existing history if resuming
         is_resume = final_config.get("training", {}).get("resume") or final_config.get(
             "resume"
         )
         if is_resume:
-            self.loss_history, self.adv_loss_history = self._load_history_dual()
-            if self.loss_history:
-                self.current_epoch = len(self.loss_history)
+            file_history_dict = self._load_history_dict()
+            if file_history_dict:
+                max_ep = max(file_history_dict.keys())
+                self.loss_history = [None] * max_ep
+                self.adv_loss_history = [None] * max_ep
+                for ep, metrics in file_history_dict.items():
+                    idx = ep - 1
+                    self.loss_history[idx] = metrics["loss"]
+                    self.adv_loss_history[idx] = metrics["adv_loss"]
+                self.current_epoch = max_ep
         else:
             self.loss_history = []
             self.adv_loss_history = []
+            self.current_epoch = 0
 
         self._thread = threading.Thread(target=self._run_training, args=(final_config,))
         self._thread.start()
@@ -108,25 +117,84 @@ class TrainingManager:
         return True, "Stop signal sent"
 
     def get_status(self):
-        # Refresh loss history from file if it's more complete than our in-memory version
+        # Refresh loss history from file using explicit epoch indices to avoid desyncs
         # (Especially useful for remote training where history.json is synced periodically)
-        file_history, file_adv_history = self._load_history_dual()
-        if len(file_history) > len(self.loss_history):
-            self.loss_history = file_history
-            self.adv_loss_history = file_adv_history
+        file_history_dict = self._load_history_dict()
+        
+        # Ensure our in-memory list is long enough
+        if file_history_dict:
+            max_epoch_in_file = max(file_history_dict.keys())
+            while len(self.loss_history) < max_epoch_in_file:
+                self.loss_history.append(None)
+                self.adv_loss_history.append(None)
+                
+            # Merge disk history into in-memory array at explicit indices
+            for ep, metrics in file_history_dict.items():
+                idx = ep - 1
+                if idx >= 0:
+                    self.loss_history[idx] = metrics["loss"]
+                    self.adv_loss_history[idx] = metrics["adv_loss"]
+
+        # Calculate overall progress: (completed epochs + current epoch progress) / total epochs
+        overall_progress = 0.0
+        if self.total_epochs > 0:
+            completed = max(0, self.current_epoch - 1)
+            # If we are in the middle of an epoch, add the batch progress
+            # Note: self.progress is the 0.0-1.0 progress within the CURRENT epoch
+            overall_progress = (completed + self.progress) / self.total_epochs
+            overall_progress = min(1.0, overall_progress)
 
         return {
             "is_running": self.is_running,
-            "run_id": self.current_run_id,
-            "progress": self.progress,
+            "run_id": self.current_run_id or self.last_run_id,
+            "progress": 1.0 if not self.is_running else overall_progress,
             "current_epoch": self.current_epoch,
             "total_epochs": self.total_epochs,
             "loss_history": self.loss_history,
             "adv_loss_history": self.adv_loss_history,
+            "history_dict": file_history_dict,
             "log_history": self.log_history,
-            "status_message": self.status_message,
+            "status_message": self.status_message if self.is_running else "Finished",
             "current_metrics": self.current_metrics,
         }
+
+    def _load_history_dict(self) -> Dict[int, Dict[str, float]]:
+        """Loads history from disk and returns a dict mapping explicit epoch number to metrics."""
+        try:
+            project_root = Path(__file__).parent.parent.parent
+            run_id = self.current_run_id or self.last_run_id
+            if run_id:
+                history_path = (
+                    project_root
+                    / "results"
+                    / "runs"
+                    / run_id
+                    / "history.json"
+                )
+                if history_path.exists():
+                    with open(history_path, "r") as f:
+                        history = json.load(f)
+                        result = {}
+                        import math
+                        for i, entry in enumerate(history):
+                            # Fallback to index-based epoch if 'epoch' key is missing
+                            ep = entry.get("epoch", i + 1)
+                            
+                            def sanitize(val):
+                                try:
+                                    f_val = float(val)
+                                    return None if math.isnan(f_val) or math.isinf(f_val) else f_val
+                                except:
+                                    return None
+
+                            result[ep] = {
+                                "loss": sanitize(entry.get("loss", entry.get("train_loss", 0.0))),
+                                "adv_loss": sanitize(entry.get("adv_loss", 0.0))
+                            }
+                        return result
+        except Exception as e:
+            print(f"[TrainingManager] Error loading history: {e}")
+        return {}
 
     def _load_history_dual(self) -> tuple[List[float], List[float]]:
         try:
@@ -269,6 +337,20 @@ class TrainingManager:
                         self.status_message = f"Resuming from {ckpt}"
                         continue
 
+                    if "Resuming from global epoch" in line:
+                        try:
+                            ep_num = int(line.split("global epoch")[1].strip())
+                            self.current_epoch = ep_num
+                            self.status_message = f"Resuming from Epoch {ep_num}"
+                        except:
+                            pass
+                        continue
+
+                    if "Remote Training Session Complete" in line or "Training finished" in line:
+                        self.status_message = "Training finished"
+                        self.is_running = False
+                        continue
+
                     # 2. Parse initial message: "Starting training for 10 epochs (from epoch 31)..."
                     start_match = re.search(
                         r"Starting training for (\d+) epochs \(from epoch (\d+)\)", line
@@ -281,96 +363,97 @@ class TrainingManager:
                         self.status_message = f"Session started: {count} epochs"
                         continue
 
-                    # 3. Parse Epoch progress: "--- Epoch 31/40 ---"
+                    # 3. Parse batch progress from tqdm (Flexible matching)
+                    is_tqdm = "%|" in line and "|" in line
+                    if is_tqdm:
+                        # Extract epoch if it's in the prefix (e.g., "Epoch 21/30: 10%|...")
+                        epoch_prefix_match = re.search(r"Epoch (\d+)/(\d+)", line)
+                        if epoch_prefix_match:
+                            self.current_epoch = int(epoch_prefix_match.group(1))
+                            self.total_epochs = int(epoch_prefix_match.group(2))
+
+                        # Extract percentage and steps
+                        prog_match = re.search(r"(\d+)%\|.*\| (\d+)/(\d+)", line)
+                        if prog_match:
+                            self.progress = float(prog_match.group(1)) / 100.0
+                        
+                        # Extract speed and ETA
+                        speed_match = re.search(r",\s*([\d\.]+)it/s", line)
+                        if speed_match: self.current_metrics["speed"] = speed_match.group(1)
+                        
+                        eta_match = re.search(r"<(\d+:\d+)", line)
+                        if eta_match: self.current_metrics["eta"] = eta_match.group(1)
+
+                    # 4. Extract ALL key=value pairs (supporting float, scientific, and percentage)
+                    # This now runs for EVERY line, including epoch summaries
+                    kv_matches = re.findall(r"([a-zA-Z_]\w*)=([\d\.]+(?:%|e-?\d+)?)", line)
+                    if kv_matches:
+                        import math
+                        current_batch_metrics = {}
+                        for k, v in kv_matches:
+                            try:
+                                # Strip % if present and convert to normalized float
+                                v_clean = v.rstrip('%')
+                                f_val = float(v_clean)
+                                if v.endswith('%'):
+                                    f_val /= 100.0
+
+                                if math.isnan(f_val) or math.isinf(f_val):
+                                    val = None
+                                else:
+                                    val = f_val
+                            except:
+                                val = v
+                            
+                            # Store in temporary dict first
+                            current_batch_metrics[k] = val
+                            
+                            # If it's a progress bar (tqdm), store with prefix to avoid "double jump"
+                            if is_tqdm:
+                                self.current_metrics[f"batch_{k}"] = val
+                            else:
+                                # Finalized metric from summary line - update main dict
+                                self.current_metrics[k] = val
+                                
+                        # 5. Update loss history ONLY if it's an epoch summary line
+                        if "Epoch" in line and ":" in line and not is_tqdm:
+                            epoch_summary_match = re.search(r"Epoch (\d+):", line)
+                            if epoch_summary_match:
+                                target_epoch = int(epoch_summary_match.group(1))
+                                self.current_epoch = target_epoch # Ensure synchronization
+                                
+                                for k in ["loss", "loss_pose", "train_loss"]:
+                                    if k in current_batch_metrics:
+                                        val = current_batch_metrics[k]
+                                        idx = target_epoch - 1
+                                        if idx >= 0:
+                                            # Pad history if there's a gap
+                                            while len(self.loss_history) < idx:
+                                                self.loss_history.append(None)
+                                                self.adv_loss_history.append(None)
+                                            
+                                            if val is not None:
+                                                if len(self.loss_history) <= idx:
+                                                    self.loss_history.append(float(val))
+                                                else:
+                                                    self.loss_history[idx] = float(val)
+                                        break
+                        continue
+
+                    # 4. Parse Epoch progress: "--- Epoch 31/40 ---"
                     epoch_match = re.search(r"(?:--- )?Epoch (\d+)/(\d+)", line)
                     if epoch_match:
                         current = int(epoch_match.group(1))
                         total = int(epoch_match.group(2))
                         self.current_epoch = current
                         self.total_epochs = total
-                        self.progress = current / total if total > 0 else 0
+                        # Only set progress to 0 if it's the exact header (no tqdm)
+                        if ":" not in line:
+                            self.progress = current / total if total > 0 else 0
                         self.status_message = f"Starting Epoch {current}..."  # "Epoch n / m" is in header, so just show start
                         continue
 
-                    # 4. Parse batch progress from tqdm: "Epoch 1/10:  20%|██        | 20/100 [00:10<00:40,  2.00it/s, loss=0.1234]"
-                    tqdm_match = re.search(
-                        r"Epoch \d+/\d+:\s+(\d+)%\|.*\| (\d+)/(\d+)(?:.*loss=([0-9.]+))?",
-                        line,
-                    )
-                    if tqdm_match:
-                        pct = tqdm_match.group(1)
-                        curr_batch = tqdm_match.group(2)
-                        total_batches = tqdm_match.group(3)
-                        batch_loss = tqdm_match.group(4)
 
-                        self.status_message = (
-                            f"Progress: {pct}% (Batch {curr_batch}/{total_batches})"
-                        )
-                        
-                        # Robust parsing for the whole line
-                        try:
-                            # 1. tqdm Progress parsing (detailed for GCN)
-                            # Example: Epoch 1/30: 10%|# | 4/43 [00:02<00:27, 1.42it/s, loss=0.5]
-                            tqdm_match = re.search(r"(\d+)%\|.*\| (\d+)/(\d+) \[(.*)<(.*), (.*)it/s", line)
-                            if tqdm_match:
-                                pct, cur, tot, elapsed, eta, speed = tqdm_match.groups()
-                                self.progress = int(pct) / 100.0
-                                self.current_metrics.update({
-                                    "speed": speed,
-                                    "eta": eta,
-                                    "elapsed": elapsed
-                                })
-
-                            # 2. Parse metrics from brackets/postfix
-                            metrics_match = re.search(r", (.*)\]$", line)
-                            if metrics_match:
-                                metrics_str = metrics_match.group(1)
-                                for pair in metrics_str.split(", "):
-                                    if "=" in pair:
-                                        k, v = pair.split("=")
-                                        try:
-                                            self.current_metrics[k.strip()] = float(v.strip())
-                                        except ValueError:
-                                            self.current_metrics[k.strip()] = v.strip()
-
-                            # 3. Extract all metrics via findall (backup)
-                            found_metrics = re.findall(r"(\w+)=([\d\.]+)%?", line)
-                            for key, val in found_metrics:
-                                try:
-                                    clean_val = val.replace('%', '')
-                                    # Don't overwrite speed/eta/elapsed with weird regex matches
-                                    if key not in ["speed", "eta", "elapsed"]:
-                                        self.current_metrics[key] = float(clean_val)
-                                except ValueError:
-                                    pass
-
-                            # 4. Parse Epoch Summary lines (End of epoch)
-                            # Example: Epoch 1: loss_pose=0.2956 ... | val_loss=162.9918 | val_pck=28.25%
-                            if "Epoch" in line and ":" in line and "=" in line:
-                                # Specifically look for val_pck
-                                pck_match = re.search(r"val_pck=([\d\.]+)%", line)
-                                if pck_match:
-                                    self.current_metrics["val_pck"] = float(pck_match.group(1))
-
-                            # 5. Update primary loss history for live graphs
-                            for key in ["loss", "train_loss", "adv_loss"]:
-                                if key in self.current_metrics:
-                                    val = self.current_metrics[key]
-                                    if isinstance(val, (int, float)):
-                                        idx = self.current_epoch - 1
-                                        if idx >= 0:
-                                            target_list = self.adv_loss_history if key == "adv_loss" else self.loss_history
-                                            while len(target_list) <= idx:
-                                                target_list.append(0.0)
-                                            target_list[idx] = float(val)
-                                            
-                                            if key != "adv_loss":
-                                                msg = f"Last Loss: {val:.4f}"
-                                                if not self.status_message.endswith(msg):
-                                                    self.status_message = msg
-                        except Exception as e:
-                            # Never crash the manager because of log parsing
-                            pass
 
                     # 5. Parse loss: "train_loss=0.1234" or "Epoch 1: loss=0.1234  adv_loss=0.05 val_loss=0.5678"
                     loss_match = re.search(
