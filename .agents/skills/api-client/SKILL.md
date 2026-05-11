@@ -14,7 +14,7 @@ The API CLI (`scripts/api_cli.py`) is the primary interface for an agent to trig
 ### 1. Start Training
 Trigger a new training run (local or remote).
 ```bash
-python scripts/api_cli.py start --run_id <run_id> --config <config_path> [--remote]
+python scripts/api_cli.py start --run_id <run_id> --config <config_path> [--remote] [--resume]
 ```
 
 ### 2. Monitor Status
