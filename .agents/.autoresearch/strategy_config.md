@@ -52,7 +52,8 @@
 
 ### Remote Training
 - Kaggle T4: ~40s/epoch, 30-epoch run ~20min.
-- Submission via `scripts/remote_train.py --run_id <id> --eval`.
+- **MANDATORY**: Always launch training via the API `POST /training/start` with `"remote": true`.
+- **FORBIDDEN**: Do not run `scripts/remote_train.py` directly from the terminal.
 - History/checkpoints downloaded automatically to `results/runs/<run_id>/`.
 
 ### Baseline Verification

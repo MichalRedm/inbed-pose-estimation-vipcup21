@@ -11,8 +11,9 @@
 - **Covers**: `cover1` and `cover2` ONLY (covered images — this is the task target domain)
 - **Image size**: from run's own `config.json → dataset.image_size` (default 256×256)
 - **Decoder**: auto-selected per run:
-  - `soft-argmax` if `training.sigma_start != training.sigma_end` (sigma curriculum)
-  - `argmax` otherwise (standard heatmap MSE)
+  - `GCN Refinement` if model is `refined_hrnet` (evaluates `refined_coords` directly).
+  - `soft-argmax` if `training.sigma_start != training.sigma_end` (sigma curriculum).
+  - `argmax` otherwise (standard heatmap MSE).
 
 ### Running Evaluation
 - [x] **Evaluation Script Fixed**: `scripts/evaluate.py` now loads run-specific configs, auto-selects decoders, and uses the correct `vis<=1` mask.
@@ -47,3 +48,4 @@ All "Verified" metrics in this repository must meet the following criteria:
 - **Loss-metric alignment check**: After each run, compare `val_loss` trajectory in `history.json` against `val_pck`. If the epoch with minimum `val_loss` differs significantly from the epoch with max `val_pck`, the loss function has an alignment problem. This is a known issue with the combined auxiliary loss.
 - **Per-joint PCK breakdown**: Extremities (ankles, wrists) consistently underperform. Focus new hypotheses on improving R/L_Ankle PCK specifically.
 - **Cover-specific breakdown**: Run evaluation separately on cover1 vs cover2 to detect if the model struggles more with thicker blanket conditions.
+- **Anatomical Validity Check**: For GCN-refined models, compare `PCK` of raw heatmaps vs `PCK` of refined coordinates to quantify the GCN's "correction" effect.

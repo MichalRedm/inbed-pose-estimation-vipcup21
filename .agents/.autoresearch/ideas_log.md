@@ -8,9 +8,18 @@
    - **Status**: Implementation complete (2026-05-11). `UncertaintyWeighting` added to `StandardTrainer`. `best_model.pth` now saved based on `val_pck`.
    - **Next**: Verify in Loop 17 training run.
 
-2. **Multimodal Fusion (IR + PM)**: Fuse features from IR (high-res texture) and Pressure Maps (absolute contact priors) to disambiguate joints under thick covers. Requires loading the `PM` modality in `VIPCupDataset`.
+2. **Feature-Level Multimodal Fusion (IR + PM)**:
+   - **Hypothesis**: Pressure Maps (PM) provide absolute contact priors that are invariant to blanket thickness, while IR provides high-resolution texture. Fusing them will improve localization of occluded joints (ankles, knees) under thick blankets.
+   - **Implementation**: Modify `VIPCupDataset` to load PM; update `HRNet` to support multi-channel input (2 channels: IR + PM); retrain.
+   - **Status**: [BLOCKED] PM data not found in local dataset.
 
-3. **Per-Joint Adaptive Sigma**: Instead of a global sigma curriculum, use a per-joint sigma that decays faster for high-confidence joints (shoulders, head) and slower for occluded extremities (ankles). Requires per-joint sigma tracking in `_generate_heatmaps_torch`.
+3. **[SELECTED] Spatial Dependency Refinement (GCN)**:
+   - **Hypothesis**: Joints are anatomically constrained. A GCN refinement layer taking soft-argmax coordinates can correct "impossible" poses (e.g., disconnected limbs) that occur under heavy occlusion.
+   - **Implementation**: Add a GCN module after `SoftArgmax2D`; train end-to-end with coordinate-space loss.
+
+4. **Joint-Specific Adaptive Loss Scaling (Focal Heatmap Loss)**:
+   - **Hypothesis**: Hard joints (ankles, wrists) are neglected during training as the model minimizes global MSE on easier joints (head, torso). Dynamic weighting based on per-joint error will force convergence on extremities.
+   - **Implementation**: Track per-joint PCK during training; scale heatmap MSE weights inversely to PCK.
 
 ## Web Research Syntheses
 - **Foreshortening Priors**: 2D bone lengths are upper-bounded by physical 3D length but lower-bounded by 0. Using a Hinge loss (ReLU) on length exceeding the max effectively models this projection constraint.

@@ -133,9 +133,22 @@ class StandardTrainer(BaseTrainer):
             targets = batch["target"].to(self.device)
             sigma = 2.0
 
-        outputs = self.model(images)
-        loss_pose = self.criterion(outputs, targets)
+        # Forward pass
+        model_to_call = (
+            self.model.module if hasattr(self.model, "module") else self.model
+        )
 
+        if (
+            hasattr(model_to_call, "forward")
+            and "return_refined" in model_to_call.forward.__code__.co_varnames
+        ):
+            outputs, pred_coords = self.model(images, return_refined=True)
+            using_model_coords = True
+        else:
+            outputs = self.model(images)
+            using_model_coords = False
+
+        loss_pose = self.criterion(outputs, targets)
         metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
 
         if self.use_uncertainty:
@@ -145,7 +158,9 @@ class StandardTrainer(BaseTrainer):
 
         # 1. Coordinate regression loss
         if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
-            pred_coords = self.soft_argmax(outputs)
+            if not using_model_coords:
+                pred_coords = self.soft_argmax(outputs)
+
             gt_coords = joints[:, :2, :].permute(0, 2, 1)
             visibility = joints[:, 2, :]
 
@@ -207,9 +222,22 @@ class StandardTrainer(BaseTrainer):
             targets = batch["target"].to(self.device)
             sigma = 2.0
 
-        outputs = self.model(images)
-        loss_pose = self.criterion(outputs, targets)
+        # Forward pass
+        model_to_call = (
+            self.model.module if hasattr(self.model, "module") else self.model
+        )
 
+        if (
+            hasattr(model_to_call, "forward")
+            and "return_refined" in model_to_call.forward.__code__.co_varnames
+        ):
+            outputs, pred_coords = self.model(images, return_refined=True)
+            using_model_coords = True
+        else:
+            outputs = self.model(images)
+            using_model_coords = False
+
+        loss_pose = self.criterion(outputs, targets)
         metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
 
         if self.use_uncertainty:
@@ -218,7 +246,9 @@ class StandardTrainer(BaseTrainer):
             loss = loss_pose
 
         if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
-            pred_coords = self.soft_argmax(outputs)
+            if not using_model_coords:
+                pred_coords = self.soft_argmax(outputs)
+
             gt_coords = joints[:, :2, :].permute(0, 2, 1)
             visibility = joints[:, 2, :]
 

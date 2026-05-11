@@ -398,6 +398,7 @@ class GPUSession:
                 "results",
                 "artifacts",
                 "scratch",
+                ".gemini",
             ]
 
         print(f"Syncing project to {remote_dir}...")

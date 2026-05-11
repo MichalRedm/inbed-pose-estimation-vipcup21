@@ -294,17 +294,31 @@ def evaluate(
             if joints is None:
                 continue
 
-            outputs = model(images)
+            model_to_call = model.module if is_distributed else model
+            if (
+                hasattr(model_to_call, "forward")
+                and "return_refined" in model_to_call.forward.__code__.co_varnames
+            ):
+                outputs, refined_coords = model(images, return_refined=True)
+                preds = refined_coords.cpu()
+                using_refined = True
+            else:
+                outputs = model(images)
+                using_refined = False
 
             if targets is not None:
+                # Use heatmaps for loss calculation
                 total_loss += criterion(outputs, targets).item()
                 num_batches += 1
 
-            raw_model = model.module if is_distributed else model
-            if raw_model.output_type == "heatmap":
-                preds = decode_heatmaps(outputs.cpu(), image_size, method=decode_method)
-            else:
-                preds = outputs.cpu()
+            if not using_refined:
+                raw_model = model.module if is_distributed else model
+                if raw_model.output_type == "heatmap":
+                    preds = decode_heatmaps(
+                        outputs.cpu(), image_size, method=decode_method
+                    )
+                else:
+                    preds = outputs.cpu()
 
             p_pck, p_count, _ = compute_pck(preds, joints, threshold=pck_threshold)
 

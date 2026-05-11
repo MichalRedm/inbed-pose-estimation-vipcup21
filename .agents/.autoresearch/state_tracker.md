@@ -1,12 +1,12 @@
 # State Tracker
 
-- **Current Loop**: 17
-- **Phase**: Loss Alignment Implementation
-- **Status**: IMPLEMENTED. Added `UncertaintyWeighting` to `StandardTrainer`.
+- **Current Loop**: 18
+- **Phase**: Implementation & Training
+- **Status**: IMPLEMENTED. Added `GCNRefinedHRNet` and integrated into `StandardTrainer` and `evaluate.py`.
 - **Absolute Priority**: 
-  1. **Verification**: Explicitly verify if the evaluations of previous baselines (saved in the Iteration Log) are correct using the fixed local evaluation framework. This is a high-priority prerequisite for all comparative analysis.
-  2. **Loop 17**: Validate that learned weights balance the loss and improve PCK correlation.
-- **Baseline**: Loop 16 (Verified 78.8% PCK - Re-verification recommended upon structural change).
+  1. **Training**: Execute Loop 18 training run with GCN refinement.
+  2. **Comparison**: Verify if GCN improves extremity PCK (ankles/wrists) compared to Loop 17.
+- **Baseline**: Loop 17 (74.2% PCK).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -62,3 +62,4 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 15 | Occlusion-Aware Integral Reg. | FAILURE | 31.9% | Loss imbalance (aux term dominated) |
 | 16 | Adaptive Sigma Curriculum | FAILURE | 33.9% | Loss imbalance (aux term dominated) |
 | 17 | Multi-Task Uncertainty Weighting | SUCCESS | **74.2%** | Kendall et al. weighting; PCK-aligned |
+| 18 | GCN-based Pose Refinement | IN_PROGRESS | N/A | Modeling anatomical joint dependencies |
