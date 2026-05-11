@@ -41,6 +41,7 @@ interface RunAnalysisProps {
 const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingStatus }) => {
   const [showLogs, setShowLogs] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
+  const [showLiveStats, setShowLiveStats] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
   // Local override set by "Re-evaluate"; falls back to prop data
   const [localEvalOverride, setLocalEvalOverride] = useState<RunDetails['evaluation'] | null>(null);
@@ -53,12 +54,21 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
   // Build chart data from history - API returns objects with named fields
   const chartData = (() => {
     if (isActive && trainingStatus?.loss_history) {
-      return trainingStatus.loss_history.map((loss: number, i: number) => ({
-        epoch: i + 1,
-        loss,
-        val_loss: trainingStatus.val_loss_history?.[i] ?? null,
-        adv: trainingStatus.adv_loss_history?.[i] ?? null,
-      }));
+      const history = trainingStatus.loss_history;
+      const historyDict = (trainingStatus as any).history_dict || {};
+      const total = trainingStatus.total_epochs || 30;
+      const maxLen = Math.max(history.length, total);
+
+      return Array.from({ length: maxLen }, (_, i) => {
+        const ep = i + 1;
+        const metrics = historyDict[ep] || {};
+        return {
+          epoch: ep,
+          loss: history[i] ?? null,
+          val_loss: metrics.val_loss ?? metrics.val_loss_pose ?? null,
+          adv: trainingStatus.adv_loss_history?.[i] ?? null,
+        };
+      }).filter(d => d.epoch <= total); // Fix X-axis 31
     }
     // History entries are objects: {epoch, loss, val_loss, val_pck, loss_pose, ...}
     return (details.history || []).map((h: Record<string, number>) => ({
@@ -98,112 +108,146 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
     <div className="run-analysis flex-column" style={{ gap: '24px', overflowY: 'auto', paddingRight: '10px' }}>
       
       {/* 1. Loss & Progress Section */}
-      <div className="glass card">
-        <div className="card-header">
-          <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-lime)' }}>
-            {isActive ? 'Live Training Performance' : 'Training History'}
-          </h3>
-          <Activity size={18} color="var(--accent-lime)" />
-        </div>
-        
-        <div style={{ height: '300px', marginTop: '10px' }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" vertical={false} />
-              <XAxis dataKey="epoch" stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
-              <YAxis stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
-              <Tooltip 
-                contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-purple)', borderRadius: '8px' }}
-                itemStyle={{ color: '#fff' }}
-                labelStyle={{ color: '#fff' }}
-              />
-              <Line type="monotone" dataKey="loss" stroke="var(--accent-lime)" strokeWidth={2.5} dot={false} animationDuration={300} name="Train Loss" />
-              <Line type="monotone" dataKey="val_loss" stroke="var(--accent-primary)" strokeWidth={2} dot={false} strokeDasharray="5 3" name="Val Loss" />
-              {hasAdvHistory && <Line type="monotone" dataKey="adv" stroke="var(--accent-pink)" strokeWidth={1.5} dot={false} strokeDasharray="4 4" name="Adv Loss" />}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <div className="analysis-top-row" style={{ display: 'flex', gap: '24px', alignItems: 'stretch' }}>
+          {/* Main Chart Card */}
+          <div className="glass card" style={{ flex: 1, margin: 0, display: 'flex', flexDirection: 'column' }}>
+            <div className="card-header">
+              <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-lime)' }}>
+                {isActive ? 'Live Training Performance' : 'Training History'}
+              </h3>
+              <Activity size={18} color="var(--accent-lime)" />
+            </div>
+            
+            <div style={{ height: '300px', marginTop: '10px', flex: 1 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" vertical={false} />
+                  <XAxis dataKey="epoch" stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-purple)', borderRadius: '8px' }}
+                    itemStyle={{ color: '#fff' }}
+                    labelStyle={{ color: '#fff' }}
+                  />
+                  <Line type="monotone" dataKey="loss" stroke="var(--accent-lime)" strokeWidth={2.5} dot={{ r: 3, fill: 'var(--accent-lime)' }} activeDot={{ r: 5 }} animationDuration={300} name="Train Loss" />
+                  <Line type="monotone" dataKey="val_loss" stroke="var(--accent-primary)" strokeWidth={2} dot={{ r: 2 }} strokeDasharray="5 3" name="Val Loss" />
+                  {hasAdvHistory && <Line type="monotone" dataKey="adv" stroke="var(--accent-pink)" strokeWidth={1.5} dot={{ r: 2 }} strokeDasharray="4 4" name="Adv Loss" />}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
 
-        {isActive && trainingStatus && (
-          <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
-             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span className="micro-label">Progress: Epoch {trainingStatus.current_epoch} / {trainingStatus.total_epochs}</span>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                {trainingStatus.current_metrics?.speed && (
-                  <span className="micro-label" style={{ color: 'var(--accent-primary)' }}>{trainingStatus.current_metrics.speed} it/s</span>
-                )}
-                {trainingStatus.current_metrics?.eta && (
-                  <span className="micro-label" style={{ opacity: 0.6 }}>ETA: {trainingStatus.current_metrics.eta}</span>
-                )}
-                <span style={{ fontSize: '0.8rem', color: 'var(--accent-lime)' }}>{Math.round(trainingStatus.progress * 100)}%</span>
-              </div>
-            </div>
-            <div className="progress-bar-container" style={{ margin: 0, height: '6px' }}>
-              <div className="progress-bar" style={{ width: `${trainingStatus.progress * 100}%` }}></div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 1.1 Live Highlight Section */}
-      {isActive && trainingStatus?.current_metrics && (
-        <div className="metrics-highlight-row" style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', 
-          gap: '20px'
-        }}>
-          <div className="glass highlight-card" style={{ padding: '20px', borderRadius: '16px', borderLeft: '4px solid var(--accent-lime)', background: 'rgba(255,255,255,0.02)' }}>
-            <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>VALIDATION PCK</div>
-            <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-lime)', marginTop: '8px' }}>
-              {trainingStatus.current_metrics?.val_pck ? `${trainingStatus.current_metrics.val_pck.toFixed(2)}%` : '--'}
-            </div>
-          </div>
-          <div className="glass highlight-card" style={{ padding: '20px', borderRadius: '16px', borderLeft: '4px solid var(--accent-primary)', background: 'rgba(255,255,255,0.02)' }}>
-            <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>BATCH LOSS</div>
-            <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-primary)', marginTop: '8px' }}>
-              {trainingStatus.current_metrics?.loss ? trainingStatus.current_metrics.loss.toFixed(4) : '--'}
-            </div>
-          </div>
-          <div className="glass highlight-card" style={{ padding: '20px', borderRadius: '16px', borderLeft: '4px solid var(--accent-pink)', background: 'rgba(255,255,255,0.02)' }}>
-            <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>SIGMA</div>
-            <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-pink)', marginTop: '8px' }}>
-              {trainingStatus.current_metrics?.sigma ? trainingStatus.current_metrics.sigma.toFixed(3) : '--'}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 1.2 Live Statistics Grid */}
-      {isActive && trainingStatus?.current_metrics && Object.keys(trainingStatus.current_metrics).length > 0 && (
-        <div className="glass card" style={{ padding: '20px' }}>
-          <div className="card-header" style={{ marginBottom: '16px' }}>
-            <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-primary)' }}>Live Statistics</h3>
-            <span className="micro-label" style={{ opacity: 0.5 }}>PER BATCH</span>
-          </div>
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', 
-            gap: '12px'
-          }}>
-            {Object.entries(trainingStatus.current_metrics)
-              .filter(([key]) => !['loss', 'train_loss', 'adv_loss', 'speed', 'eta', 'elapsed', 'val_pck', 'sigma'].includes(key))
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([key, value]) => (
-                <div key={key} style={{ 
-                  background: 'rgba(255,255,255,0.03)', 
-                  padding: '10px', 
-                  borderRadius: '8px',
-                  borderLeft: `2px solid var(--border-purple)`
-                }}>
-                  <div className="text-uppercase" style={{ fontSize: '0.6rem', opacity: 0.6, marginBottom: '4px' }}>
-                    {key.replace(/_/g, ' ')}
-                  </div>
-                  <div style={{ fontSize: '1rem', fontWeight: 'bold', fontFamily: 'monospace' }}>
-                    {typeof value === 'number' ? (value > 1 ? value.toFixed(2) : value.toFixed(4)) : value}
+            {isActive && trainingStatus && (
+              <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderTop: '1px solid var(--border-purple)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span className="micro-label">Progress: Epoch {trainingStatus.current_epoch} / {trainingStatus.total_epochs}</span>
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                    {trainingStatus.current_metrics?.speed && (
+                      <span className="micro-label" style={{ color: 'var(--accent-primary)' }}>{trainingStatus.current_metrics.speed} it/s</span>
+                    )}
+                    {trainingStatus.current_metrics?.eta && (
+                      <span className="micro-label" style={{ opacity: 0.6 }}>ETA: {trainingStatus.current_metrics.eta}</span>
+                    )}
+                    <span style={{ fontSize: '0.8rem', color: 'var(--accent-lime)' }}>{Math.round(trainingStatus.progress * 100)}%</span>
                   </div>
                 </div>
-              ))}
+                <div className="progress-bar-container" style={{ margin: 0, height: '6px' }}>
+                  <div className="progress-bar" style={{ width: `${trainingStatus.progress * 100}%` }}></div>
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Sidebar Metrics (Active Only) */}
+          {isActive && (
+            <div className="flex-column" style={{ width: '280px', gap: '16px' }}>
+              <div className="glass highlight-card glow-lime" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>VALIDATION PCK</div>
+                <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-lime)', marginTop: '8px' }}>
+                  {(() => {
+                    const metrics = trainingStatus.current_metrics || {};
+                    // Try current metrics first (if just finished)
+                    let pck = metrics.val_pck ?? metrics.pck;
+                    
+                    if (!pck) {
+                      // Scan history backwards for latest available PCK
+                      const historyDict = (trainingStatus as any).history_dict || {};
+                      const epochs = Object.keys(historyDict).map(Number).sort((a, b) => b - a);
+                      for (const ep of epochs) {
+                        const m = historyDict[ep];
+                        if (m && (m.val_pck !== undefined || m.pck !== undefined)) {
+                          pck = m.val_pck ?? m.pck;
+                          break;
+                        }
+                      }
+                    }
+                    return pck ? `${(pck * 100).toFixed(2)}%` : '--';
+                  })()}
+                </div>
+              </div>
+              
+              <div className="glass highlight-card glow-purple" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>LAST EPOCH LOSS</div>
+                <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-primary)', marginTop: '8px' }}>
+                  {(trainingStatus.current_metrics?.loss || trainingStatus.current_metrics?.loss_pose || 0).toFixed(4)}
+                </div>
+              </div>
+
+              <div className="glass highlight-card glow-pink" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>SIGMA</div>
+                <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-pink)', marginTop: '8px' }}>
+                  {(trainingStatus.current_metrics?.sigma || 2.0).toFixed(3)}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+      {/* 1.2 Live Statistics Grid (Collapsible) */}
+      {isActive && trainingStatus?.current_metrics && (
+        <div className="glass card" style={{ padding: '20px' }}>
+          <button 
+            className="flex-row" 
+            style={{ width: '100%', background: 'none', border: 'none', justifyContent: 'space-between', color: 'inherit', padding: 0 }}
+            onClick={() => setShowLiveStats(!showLiveStats)}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Activity size={18} color="var(--accent-primary)" />
+              <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-primary)', margin: 0 }}>Live Statistics</h3>
+              <span className="micro-label" style={{ opacity: 0.5 }}>PER BATCH</span>
+            </div>
+            <span style={{ opacity: 0.5 }}>{showLiveStats ? 'Hide' : 'Show'}</span>
+          </button>
+          
+          {showLiveStats && (
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', 
+              gap: '12px',
+              marginTop: '16px'
+            }}>
+              {Object.entries(trainingStatus.current_metrics)
+                .filter(([key]) => !['loss', 'train_loss', 'adv_loss', 'speed', 'eta', 'elapsed', 'val_pck', 'sigma'].includes(key))
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([key, value]) => (
+                  <div key={key} style={{ 
+                    padding: '12px', 
+                    borderRadius: '12px', 
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid var(--border-purple)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}>
+                    <div className="micro-label" style={{ opacity: 0.5, fontSize: '0.6rem' }}>
+                      {key.startsWith('batch_') ? `${key.replace('batch_', '').replace(/_/g, ' ')} (LIVE)` : key.replace(/_/g, ' ')}
+                    </div>
+                    <div style={{ fontSize: '1rem', fontWeight: 600, color: '#fff' }}>
+                      {typeof value === 'number' ? value.toFixed(4) : value}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       )}
 
