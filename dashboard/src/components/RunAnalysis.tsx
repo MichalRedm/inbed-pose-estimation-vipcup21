@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Target, 
   FileJson, 
@@ -44,12 +44,8 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
   // Local override set by "Re-evaluate"; falls back to prop data
   const [localEvalOverride, setLocalEvalOverride] = useState<RunDetails['evaluation'] | null>(null);
 
-  // Reset the override when run changes (key prop also handles this but this is belt-and-suspenders)
-  useEffect(() => {
-    setLocalEvalOverride(prev => prev !== null ? null : prev);
-    setShowLogs(prev => prev !== false ? false : prev);
-    setShowConfig(prev => prev !== false ? false : prev);
-  }, [details.id]);
+  // Note: All local state (showLogs, localEvalOverride, etc.) is naturally reset 
+  // when the 'details.id' changes because the parent renders this component with a 'key={details.id}'.
 
   const evalResults = localEvalOverride ?? details.evaluation;
 

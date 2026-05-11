@@ -81,26 +81,29 @@ const Overview: React.FC = () => {
   }, [selectedRun, isStartingNew, setSelectedRun]);
 
   useEffect(() => {
-    // Initial fetch
-    fetchRuns();
-    fetchTrainingStatus();
-    
     const interval = setInterval(() => {
       fetchRuns();
       fetchTrainingStatus();
     }, 5000);
+    
+    // Mount fetch via microtask
+    Promise.resolve().then(() => {
+      fetchRuns();
+      fetchTrainingStatus();
+    });
+
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount to avoid sync effect warnings
+  }, [fetchRuns, fetchTrainingStatus]);
 
   useEffect(() => {
-    if (selectedRun) {
-      getRunDetails(selectedRun).then(details => {
-        setRunDetails(details);
-      });
-    } else {
-      setRunDetails(prev => prev !== null ? null : prev);
-    }
+    if (!selectedRun) return;
+    
+    let isCancelled = false;
+    getRunDetails(selectedRun).then(details => {
+      if (!isCancelled) setRunDetails(details);
+    });
+    
+    return () => { isCancelled = true; };
   }, [selectedRun]);
 
   const handleDeleteRun = async (e: React.MouseEvent, id: string) => {
@@ -140,7 +143,11 @@ const Overview: React.FC = () => {
           <button 
             className="btn-lime" 
             style={{ padding: '6px', borderRadius: '50%' }}
-            onClick={() => { setIsStartingNew(true); setSelectedRun(''); }}
+            onClick={() => { 
+              setIsStartingNew(true); 
+              setSelectedRun(''); 
+              setRunDetails(null);
+            }}
           >
             <Plus size={18} />
           </button>
@@ -151,7 +158,11 @@ const Overview: React.FC = () => {
             <motion.div 
               key={run.id}
               layoutId={run.id}
-              onClick={() => { setSelectedRun(run.id); setIsStartingNew(false); }}
+              onClick={() => { 
+                setSelectedRun(run.id); 
+                setIsStartingNew(false); 
+                if (selectedRun !== run.id) setRunDetails(null);
+              }}
               className={`run-card ${selectedRun === run.id ? 'active' : ''}`}
               style={{
                 padding: '12px 16px',
