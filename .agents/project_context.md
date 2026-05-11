@@ -28,6 +28,7 @@ Stabilize the multi-task pose estimation pipeline by reconciling previous evalua
 - **Real-time Monitoring**: All training and evaluation MUST be performed via the Dashboard API (see `ml_operations.md` rule).
 - **Runs Hub**: The unified hub in the dashboard is the primary source of truth for experiment status, loss curves, and evaluation metrics.
 - **Agent Workflow**: Use the `TrainingManager` via API to trigger runs so that progress is visible to the USER in real-time.
+- **CLI Skill**: Use the [api-client](file:///d:/C/Users/Micha%C5%82/Documents/GitHub/inbed-pose-estimation-vipcup21/.agents/skills/api-client/SKILL.md) skill for standardized command-line interaction with the training pipeline.
 
 ## Critical Secrets Required
 The following must be provided in the root `.env` file:
