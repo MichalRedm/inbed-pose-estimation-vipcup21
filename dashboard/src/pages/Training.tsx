@@ -50,6 +50,7 @@ interface TrainingStatus {
   adv_loss_history: number[];
   log_history: string[];
   status_message: string;
+  current_metrics?: Record<string, number>;
 }
 
 const Training: React.FC = () => {
@@ -296,6 +297,41 @@ const Training: React.FC = () => {
               )}
             </div>
           </div>
+
+          {status?.current_metrics && Object.keys(status.current_metrics).length > 0 && (
+            <div className="glass card metrics-card" style={{ marginTop: '20px' }}>
+              <div className="card-header">
+                <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-primary)' }}>Live Statistics</h3>
+                <span className="micro-label" style={{ opacity: 0.5 }}>UPDATED PER BATCH</span>
+              </div>
+              <div className="metrics-grid" style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', 
+                gap: '12px',
+                marginTop: '16px'
+              }}>
+                {Object.entries(status.current_metrics)
+                  .filter(([key]) => !['loss', 'train_loss', 'adv_loss'].includes(key)) // Primary losses already in chart
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([key, value]) => (
+                    <div key={key} className="metric-item" style={{ 
+                      background: 'rgba(255,255,255,0.03)', 
+                      padding: '10px', 
+                      borderRadius: '8px',
+                      borderLeft: `2px solid ${key.includes('sigma') ? 'var(--accent-pink)' : key.includes('pck') ? 'var(--accent-lime)' : 'var(--accent-primary)'}`
+                    }}>
+                      <div className="text-uppercase" style={{ fontSize: '0.6rem', opacity: 0.6, marginBottom: '4px' }}>
+                        {key.replace(/_/g, ' ')}
+                      </div>
+                      <div style={{ fontSize: '1rem', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                        {typeof value === 'number' ? (value > 1 ? value.toFixed(2) : value.toFixed(4)) : value}
+                        {key.includes('pck') && '%'}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="side-controls flex-column">
