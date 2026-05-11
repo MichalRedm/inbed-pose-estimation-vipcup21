@@ -34,15 +34,15 @@ class TrainingManager:
             runs_dir = project_root / "results" / "runs"
             if not runs_dir.exists():
                 return None
-            
+
             runs = [d for d in runs_dir.iterdir() if d.is_dir()]
             if not runs:
                 return None
-            
+
             # Sort by modification time of the directory
             latest_run = max(runs, key=lambda d: d.stat().st_mtime)
             return latest_run.name
-        except:
+        except Exception:
             return None
 
     def start_training(self, config_overrides: Optional[Dict] = None):
@@ -89,12 +89,12 @@ class TrainingManager:
                         final_config[k] = config_overrides[k]
 
         self.is_running = True
-        
+
         # Priority: 1. Payload run_id, 2. Config file run_id, 3. Timestamp
         self.current_run_id = (
-            config_overrides.get("run_id") or 
-            final_config.get("run_id") or 
-            f"run_{time.strftime('%Y%m%d_%H%M%S')}"
+            config_overrides.get("run_id")
+            or final_config.get("run_id")
+            or f"run_{time.strftime('%Y%m%d_%H%M%S')}"
         )
         self.last_run_id = self.current_run_id
         self._stop_event.clear()
@@ -138,14 +138,14 @@ class TrainingManager:
         # Refresh loss history from file using explicit epoch indices to avoid desyncs
         # (Especially useful for remote training where history.json is synced periodically)
         file_history_dict = self._load_history_dict()
-        
+
         # Ensure our in-memory list is long enough
         if file_history_dict:
             max_epoch_in_file = max(file_history_dict.keys())
             while len(self.loss_history) < max_epoch_in_file:
                 self.loss_history.append(None)
                 self.adv_loss_history.append(None)
-                
+
             # Merge disk history into in-memory array at explicit indices
             for ep, metrics in file_history_dict.items():
                 idx = ep - 1
@@ -183,31 +183,34 @@ class TrainingManager:
             run_id = self.current_run_id or self.last_run_id
             if run_id:
                 history_path = (
-                    project_root
-                    / "results"
-                    / "runs"
-                    / run_id
-                    / "history.json"
+                    project_root / "results" / "runs" / run_id / "history.json"
                 )
                 if history_path.exists():
                     with open(history_path, "r", encoding="utf-8") as f:
                         history = json.load(f)
                         result = {}
                         import math
+
                         for i, entry in enumerate(history):
                             # Fallback to index-based epoch if 'epoch' key is missing
                             ep = entry.get("epoch", i + 1)
-                            
+
                             def sanitize(val):
                                 try:
                                     f_val = float(val)
-                                    return None if math.isnan(f_val) or math.isinf(f_val) else f_val
-                                except:
+                                    return (
+                                        None
+                                        if math.isnan(f_val) or math.isinf(f_val)
+                                        else f_val
+                                    )
+                                except Exception:
                                     return None
 
                             result[ep] = {
-                                "loss": sanitize(entry.get("loss", entry.get("train_loss", 0.0))),
-                                "adv_loss": sanitize(entry.get("adv_loss", 0.0))
+                                "loss": sanitize(
+                                    entry.get("loss", entry.get("train_loss", 0.0))
+                                ),
+                                "adv_loss": sanitize(entry.get("adv_loss", 0.0)),
                             }
                         return result
         except Exception as e:
@@ -234,9 +237,14 @@ class TrainingManager:
                     # Support multiple loss keys for robustness
                     train_losses = []
                     for entry in data:
-                        l = entry.get("loss") or entry.get("loss_pose") or entry.get("train_loss") or 0
-                        train_losses.append(float(l))
-                    
+                        loss_val = (
+                            entry.get("loss")
+                            or entry.get("loss_pose")
+                            or entry.get("train_loss")
+                            or 0
+                        )
+                        train_losses.append(float(loss_val))
+
                     adv_losses = [float(entry.get("adv_loss", 0)) for entry in data]
                     return train_losses, adv_losses
         except Exception as e:
@@ -270,9 +278,11 @@ class TrainingManager:
 
             if self.current_run_id:
                 cmd.extend(["--run_id", self.current_run_id])
-            
+
             # Propagate resume flag
-            is_resume = config_overrides.get("training", {}).get("resume") or config_overrides.get("resume")
+            is_resume = config_overrides.get("training", {}).get(
+                "resume"
+            ) or config_overrides.get("resume")
             if is_resume:
                 cmd.append("--resume")
 
@@ -326,7 +336,9 @@ class TrainingManager:
 
                     # Persistence: Write to run-specific log file
                     if self.current_run_id:
-                        log_dir = project_root / "results" / "runs" / self.current_run_id
+                        log_dir = (
+                            project_root / "results" / "runs" / self.current_run_id
+                        )
                         log_dir.mkdir(parents=True, exist_ok=True)
                         with open(log_dir / "training.log", "a", encoding="utf-8") as f:
                             f.write(log_line + "\n")
@@ -360,15 +372,20 @@ class TrainingManager:
                             ep_num = int(line.split("global epoch")[1].strip())
                             self.current_epoch = ep_num
                             self.status_message = f"Resuming from Epoch {ep_num}"
-                        except:
+                        except Exception:
                             pass
                         continue
 
-                    if "Remote Training Session Complete" in line or "Training finished" in line:
+                    if (
+                        "Remote Training Session Complete" in line
+                        or "Training finished" in line
+                    ):
                         self.status_message = "Finished"
                         self.is_running = False
                         self.progress = 1.0
-                        self.current_run_id = None # Signal that it's no longer "active"
+                        self.current_run_id = (
+                            None  # Signal that it's no longer "active"
+                        )
                         continue
 
                     # 2. Parse initial message: "Starting training for 10 epochs (from epoch 31)..."
@@ -396,52 +413,59 @@ class TrainingManager:
                         prog_match = re.search(r"(\d+)%\|.*\| (\d+)/(\d+)", line)
                         if prog_match:
                             self.progress = float(prog_match.group(1)) / 100.0
-                        
+
                         # Extract speed and ETA
                         speed_match = re.search(r",\s*([\d\.]+)it/s", line)
-                        if speed_match: self.current_metrics["speed"] = speed_match.group(1)
-                        
+                        if speed_match:
+                            self.current_metrics["speed"] = speed_match.group(1)
+
                         eta_match = re.search(r"<(\d+:\d+)", line)
-                        if eta_match: self.current_metrics["eta"] = eta_match.group(1)
+                        if eta_match:
+                            self.current_metrics["eta"] = eta_match.group(1)
 
                     # 4. Extract ALL key=value pairs (supporting float, scientific, and percentage)
                     # This now runs for EVERY line, including epoch summaries
-                    kv_matches = re.findall(r"([a-zA-Z_]\w*)=([\d\.]+(?:%|e-?\d+)?)", line)
+                    kv_matches = re.findall(
+                        r"([a-zA-Z_]\w*)=([\d\.]+(?:%|e-?\d+)?)", line
+                    )
                     if kv_matches:
                         import math
+
                         current_batch_metrics = {}
                         for k, v in kv_matches:
                             try:
                                 # Strip % if present and convert to normalized float
-                                v_clean = v.rstrip('%')
+                                v_clean = v.rstrip("%")
                                 f_val = float(v_clean)
-                                if v.endswith('%'):
+                                if v.endswith("%"):
                                     f_val /= 100.0
 
                                 if math.isnan(f_val) or math.isinf(f_val):
                                     val = None
                                 else:
                                     val = f_val
-                            except:
+                            except Exception:
                                 val = v
-                            
+
                             # Store in temporary dict first
                             current_batch_metrics[k] = val
-                            
+
                             # If it's a progress bar (tqdm), store with prefix to avoid "double jump"
                             if is_tqdm:
                                 self.current_metrics[f"batch_{k}"] = val
                             else:
                                 # Finalized metric from summary line - update main dict
                                 self.current_metrics[k] = val
-                                
+
                         # 5. Update loss history ONLY if it's an epoch summary line
                         if "Epoch" in line and ":" in line and not is_tqdm:
                             epoch_summary_match = re.search(r"Epoch (\d+):", line)
                             if epoch_summary_match:
                                 target_epoch = int(epoch_summary_match.group(1))
-                                self.current_epoch = target_epoch # Ensure synchronization
-                                
+                                self.current_epoch = (
+                                    target_epoch  # Ensure synchronization
+                                )
+
                                 for k in ["loss", "loss_pose", "train_loss"]:
                                     if k in current_batch_metrics:
                                         val = current_batch_metrics[k]
@@ -451,7 +475,7 @@ class TrainingManager:
                                             while len(self.loss_history) < idx:
                                                 self.loss_history.append(None)
                                                 self.adv_loss_history.append(None)
-                                            
+
                                             if val is not None:
                                                 if len(self.loss_history) <= idx:
                                                     self.loss_history.append(float(val))
@@ -472,8 +496,6 @@ class TrainingManager:
                             self.progress = current / total if total > 0 else 0
                         self.status_message = f"Starting Epoch {current}..."  # "Epoch n / m" is in header, so just show start
                         continue
-
-
 
                     # 5. Parse loss: "train_loss=0.1234" or "Epoch 1: loss=0.1234  adv_loss=0.05 val_loss=0.5678"
                     loss_match = re.search(

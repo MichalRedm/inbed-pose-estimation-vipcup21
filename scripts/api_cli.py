@@ -8,11 +8,11 @@ API_URL = "http://localhost:8000"
 
 def start_training(run_id, config_path, remote, resume, auto_eval):
     payload = {
-        "run_id": run_id, 
-        "config_path": config_path, 
+        "run_id": run_id,
+        "config_path": config_path,
         "remote": remote,
         "auto_eval": auto_eval,
-        "training": {"resume": resume} if resume else {}
+        "training": {"resume": resume} if resume else {},
     }
     try:
         response = requests.post(f"{API_URL}/training/start", json=payload)
@@ -74,8 +74,12 @@ def main():
     start_parser.add_argument("--run_id", type=str, required=True, help="Run ID")
     start_parser.add_argument("--config", type=str, help="Path to config YAML")
     start_parser.add_argument("--remote", action="store_true", help="Run on remote GPU")
-    start_parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
-    start_parser.add_argument("--eval", action="store_true", help="Run evaluation after training")
+    start_parser.add_argument(
+        "--resume", action="store_true", help="Resume from checkpoint"
+    )
+    start_parser.add_argument(
+        "--eval", action="store_true", help="Run evaluation after training"
+    )
 
     # Stop
     subparsers.add_parser("stop", help="Stop training")

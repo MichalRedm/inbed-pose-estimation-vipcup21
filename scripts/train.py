@@ -204,7 +204,7 @@ def train():
                 print(f"Loading checkpoint: {latest_ckpt}")
 
             state = torch.load(latest_ckpt, map_location=device)
-            
+
             # Get start_epoch from checkpoint state OR history (take max)
             ckpt_epoch = state.get("epoch", 0)
             hist_epoch = 0
@@ -213,8 +213,9 @@ def train():
                 try:
                     with open(history_path, "r") as f:
                         hist_epoch = len(json.load(f))
-                except: pass
-            
+                except Exception:
+                    pass
+
             start_epoch = max(ckpt_epoch, hist_epoch)
             trainer.start_epoch = start_epoch
             if rank == 0:
@@ -223,7 +224,7 @@ def train():
             state = torch.load(latest_ckpt, map_location=device)
             m_state = state.get("model_state_dict", state)
             # Remove 'module.' prefix if it exists (saved from DDP)
-            m_state = {k.replace('module.', ''): v for k, v in m_state.items()}
+            m_state = {k.replace("module.", ""): v for k, v in m_state.items()}
             model.load_state_dict(m_state)
 
             if "optimizer_state_dict" in state and hasattr(trainer, "optimizer"):

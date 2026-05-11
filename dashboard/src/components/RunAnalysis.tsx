@@ -34,8 +34,17 @@ interface RunAnalysisProps {
     val_loss_history: number[];
     adv_loss_history: number[];
     log_history: string[];
-    current_metrics?: Record<string, any>;
+    current_metrics?: Record<string, number | string>;
+    history_dict?: Record<string, Record<string, number>>;
   };
+}
+
+interface HistoryMetrics {
+  val_pck?: number;
+  pck?: number;
+  val_loss?: number;
+  loss?: number;
+  [key: string]: number | undefined;
 }
 
 const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingStatus }) => {
@@ -55,7 +64,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
   const chartData = (() => {
     // 1. Prefer historical data if available (most complete)
     if (details.history && details.history.length > 0) {
-      return details.history.map((h: Record<string, any>, i) => ({
+      return details.history.map((h: Record<string, number>, i) => ({
         epoch: h.epoch ?? (i + 1),
         loss: h.loss ?? h.loss_pose ?? h.train_loss ?? 0,
         val_loss: h.val_loss ?? h.val_loss_pose ?? 0,
@@ -66,7 +75,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
     // 2. Fallback to active training status if history file isn't loaded yet
     if (isActive && trainingStatus?.loss_history) {
       const history = trainingStatus.loss_history;
-      const historyDict = (trainingStatus as any).history_dict || {};
+      const historyDict = trainingStatus.history_dict || {};
       const total = trainingStatus.total_epochs || 30;
       
       return history.map((loss, i) => {
@@ -200,23 +209,23 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                 <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>VALIDATION PCK</div>
                 <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-lime)', marginTop: '8px' }}>
                   {(() => {
-                    const metrics = trainingStatus.current_metrics || {};
+                    const metrics = trainingStatus?.current_metrics || {};
                     // Try current metrics first (if just finished)
-                    let pck = metrics.val_pck ?? metrics.pck;
+                    let pck: number | string | undefined = metrics.val_pck ?? metrics.pck;
                     
-                    if (!pck) {
+                    if (!pck && trainingStatus) {
                       // Scan history backwards for latest available PCK
-                      const historyDict = (trainingStatus as any).history_dict || {};
+                      const historyDict = trainingStatus.history_dict || {};
                       const epochs = Object.keys(historyDict).map(Number).sort((a, b) => b - a);
                       for (const ep of epochs) {
-                        const m = historyDict[ep];
+                        const m = (historyDict[ep] || historyDict[String(ep)]) as HistoryMetrics | undefined;
                         if (m && (m.val_pck !== undefined || m.pck !== undefined)) {
                           pck = m.val_pck ?? m.pck;
                           break;
                         }
                       }
                     }
-                    return pck ? `${(pck * 100).toFixed(2)}%` : '--';
+                    return pck ? `${(Number(pck) * 100).toFixed(2)}%` : '--';
                   })()}
                 </div>
               </div>
@@ -224,14 +233,18 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
               <div className="glass highlight-card glow-purple" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                 <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>LAST EPOCH LOSS</div>
                 <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-primary)', marginTop: '8px' }}>
-                  {(trainingStatus.current_metrics?.loss || trainingStatus.current_metrics?.loss_pose || 0).toFixed(4)}
+                  {trainingStatus ? (
+                    (Number(trainingStatus.current_metrics?.loss) || Number(trainingStatus.current_metrics?.loss_pose) || 0).toFixed(4)
+                  ) : '--'}
                 </div>
               </div>
 
               <div className="glass highlight-card glow-pink" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                 <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>SIGMA</div>
                 <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-pink)', marginTop: '8px' }}>
-                  {(trainingStatus.current_metrics?.sigma || 2.0).toFixed(3)}
+                  {trainingStatus ? (
+                    (Number(trainingStatus.current_metrics?.sigma) || 2.0).toFixed(3)
+                  ) : '--'}
                 </div>
               </div>
             </div>

@@ -282,7 +282,13 @@ class GPUSession:
 
     # ── Remote execution ──────────────────────────────────────────────────────
 
-    def run(self, command: str, timeout: int = 3600, stream: bool = True, check: bool = False) -> RunResult:
+    def run(
+        self,
+        command: str,
+        timeout: int = 3600,
+        stream: bool = True,
+        check: bool = False,
+    ) -> RunResult:
         """
         Execute a shell command on the remote GPU and return a RunResult.
 
@@ -298,7 +304,6 @@ class GPUSession:
         """
         import sys
         import threading
-        import shlex
 
         if not self._ssh:
             raise RuntimeError("Not connected. Use GPUManager.use() context manager.")
@@ -311,11 +316,14 @@ class GPUSession:
         stderr_lines: list[str] = []
 
         if stream:
+
             def _stream(channel_file, storage, prefix=""):
                 for line in channel_file:
                     storage.append(line)
                     try:
-                        safe_line = line.encode(sys.stdout.encoding, errors="replace").decode(sys.stdout.encoding)
+                        safe_line = line.encode(
+                            sys.stdout.encoding, errors="replace"
+                        ).decode(sys.stdout.encoding)
                         if prefix:
                             print(f"{prefix}{safe_line}", end="", flush=True)
                         else:
@@ -324,7 +332,9 @@ class GPUSession:
                         pass
 
             t_out = threading.Thread(target=_stream, args=(stdout_f, stdout_lines, ""))
-            t_err = threading.Thread(target=_stream, args=(stderr_f, stderr_lines, "[stderr] "))
+            t_err = threading.Thread(
+                target=_stream, args=(stderr_f, stderr_lines, "[stderr] ")
+            )
             t_out.start()
             t_err.start()
             t_out.join()
@@ -342,7 +352,9 @@ class GPUSession:
         )
 
         if check and exit_code != 0:
-            raise RuntimeError(f"Command failed with exit code {exit_code}: {command}\nStderr: {result.stderr}")
+            raise RuntimeError(
+                f"Command failed with exit code {exit_code}: {command}\nStderr: {result.stderr}"
+            )
 
         return result
 
@@ -391,23 +403,34 @@ class GPUSession:
         with tempfile.TemporaryDirectory() as tmp_dir:
             target = os.path.join(tmp_dir, "sync_payload")
             os.makedirs(target)
-            
+
             include = [
-                "src", "scripts", "configs", "data",
-                "requirements.txt", "README.md", "gpu_connection.json", ".env"
+                "src",
+                "scripts",
+                "configs",
+                "data",
+                "requirements.txt",
+                "README.md",
+                "gpu_connection.json",
+                ".env",
             ]
-            
-            print(f"Preparing project tarball (excluding large data)...")
+
+            print("Preparing project tarball (excluding large data)...")
             for item in include:
                 src_path = os.path.join(local_dir, item)
                 if not os.path.exists(src_path):
                     continue
-                    
+
                 dst_path = os.path.join(target, item)
                 if os.path.isdir(src_path):
                     # For data, we strictly exclude 'raw'
                     if item == "data":
-                        shutil.copytree(src_path, dst_path, ignore=shutil.ignore_patterns("raw", "processed_cache"), dirs_exist_ok=True)
+                        shutil.copytree(
+                            src_path,
+                            dst_path,
+                            ignore=shutil.ignore_patterns("raw", "processed_cache"),
+                            dirs_exist_ok=True,
+                        )
                     else:
                         shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
                 else:
@@ -420,12 +443,17 @@ class GPUSession:
 
             # 3. Create remote dir and upload
             self.run(f"mkdir -p {remote_dir}", check=True)
-            print(f"Uploading project tarball ({os.path.getsize(archive_path) / 1024 / 1024:.1f} MB)...")
+            print(
+                f"Uploading project tarball ({os.path.getsize(archive_path) / 1024 / 1024:.1f} MB)..."
+            )
             self.upload(archive_path, f"{remote_dir}/project.tar.gz", recursive=False)
 
             # 4. Extract on remote
-            print(f"Extracting project on remote...")
-            self.run(f"cd {remote_dir} && tar -xzf project.tar.gz && rm project.tar.gz", check=True)
+            print("Extracting project on remote...")
+            self.run(
+                f"cd {remote_dir} && tar -xzf project.tar.gz && rm project.tar.gz",
+                check=True,
+            )
 
         print(f"Project synced successfully to {remote_dir}")
 

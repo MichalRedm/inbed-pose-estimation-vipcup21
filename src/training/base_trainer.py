@@ -53,7 +53,7 @@ class BaseTrainer(ABC):
             try:
                 with open(self.history_path, "r") as f:
                     self.history = json.load(f)
-            except:
+            except Exception:
                 pass
 
     @abstractmethod
