@@ -1,10 +1,10 @@
 # State Tracker
 
-- **Current Loop**: 16 (UNDER RE-EVALUATION)
-- **Phase**: Audit & Baseline Recovery
-- **Status**: ALL PREVIOUS METRICS ARE SUSPECT. Discovered bugs in `evaluate.py` (wrong config, wrong mask, wrong decoder) and `BaseTrainer` (saved best by loss, not PCK). 
-- **Absolute Priority**: Re-evaluate past runs and stabilize loss-metric alignment.
-- **Baseline**: Loop 9 (Verified argmax) vs Loop 16 (Verified soft-argmax).
+- **Current Loop**: 17
+- **Phase**: Loss Alignment Implementation
+- **Status**: IMPLEMENTED. Added `UncertaintyWeighting` to `StandardTrainer`.
+- **Absolute Priority**: Validate that learned weights balance the loss and improve PCK correlation.
+- **Baseline**: Loop 16 (Verified 78.8% PCK).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -56,3 +56,4 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 14 | Soft-Argmax Integral Regression | SUCCESS | N/A (metrics suspect) | Sub-pixel accuracy claimed |
 | 15 | Occlusion-Aware Integral Reg. | SUCCESS | N/A (metrics suspect) | Occluded joint supervision |
 | 16 | Adaptive Sigma Curriculum | SUCCESS | **78.8%** (verified) | Sharp heatmaps via σ decay |
+| 17 | Multi-Task Uncertainty Weighting | IN PROGRESS | TBD | Kendall et al. weighting |

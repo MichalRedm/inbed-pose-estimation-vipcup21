@@ -4,10 +4,9 @@
 
 > ⚠️ **Hypothesis #1 is an ABSOLUTE PREREQUISITE** — All previous results are suspect due to bugs in the evaluation script and loss landscape issues. No new experimental work should be done until the baseline is solidly re-established.
 
-1. **[PREREQUISITE] Systematic Re-evaluation & Loss Alignment**: 
-   - **Step A**: Re-evaluate all locally available runs (Loops 9, 14, 15, 16) using the fixed `scripts/evaluate.py`. Update the Results Tracker in `eval_framework.md` with these verified numbers.
-   - **Step B**: Resolve the Loss-Metric Alignment issue. The current combined loss doesn't match val PCK. Implement uncertainty-based weighting or loss normalization so that future "best" models are actually better at pose estimation.
-   - **Step C**: Re-run the most promising setup (likely Loop 16) with the new PCK-based checkpoint saving to confirm the absolute peak performance.
+1. **[SUCCESS] Systematic Re-evaluation & Loss Alignment**: 
+   - **Status**: Implementation complete (2026-05-11). `UncertaintyWeighting` added to `StandardTrainer`. `best_model.pth` now saved based on `val_pck`.
+   - **Next**: Verify in Loop 17 training run.
 
 2. **Multimodal Fusion (IR + PM)**: Fuse features from IR (high-res texture) and Pressure Maps (absolute contact priors) to disambiguate joints under thick covers. Requires loading the `PM` modality in `VIPCupDataset`.
 

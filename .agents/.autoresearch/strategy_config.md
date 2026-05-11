@@ -22,9 +22,8 @@
 
 ### Loss Architecture
 - **Combined loss** = `MSE_heatmap + λ_coord * L1_coord_vis + λ_coord_occ * L1_coord_occ + λ_ana * L_anatomical`
-- **⚠️ CRITICAL**: The combined loss does NOT reliably correlate with val PCK. The anatomical term (λ=0.5) and coordinate term dominate at different scales than the heatmap MSE (~0.002). This means `best_model.pth` saved by minimum combined loss may NOT be the best-PCK model.
-- **Fix applied**: `best_model.pth` now saved by maximum val PCK (see `base_trainer.compute_val_pck()`). But the root problem (loss imbalance) remains and should be resolved in the next research loop.
-- **Recommended next step**: Normalize auxiliary losses or use uncertainty-based multi-task weighting (Kendall et al., 2018).
+- **Fix applied**: `best_model.pth` now saved by maximum val PCK (see `base_trainer.compute_val_pck()`).
+- **Update (2026-05-11)**: Implemented **Uncertainty-based Multi-task Weighting** (Kendall et al., 2018). The trainer now learns $\sigma_i$ for each loss term to automatically balance them. Enabled via `use_uncertainty_weighting: true` in config.
 
 ### Heatmap Decoding
 - **Argmax**: Correct for models trained with standard MSE heatmap loss (σ=2.0 constant). Produces quantized outputs at heatmap resolution / image scale. Identified by absence of `sigma_start`/`sigma_end` in training config.

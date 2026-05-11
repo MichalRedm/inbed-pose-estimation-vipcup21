@@ -3,7 +3,7 @@ import torch.nn as nn
 from typing import Dict, Any
 import torch.nn.functional as F
 from .base_trainer import BaseTrainer
-from .losses import AnatomicalLoss
+from .losses import AnatomicalLoss, UncertaintyWeighting
 from ..models.layers import SoftArgmax2D
 
 
@@ -44,6 +44,19 @@ class StandardTrainer(BaseTrainer):
             self.anatomical_criterion = AnatomicalLoss(
                 device=device, mode=self.anatomical_mode
             ).to(device)
+
+        # Multi-task uncertainty weighting
+        self.use_uncertainty = training_cfg.get("use_uncertainty_weighting", False)
+        if self.use_uncertainty:
+            # Determine tasks
+            self.tasks = ["pose"]
+            if self.lambda_coord > 0: self.tasks.append("coord_vis")
+            if self.lambda_coord_occluded > 0: self.tasks.append("coord_occ")
+            if self.lambda_anatomical > 0: self.tasks.append("ana")
+            
+            self.uncertainty_loss = UncertaintyWeighting(len(self.tasks)).to(device)
+            if self.is_main:
+                print(f"[Trainer] Using Uncertainty Weighting for tasks: {self.tasks}")
 
     def _get_current_lambda_ana(self, epoch: int) -> float:
         # Linear warmup over configurable epochs
@@ -113,39 +126,52 @@ class StandardTrainer(BaseTrainer):
         outputs = self.model(images)
         loss_pose = self.criterion(outputs, targets)
 
-        loss = loss_pose
         metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
+        
+        if self.use_uncertainty:
+            raw_losses = {"pose": loss_pose}
+        else:
+            loss = loss_pose
 
+        # 1. Coordinate regression loss
         if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
-            pred_coords = self.soft_argmax(outputs)  # (B, 14, 2)
-            gt_coords = joints[:, :2, :].permute(0, 2, 1)  # (B, 14, 2)
-            visibility = joints[:, 2, :]  # (B, 14)
+            pred_coords = self.soft_argmax(outputs)
+            gt_coords = joints[:, :2, :].permute(0, 2, 1)
+            visibility = joints[:, 2, :]
 
-            # Separate masks for visible (0) and occluded (1)
             mask_vis = (visibility == 0).unsqueeze(-1).float()
             mask_occ = (visibility == 1).unsqueeze(-1).float()
-            
-            # L1 loss per joint
             l1_all = F.l1_loss(pred_coords, gt_coords, reduction='none')
             
             loss_coord_vis = torch.sum(l1_all * mask_vis) / (torch.sum(mask_vis) + 1e-6)
             loss_coord_occ = torch.sum(l1_all * mask_occ) / (torch.sum(mask_occ) + 1e-6)
             
-            loss = loss + self.lambda_coord * loss_coord_vis + self.lambda_coord_occluded * loss_coord_occ
-            
             metrics["loss_coord_vis"] = loss_coord_vis.item()
             metrics["loss_coord_occ"] = loss_coord_occ.item()
 
-        if self.lambda_anatomical > 0:
-            # Apply curriculum warmup
-            curr_lambda = self._get_current_lambda_ana(self.current_epoch)
+            if not self.use_uncertainty:
+                loss = loss + self.lambda_coord * loss_coord_vis + self.lambda_coord_occluded * loss_coord_occ
+            else:
+                if self.lambda_coord > 0: raw_losses["coord_vis"] = loss_coord_vis
+                if self.lambda_coord_occluded > 0: raw_losses["coord_occ"] = loss_coord_occ
 
-            # Extract coordinates differentiably
+        # 2. Anatomical consistency loss
+        if self.lambda_anatomical > 0:
+            curr_lambda = self._get_current_lambda_ana(self.current_epoch)
             pred_coords = self.soft_argmax(outputs)
             loss_ana = self.anatomical_criterion(pred_coords)
-            loss = loss + curr_lambda * loss_ana
             metrics["loss_ana"] = loss_ana.item()
             metrics["lambda_ana"] = curr_lambda
+            
+            if not self.use_uncertainty:
+                loss = loss + curr_lambda * loss_ana
+            else:
+                raw_losses["ana"] = loss_ana
+
+        # 3. Final weighted loss
+        if self.use_uncertainty:
+            loss, weighted_metrics = self.uncertainty_loss(raw_losses)
+            metrics.update(weighted_metrics)
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -168,8 +194,12 @@ class StandardTrainer(BaseTrainer):
         outputs = self.model(images)
         loss_pose = self.criterion(outputs, targets)
 
-        loss = loss_pose
         metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
+        
+        if self.use_uncertainty:
+            raw_losses = {"pose": loss_pose}
+        else:
+            loss = loss_pose
 
         if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
             pred_coords = self.soft_argmax(outputs)
@@ -183,17 +213,30 @@ class StandardTrainer(BaseTrainer):
             loss_coord_vis = torch.sum(l1_all * mask_vis) / (torch.sum(mask_vis) + 1e-6)
             loss_coord_occ = torch.sum(l1_all * mask_occ) / (torch.sum(mask_occ) + 1e-6)
             
-            loss = loss + self.lambda_coord * loss_coord_vis + self.lambda_coord_occluded * loss_coord_occ
             metrics["loss_coord_vis"] = loss_coord_vis.item()
             metrics["loss_coord_occ"] = loss_coord_occ.item()
+            
+            if not self.use_uncertainty:
+                loss = loss + self.lambda_coord * loss_coord_vis + self.lambda_coord_occluded * loss_coord_occ
+            else:
+                if self.lambda_coord > 0: raw_losses["coord_vis"] = loss_coord_vis
+                if self.lambda_coord_occluded > 0: raw_losses["coord_occ"] = loss_coord_occ
 
         if self.lambda_anatomical > 0:
             curr_lambda = self._get_current_lambda_ana(self.current_epoch)
             pred_coords = self.soft_argmax(outputs)
             loss_ana = self.anatomical_criterion(pred_coords)
-            loss = loss + curr_lambda * loss_ana
             metrics["loss_ana"] = loss_ana.item()
             metrics["lambda_ana"] = curr_lambda
+
+            if not self.use_uncertainty:
+                loss = loss + curr_lambda * loss_ana
+            else:
+                raw_losses["ana"] = loss_ana
+
+        if self.use_uncertainty:
+            loss, weighted_metrics = self.uncertainty_loss(raw_losses)
+            metrics.update(weighted_metrics)
 
         metrics["loss"] = loss.item()
         return metrics

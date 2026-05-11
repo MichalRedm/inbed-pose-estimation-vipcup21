@@ -1,0 +1,54 @@
+# Loop 17: Multi-task Uncertainty Weighting
+# Goal: Resolve the loss-metric alignment problem by dynamically weighting 
+# Heatmap MSE, Coordinate L1, and Anatomical Hinge loss.
+
+project:
+  name: inbed-pose-estimation
+  seed: 42
+
+dataset:
+  root: "data/raw"
+  modalities: ["IR"]
+  subjects_train: [1, 80]
+  subjects_val: [81, 90]
+  image_size: [256, 256]
+
+model:
+  name: "hrnet"
+  hrnet:
+    num_joints: 14
+    in_channels: 1 
+    architecture: "w32"
+    heatmap_size: [64, 64]
+
+training:
+  batch_size: 16
+  epochs: 30
+  lr: 0.0001
+  weight_decay: 0.0001
+  
+  # Loss alignment fix
+  use_uncertainty_weighting: true
+  
+  # Task definitions (weights will be learned, but these act as indicators to enable tasks)
+  lambda_anatomical: 0.5
+  lambda_coord: 0.1
+  lambda_coord_occluded: 0.1
+  
+  # Curriculum (from Loop 16)
+  sigma_start: 3.0
+  sigma_end: 1.5
+  warmup_epochs: 10
+  anatomical_mode: "hinge"
+  
+  save_dir: "results/runs/loop17_uncertainty"
+  
+  augmentation:
+    enabled: true
+    occlusion_prob: 0.7
+    flip_prob: 0.5
+    rotation_range: [-30, 30]
+    scaling_range: [0.8, 1.2]
+
+remote:
+  use_remote: true
