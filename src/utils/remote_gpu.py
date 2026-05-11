@@ -384,6 +384,7 @@ class GPUSession:
         """
         import shutil
         import tempfile
+        import tarfile
 
         if exclude is None:
             exclude = [
@@ -402,37 +403,49 @@ class GPUSession:
             ]
 
         print(f"Syncing project to {remote_dir}...")
+        # Priority directories/files to include
+        include = [
+            "src",
+            "scripts",
+            "configs",
+            "models",
+            "pretrained_models",
+            "tests",
+            "requirements.txt",
+            "requirements-dev.txt",
+            "README.md",
+            ".agents",
+            "gpu_connection.json",
+        ]
+
         # Create a temporary directory for cleaned project structure
         with tempfile.TemporaryDirectory() as tmp_dir:
             target = os.path.join(tmp_dir, "sync_payload")
+            os.makedirs(target, exist_ok=True)
+            
+            # 1. Copy only allowed items (fast, avoids results/data scanning)
+            for item in include:
+                src_path = os.path.join(local_dir, item)
+                if not os.path.exists(src_path):
+                    continue
+                
+                dst_path = os.path.join(target, item)
+                if os.path.isdir(src_path):
+                    shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src_path, dst_path)
 
-            def ignore_patterns(path, names):
-                # Calculate relative path from local_dir
-                rel_base = os.path.relpath(path, local_dir)
+            # 2. Package into a tarball (fast)
+            archive_path = os.path.join(tmp_dir, "project.tar.gz")
+            with tarfile.open(archive_path, "w:gz") as tar:
+                tar.add(target, arcname=".")
 
-                ignored = []
-                for n in names:
-                    if n in exclude:
-                        # For 'data', only ignore if it's at the root
-                        if n == "data" and rel_base != ".":
-                            continue
-                        ignored.append(n)
-                return ignored
-
-            shutil.copytree(
-                local_dir, target, ignore=ignore_patterns, dirs_exist_ok=True
-            )
-
-            # Create remote directory structure
+            # 3. Create remote dir and upload (one large file = much faster)
             self.run(f"mkdir -p {remote_dir}")
+            self.upload(archive_path, f"{remote_dir}/project.tar.gz", recursive=False)
 
-            # Upload cleaned structure
-            self.upload(target, remote_dir, recursive=True)
-
-            # Move files from sync_payload to remote_dir root if needed
-            self.run(
-                f"cp -r {remote_dir}/sync_payload/* {remote_dir}/ && rm -rf {remote_dir}/sync_payload"
-            )
+            # 4. Extract on remote (fast)
+            self.run(f"cd {remote_dir} && tar -xzf project.tar.gz && rm project.tar.gz")
 
         print(f"Project synced to {remote_dir}")
 
