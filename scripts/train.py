@@ -205,10 +205,9 @@ def train():
 
             state = torch.load(latest_ckpt, map_location=device)
             m_state = state.get("model_state_dict", state)
-            if is_distributed:
-                model.module.load_state_dict(m_state)
-            else:
-                model.load_state_dict(m_state)
+            # Remove 'module.' prefix if it exists (saved from DDP)
+            m_state = {k.replace('module.', ''): v for k, v in m_state.items()}
+            model.load_state_dict(m_state)
 
             if "optimizer_state_dict" in state and hasattr(trainer, "optimizer"):
                 trainer.optimizer.load_state_dict(state["optimizer_state_dict"])

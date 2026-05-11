@@ -277,6 +277,37 @@ const Training: React.FC = () => {
             </div>
           </div>
 
+          {status?.is_running && (
+            <div className="metrics-highlight-row" style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+              gap: '20px', 
+              marginBottom: '20px' 
+            }}>
+              <div className="glass card highlight-card" style={{ borderLeft: '4px solid var(--accent-lime)' }}>
+                <div className="micro-label" style={{ opacity: 0.6 }}>VALIDATION PCK</div>
+                <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--accent-lime)', marginTop: '8px' }}>
+                  {status.current_metrics?.val_pck ? `${status.current_metrics.val_pck.toFixed(2)}%` : '--'}
+                </div>
+                <div style={{ fontSize: '0.7rem', opacity: 0.5, marginTop: '4px' }}>Latest from validation split</div>
+              </div>
+              <div className="glass card highlight-card" style={{ borderLeft: '4px solid var(--accent-primary)' }}>
+                <div className="micro-label" style={{ opacity: 0.6 }}>CURRENT LOSS</div>
+                <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--accent-primary)', marginTop: '8px' }}>
+                  {status.current_metrics?.loss ? status.current_metrics.loss.toFixed(4) : '--'}
+                </div>
+                <div style={{ fontSize: '0.7rem', opacity: 0.5, marginTop: '4px' }}>Last batch training loss</div>
+              </div>
+              <div className="glass card highlight-card" style={{ borderLeft: '4px solid var(--accent-pink)' }}>
+                <div className="micro-label" style={{ opacity: 0.6 }}>ADAPTIVE SIGMA</div>
+                <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--accent-pink)', marginTop: '8px' }}>
+                  {status.current_metrics?.sigma ? status.current_metrics.sigma.toFixed(3) : '--'}
+                </div>
+                <div style={{ fontSize: '0.7rem', opacity: 0.5, marginTop: '4px' }}>Heatmap Gaussian spread</div>
+              </div>
+            </div>
+          )}
+
           <div className="glass card progress-card">
             <div className="card-header">
               <h3 className="text-uppercase micro-label">Overall Progress</h3>

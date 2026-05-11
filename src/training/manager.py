@@ -145,7 +145,12 @@ class TrainingManager:
             if history_path.exists():
                 with open(history_path, "r") as f:
                     data = json.load(f)
-                    train_losses = [float(entry.get("train_loss", 0)) for entry in data]
+                    # Support multiple loss keys for robustness
+                    train_losses = []
+                    for entry in data:
+                        l = entry.get("loss") or entry.get("loss_pose") or entry.get("train_loss") or 0
+                        train_losses.append(float(l))
+                    
                     adv_losses = [float(entry.get("adv_loss", 0)) for entry in data]
                     return train_losses, adv_losses
         except Exception as e:
@@ -302,55 +307,70 @@ class TrainingManager:
                             f"Progress: {pct}% (Batch {curr_batch}/{total_batches})"
                         )
                         
-                        # Example: Epoch 1/30: 10%|# | 4/43 [00:02<00:27, 1.42it/s, loss=0.5]
-                        tqdm_match = re.search(r"(\d+)%\|.*\| (\d+)/(\d+) \[(.*)<(.*), (.*)it/s", line)
-                        if tqdm_match:
-                            pct, cur, tot, elapsed, eta, speed = tqdm_match.groups()
-                            self.progress = int(pct) / 100.0
-                            self.current_metrics.update({
-                                "speed": speed,
-                                "eta": eta,
-                                "elapsed": elapsed
-                            })
+                        # Robust parsing for the whole line
+                        try:
+                            # 1. tqdm Progress parsing (detailed for GCN)
+                            # Example: Epoch 1/30: 10%|# | 4/43 [00:02<00:27, 1.42it/s, loss=0.5]
+                            tqdm_match = re.search(r"(\d+)%\|.*\| (\d+)/(\d+) \[(.*)<(.*), (.*)it/s", line)
+                            if tqdm_match:
+                                pct, cur, tot, elapsed, eta, speed = tqdm_match.groups()
+                                self.progress = int(pct) / 100.0
+                                self.current_metrics.update({
+                                    "speed": speed,
+                                    "eta": eta,
+                                    "elapsed": elapsed
+                                })
 
-                        metrics_match = re.search(r", (.*)\]$", line)
-                        if metrics_match:
-                            metrics_str = metrics_match.group(1)
-                            metrics = {}
-                            for pair in metrics_str.split(", "):
-                                if "=" in pair:
-                                    k, v = pair.split("=")
-                                    try:
-                                        metrics[k.strip()] = float(v.strip())
-                                    except ValueError:
-                                        metrics[k.strip()] = v.strip()
-                            self.current_metrics.update(metrics)
-                        
-                        # Extract all metrics from tqdm postfix (e.g., key=value)
-                        metrics = re.findall(r"(\w+)=([\d\.]+)", line)
-                        for key, val in metrics:
-                            try:
-                                float_val = float(val)
-                                self.current_metrics[key] = float_val
+                            # 2. Parse metrics from brackets/postfix
+                            metrics_match = re.search(r", (.*)\]$", line)
+                            if metrics_match:
+                                metrics_str = metrics_match.group(1)
+                                for pair in metrics_str.split(", "):
+                                    if "=" in pair:
+                                        k, v = pair.split("=")
+                                        try:
+                                            self.current_metrics[k.strip()] = float(v.strip())
+                                        except ValueError:
+                                            self.current_metrics[k.strip()] = v.strip()
 
-                                # Update primary loss history for live graphs
-                                if key in ["loss", "train_loss"]:
-                                    idx = self.current_epoch - 1
-                                    if idx >= 0:
-                                        while len(self.loss_history) <= idx:
-                                            self.loss_history.append(0.0)
-                                        self.loss_history[idx] = float_val
-                                    if not self.status_message.endswith(f"Loss: {float_val:.4f}"):
-                                        self.status_message += f" | Loss: {float_val:.4f}"
-                                elif key == "adv_loss":
-                                    idx = self.current_epoch - 1
-                                    if idx >= 0:
-                                        while len(self.adv_loss_history) <= idx:
-                                            self.adv_loss_history.append(0.0)
-                                        self.adv_loss_history[idx] = float_val
-                            except ValueError:
-                                continue
-                        continue
+                            # 3. Extract all metrics via findall (backup)
+                            found_metrics = re.findall(r"(\w+)=([\d\.]+)%?", line)
+                            for key, val in found_metrics:
+                                try:
+                                    clean_val = val.replace('%', '')
+                                    # Don't overwrite speed/eta/elapsed with weird regex matches
+                                    if key not in ["speed", "eta", "elapsed"]:
+                                        self.current_metrics[key] = float(clean_val)
+                                except ValueError:
+                                    pass
+
+                            # 4. Parse Epoch Summary lines (End of epoch)
+                            # Example: Epoch 1: loss_pose=0.2956 ... | val_loss=162.9918 | val_pck=28.25%
+                            if "Epoch" in line and ":" in line and "=" in line:
+                                # Specifically look for val_pck
+                                pck_match = re.search(r"val_pck=([\d\.]+)%", line)
+                                if pck_match:
+                                    self.current_metrics["val_pck"] = float(pck_match.group(1))
+
+                            # 5. Update primary loss history for live graphs
+                            for key in ["loss", "train_loss", "adv_loss"]:
+                                if key in self.current_metrics:
+                                    val = self.current_metrics[key]
+                                    if isinstance(val, (int, float)):
+                                        idx = self.current_epoch - 1
+                                        if idx >= 0:
+                                            target_list = self.adv_loss_history if key == "adv_loss" else self.loss_history
+                                            while len(target_list) <= idx:
+                                                target_list.append(0.0)
+                                            target_list[idx] = float(val)
+                                            
+                                            if key != "adv_loss":
+                                                msg = f"Last Loss: {val:.4f}"
+                                                if not self.status_message.endswith(msg):
+                                                    self.status_message = msg
+                        except Exception as e:
+                            # Never crash the manager because of log parsing
+                            pass
 
                     # 5. Parse loss: "train_loss=0.1234" or "Epoch 1: loss=0.1234  adv_loss=0.05 val_loss=0.5678"
                     loss_match = re.search(
