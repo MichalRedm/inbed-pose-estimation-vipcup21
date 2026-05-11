@@ -193,12 +193,15 @@ class BaseTrainer(ABC):
         # Let subclasses add their own state (optimizers, etc.)
         checkpoint.update(self._get_extra_checkpoint_data())
 
-        path = os.path.join(self.save_dir, "checkpoints", f"{name}.pth")
-        torch.save(checkpoint, path)
+        # Always save as latest for resumption
+        latest_path = os.path.join(self.save_dir, "checkpoints", "latest_model.pth")
+        torch.save(checkpoint, latest_path)
 
         if is_best:
             best_path = os.path.join(self.save_dir, "checkpoints", "best_model.pth")
             torch.save(checkpoint, best_path)
+            if self.is_main:
+                print(f"[Trainer] Saved new best model to {best_path}")
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         """Override to add optimizers, schedulers, etc."""

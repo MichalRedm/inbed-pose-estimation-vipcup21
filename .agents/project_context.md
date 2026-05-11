@@ -3,7 +3,7 @@
 This folder contains the consolidated project state, implementation plans, and task tracking. This information is stored in the `.agents` directory and is tracked by Git to ensure persistent alignment between agent and repository state.
 
 ## Current Goal
-Enhance the pose estimation pipeline with Adversarial Domain Adaptation and Anatomical Constraints, while maintaining a unified, test-driven architecture.
+Stabilize the multi-task pose estimation pipeline by reconciling previous evaluation errors and implementing uncertainty-based loss weighting to ensure training objectives correlate with actual pose accuracy.
 
 ## Repository Status
 - [x] Refactored package structure (`src/`, `scripts/`, `configs/`).
@@ -20,7 +20,14 @@ Enhance the pose estimation pipeline with Adversarial Domain Adaptation and Anat
 - [x] Implemented Gaussian Sigma Curriculum (3.0 -> 1.0).
 - [x] Automated evaluation trigger in remote training pipeline.
 - [x] Implemented Soft-Argmax decoding for robust inference.
+- [x] **Verified all previous baselines using corrected evaluation framework.**
+- [x] **Implemented Uncertainty-based multi-task loss weighting (Kendall et al., 2018).**
+- [ ] Surpass Loop 9 (73.0% PCK) with stabilized Loop 17 training.
 
+## Dashboard-Driven ML
+- **Real-time Monitoring**: All training and evaluation MUST be performed via the Dashboard API (see `ml_operations.md` rule).
+- **Runs Hub**: The unified hub in the dashboard is the primary source of truth for experiment status, loss curves, and evaluation metrics.
+- **Agent Workflow**: Use the `TrainingManager` via API to trigger runs so that progress is visible to the USER in real-time.
 
 ## Critical Secrets Required
 The following must be provided in the root `.env` file:
