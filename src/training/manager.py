@@ -23,9 +23,27 @@ class TrainingManager:
         self.status_message = "Idle"
         self.current_metrics: Dict[str, float] = {}
         self.current_run_id: Optional[str] = None
-        self.last_run_id: Optional[str] = None
+        self.last_run_id: Optional[str] = self._detect_last_run_id()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
+
+    def _detect_last_run_id(self) -> Optional[str]:
+        """Scans results/runs for the most recently modified run folder."""
+        try:
+            project_root = Path(__file__).parent.parent.parent
+            runs_dir = project_root / "results" / "runs"
+            if not runs_dir.exists():
+                return None
+            
+            runs = [d for d in runs_dir.iterdir() if d.is_dir()]
+            if not runs:
+                return None
+            
+            # Sort by modification time of the directory
+            latest_run = max(runs, key=lambda d: d.stat().st_mtime)
+            return latest_run.name
+        except:
+            return None
 
     def start_training(self, config_overrides: Optional[Dict] = None):
         if self.is_running:
@@ -172,7 +190,7 @@ class TrainingManager:
                     / "history.json"
                 )
                 if history_path.exists():
-                    with open(history_path, "r") as f:
+                    with open(history_path, "r", encoding="utf-8") as f:
                         history = json.load(f)
                         result = {}
                         import math
@@ -211,7 +229,7 @@ class TrainingManager:
                 history_path = project_root / "models" / "checkpoints" / "history.json"
 
             if history_path.exists():
-                with open(history_path, "r") as f:
+                with open(history_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     # Support multiple loss keys for robustness
                     train_losses = []
@@ -267,7 +285,7 @@ class TrainingManager:
 
                 import yaml
 
-                with open(config_path, "w") as f:
+                with open(config_path, "w", encoding="utf-8") as f:
                     yaml.dump(config_overrides, f)
 
                 # Use relative POSIX path so it works on both local and remote (after sync)
@@ -347,8 +365,10 @@ class TrainingManager:
                         continue
 
                     if "Remote Training Session Complete" in line or "Training finished" in line:
-                        self.status_message = "Training finished"
+                        self.status_message = "Finished"
                         self.is_running = False
+                        self.progress = 1.0
+                        self.current_run_id = None # Signal that it's no longer "active"
                         continue
 
                     # 2. Parse initial message: "Starting training for 10 epochs (from epoch 31)..."

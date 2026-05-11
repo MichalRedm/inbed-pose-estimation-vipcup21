@@ -51,32 +51,38 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
 
   const evalResults = localEvalOverride ?? details.evaluation;
 
-  // Build chart data from history - API returns objects with named fields
+  // Build chart data - Unify active and historical logic
   const chartData = (() => {
+    // 1. Prefer historical data if available (most complete)
+    if (details.history && details.history.length > 0) {
+      return details.history.map((h: Record<string, any>, i) => ({
+        epoch: h.epoch ?? (i + 1),
+        loss: h.loss ?? h.loss_pose ?? h.train_loss ?? 0,
+        val_loss: h.val_loss ?? h.val_loss_pose ?? 0,
+        adv: h.adv_loss ?? 0,
+      }));
+    }
+
+    // 2. Fallback to active training status if history file isn't loaded yet
     if (isActive && trainingStatus?.loss_history) {
       const history = trainingStatus.loss_history;
       const historyDict = (trainingStatus as any).history_dict || {};
       const total = trainingStatus.total_epochs || 30;
-      const maxLen = Math.max(history.length, total);
-
-      return Array.from({ length: maxLen }, (_, i) => {
+      
+      return history.map((loss, i) => {
         const ep = i + 1;
-        const metrics = historyDict[ep] || {};
+        // API dict keys become strings in JSON
+        const metrics = historyDict[ep] || historyDict[String(ep)] || {};
         return {
           epoch: ep,
-          loss: history[i] ?? null,
-          val_loss: metrics.val_loss ?? metrics.val_loss_pose ?? null,
-          adv: trainingStatus.adv_loss_history?.[i] ?? null,
+          loss: loss ?? 0,
+          val_loss: metrics.val_loss ?? metrics.val_loss_pose ?? 0,
+          adv: trainingStatus.adv_loss_history?.[i] ?? 0,
         };
-      }).filter(d => d.epoch <= total); // Fix X-axis 31
+      }).filter(d => d.epoch <= total);
     }
-    // History entries are objects: {epoch, loss, val_loss, val_pck, loss_pose, ...}
-    return (details.history || []).map((h: Record<string, number>) => ({
-      epoch: typeof h.epoch === 'number' ? h.epoch : (details.history!.indexOf(h) + 1),
-      loss: typeof h.loss === 'number' ? h.loss : (typeof h.loss_pose === 'number' ? h.loss_pose : 0),
-      val_loss: typeof h.val_loss === 'number' ? h.val_loss : (typeof h.val_loss_pose === 'number' ? h.val_loss_pose : 0),
-      adv: 0, // Fallback for historical data
-    }));
+    
+    return [];
   })();
 
   const hasAdvHistory = isActive && !!trainingStatus?.adv_loss_history;
@@ -118,20 +124,50 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
               <Activity size={18} color="var(--accent-lime)" />
             </div>
             
-            <div style={{ height: '300px', marginTop: '10px', flex: 1 }}>
+            <div style={{ height: '320px', width: '100%', marginTop: '10px', position: 'relative' }}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" vertical={false} />
-                  <XAxis dataKey="epoch" stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
+                <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+                  <XAxis dataKey="epoch" stroke="rgba(255,255,255,0.5)" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="rgba(255,255,255,0.5)" fontSize={11} tickLine={false} axisLine={false} />
                   <Tooltip 
                     contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-purple)', borderRadius: '8px' }}
                     itemStyle={{ color: '#fff' }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Line type="monotone" dataKey="loss" stroke="var(--accent-lime)" strokeWidth={2.5} dot={{ r: 3, fill: 'var(--accent-lime)' }} activeDot={{ r: 5 }} animationDuration={300} name="Train Loss" />
-                  <Line type="monotone" dataKey="val_loss" stroke="var(--accent-primary)" strokeWidth={2} dot={{ r: 2 }} strokeDasharray="5 3" name="Val Loss" />
-                  {hasAdvHistory && <Line type="monotone" dataKey="adv" stroke="var(--accent-pink)" strokeWidth={1.5} dot={{ r: 2 }} strokeDasharray="4 4" name="Adv Loss" />}
+                  <Line 
+                    type="monotone" 
+                    dataKey="loss" 
+                    stroke="#c2ef4e" 
+                    strokeWidth={2.5} 
+                    dot={{ r: 3, fill: '#c2ef4e', strokeWidth: 0 }} 
+                    activeDot={{ r: 5 }} 
+                    animationDuration={300} 
+                    name="Train Loss" 
+                    connectNulls
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="val_loss" 
+                    stroke="#6a5fc1" 
+                    strokeWidth={2} 
+                    dot={{ r: 2, fill: '#6a5fc1', strokeWidth: 0 }} 
+                    strokeDasharray="5 3" 
+                    name="Val Loss" 
+                    connectNulls
+                  />
+                  {hasAdvHistory && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="adv" 
+                      stroke="#fa7faa" 
+                      strokeWidth={1.5} 
+                      dot={{ r: 2, fill: '#fa7faa', strokeWidth: 0 }} 
+                      strokeDasharray="4 4" 
+                      name="Adv Loss" 
+                      connectNulls
+                    />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             </div>
