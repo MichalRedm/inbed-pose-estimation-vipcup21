@@ -3,16 +3,11 @@ import { NavLink } from 'react-router-dom';
 import axios from 'axios';
 import { 
   LayoutDashboard, 
-  Activity, 
-  Eye, 
   Settings, 
-  Database, 
-  Box,
-  ClipboardCheck,
-  History
+  Database
 } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:8000';
+import { API_BASE_URL } from '../services/api';
 
 const Sidebar: React.FC = () => {
   const [isOnline, setIsOnline] = useState<boolean>(false);
@@ -33,12 +28,7 @@ const Sidebar: React.FC = () => {
   }, []);
 
   const navItems = [
-    { name: 'Overview', path: '/', icon: LayoutDashboard },
-    { name: 'Training', path: '/training', icon: Activity },
-    { name: 'Runs History', path: '/history', icon: History },
-    { name: 'Inference', path: '/inference', icon: Eye },
-    { name: 'Models', path: '/models', icon: Box },
-    { name: 'Evaluation', path: '/evaluation', icon: ClipboardCheck },
+    { name: 'Runs Hub', path: '/', icon: LayoutDashboard },
     { name: 'Dataset', path: '/dataset', icon: Database },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];

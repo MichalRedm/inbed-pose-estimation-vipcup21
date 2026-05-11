@@ -140,10 +140,11 @@ const Settings: React.FC = () => {
     }
   };
 
-  if (loading) return <div style={{ padding: '40px' }}>Loading configuration...</div>;
+  if (loading) return <div className="padded-container">Loading configuration...</div>;
 
   return (
-    <div className="settings-page">
+    <div className="padded-container">
+      <div className="settings-page">
       <div className="page-header">
         <h1 className="text-uppercase">System Settings</h1>
         <p className="text-secondary">Configure remote GPU connections and environment variables.</p>
@@ -321,6 +322,7 @@ const Settings: React.FC = () => {
           to { transform: rotate(360deg); }
         }
       `}</style>
+      </div>
     </div>
   );
 };
