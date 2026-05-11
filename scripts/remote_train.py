@@ -150,7 +150,11 @@ def main():
             remote_history_path = "/root/project/models/checkpoints/history.json"
             remote_config_path = "/root/project/models/checkpoints/config.json"
 
-        if not args_cli.resume:
+        if not args_cli.resume and args_cli.run_id:
+            remote_run_dir = f"/root/project/results/runs/{args_cli.run_id}"
+            print(f"[clean] Starting fresh run, wiping remote directory in {remote_run_dir}...")
+            gpu.run(f"rm -rf {remote_run_dir} || true", stream=False)
+        elif not args_cli.resume:
             print(f"[clean] Starting fresh run, wiping remote checkpoints in {remote_ckpt_dir}...")
             gpu.run(f"rm -rf {remote_ckpt_dir}/* || true", stream=False)
         else:
