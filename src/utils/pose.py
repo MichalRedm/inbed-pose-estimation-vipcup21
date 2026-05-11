@@ -38,7 +38,7 @@ LSP_JOINT_NAMES = [
 ]
 
 
-def decode_heatmaps(heatmaps, image_size, method="argmax"):
+def decode_heatmaps(heatmaps, image_size, method="argmax", temperature=10.0):
     """
     Convert heatmaps (B, J, H, W) to joint coordinates (B, J, 2) in image space.
     
@@ -53,16 +53,16 @@ def decode_heatmaps(heatmaps, image_size, method="argmax"):
     img_h, img_w = image_size
 
     if method == "soft-argmax":
-        # Apply softmax to get probability distribution
+        # Apply temperature-scaled softmax to get probability distribution
         flat = heatmaps.view(B, J, -1)
-        probs = torch.softmax(flat, dim=-1)
+        probs = torch.softmax(flat * temperature, dim=-1)
         probs = probs.view(B, J, H, W)
 
         # Coordinate grids
         grid_x = torch.arange(W, device=heatmaps.device).float()
         grid_y = torch.arange(H, device=heatmaps.device).float()
 
-        # Expected values
+        # Expected values (center of mass)
         expected_x = torch.sum(torch.sum(probs, dim=2) * grid_x, dim=2)
         expected_y = torch.sum(torch.sum(probs, dim=3) * grid_y, dim=2)
 
