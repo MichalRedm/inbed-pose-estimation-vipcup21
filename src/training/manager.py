@@ -21,6 +21,7 @@ class TrainingManager:
         self.adv_loss_history: List[float] = []
         self.log_history: List[str] = []
         self.status_message = "Idle"
+        self.current_metrics: Dict[str, float] = {}
         self.current_run_id: Optional[str] = None
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -124,6 +125,7 @@ class TrainingManager:
             "adv_loss_history": self.adv_loss_history,
             "log_history": self.log_history,
             "status_message": self.status_message,
+            "current_metrics": self.current_metrics,
         }
 
     def _load_history_dual(self) -> tuple[List[float], List[float]]:
@@ -294,14 +296,31 @@ class TrainingManager:
                         self.status_message = (
                             f"Progress: {pct}% (Batch {curr_batch}/{total_batches})"
                         )
-                        if batch_loss:
-                            self.status_message += f" | Loss: {float(batch_loss):.4f}"
-                            # Update history for live graph updates
-                            idx = self.current_epoch - 1
-                            if idx >= 0:
-                                while len(self.loss_history) <= idx:
-                                    self.loss_history.append(0.0)
-                                self.loss_history[idx] = float(batch_loss)
+                        
+                        # Extract all metrics from tqdm postfix (e.g., key=value)
+                        metrics = re.findall(r"(\w+)=([\d\.]+)", line)
+                        for key, val in metrics:
+                            try:
+                                float_val = float(val)
+                                self.current_metrics[key] = float_val
+
+                                # Update primary loss history for live graphs
+                                if key in ["loss", "train_loss"]:
+                                    idx = self.current_epoch - 1
+                                    if idx >= 0:
+                                        while len(self.loss_history) <= idx:
+                                            self.loss_history.append(0.0)
+                                        self.loss_history[idx] = float_val
+                                    if not self.status_message.endswith(f"Loss: {float_val:.4f}"):
+                                        self.status_message += f" | Loss: {float_val:.4f}"
+                                elif key == "adv_loss":
+                                    idx = self.current_epoch - 1
+                                    if idx >= 0:
+                                        while len(self.adv_loss_history) <= idx:
+                                            self.adv_loss_history.append(0.0)
+                                        self.adv_loss_history[idx] = float_val
+                            except ValueError:
+                                continue
                         continue
 
                     # 5. Parse loss: "train_loss=0.1234" or "Epoch 1: loss=0.1234  adv_loss=0.05 val_loss=0.5678"
