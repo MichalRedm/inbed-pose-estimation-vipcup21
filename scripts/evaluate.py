@@ -28,12 +28,15 @@ from torch.utils.data import DataLoader, DistributedSampler
 from pathlib import Path
 
 # Add project root to sys.path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.utils import (
     decode_heatmaps,
     LSP_JOINT_NAMES as JOINT_NAMES,
+    draw_pose,
 )
+import matplotlib.pyplot as plt
 from src.data.dataset import VIPCupDataset, collate_skip_none
 from src.models import build_model
 
@@ -69,7 +72,7 @@ def compute_pck(pred_joints, gt_joints, threshold=0.5):
     shoulder_mid = (gt_xy[:, 8, :] + gt_xy[:, 9, :]) / 2.0
     hip_mid = (gt_xy[:, 2, :] + gt_xy[:, 3, :]) / 2.0
     torso_dist = torch.norm(shoulder_mid - hip_mid, dim=-1, keepdim=True)  # (N, 1)
-    torso_dist = torso_dist.unsqueeze(1).expand(N, J, 1)                  # (N, J, 1)
+    torso_dist = torso_dist.unsqueeze(1).expand(N, J, 1)  # (N, J, 1)
     torso_dist = torso_dist.clamp(min=1e-6)
 
     # Euclidean distance per joint
@@ -104,22 +107,67 @@ def load_run_config(checkpoint_path: Path):
             cfg = json.load(f)
         return cfg, None
     # Last resort: global default
-    from src.utils import load_config
-    return load_config(), None
 
 
-def auto_decode_method(config: dict) -> str:
+def calculate_skeleton_spread(joints):
     """
-    Select the correct heatmap decoding method based on the run's training config.
-    - soft-argmax: for models trained with sigma curriculum (sigma_start != sigma_end)
-    - argmax:      for models trained with standard fixed-sigma heatmap MSE
+    joints: (J, 2)
+    Returns: area of bounding box
     """
-    tc = config.get("training", {})
-    sigma_start = tc.get("sigma_start", 2.0)
-    sigma_end = tc.get("sigma_end", 2.0)
-    if sigma_start != sigma_end:
-        return "soft-argmax"
-    return "argmax"
+    min_coords = torch.min(joints, dim=0)[0]
+    max_coords = torch.max(joints, dim=0)[0]
+    diff = max_coords - min_coords
+    return (diff[0] * diff[1]).item()
+
+
+def visualize_audit(model, dataset, device, image_size, decode_method, save_path):
+    """
+    Generates a set of sample inferences for visual verification.
+    """
+    samples_to_show = []
+    # Pick one uncover, one cover1, one cover2
+    covers_found = set()
+    for i in range(len(dataset)):
+        cover = dataset.samples[i]["cover"]
+        if cover not in covers_found:
+            samples_to_show.append(i)
+            covers_found.add(cover)
+        if len(samples_to_show) >= 4:
+            break
+
+    model.eval()
+    fig, axes = plt.subplots(
+        1, len(samples_to_show), figsize=(5 * len(samples_to_show), 5)
+    )
+    if len(samples_to_show) == 1:
+        axes = [axes]
+
+    with torch.no_grad():
+        for i, idx in enumerate(samples_to_show):
+            batch = dataset[idx]
+            img = batch["image"].unsqueeze(0).to(device)
+            gt_joints = batch["joints"]
+            cover = dataset.samples[idx]["cover"]
+
+            output = model(img)
+            pred_joints = decode_heatmaps(
+                output.cpu(), image_size, method=decode_method
+            )[0]
+
+            # Use original image for background if possible
+            img_np = batch["image"][0].cpu().numpy()
+            axes[i].imshow(img_np, cmap="gray")
+
+            # Draw GT (Green) and Pred (Red)
+            draw_pose(axes[i], gt_joints[:2, :].T, color="green", alpha=0.5, label="GT")
+            draw_pose(axes[i], pred_joints, color="red", label="Pred")
+            axes[i].set_title(f"Sample {idx} ({cover})")
+            axes[i].axis("off")
+
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+    print(f"Visual audit saved to {save_path}")
 
 
 def evaluate(
@@ -128,6 +176,7 @@ def evaluate(
     batch_size=16,
     pck_threshold=0.5,
     save_json=None,
+    decode_method_override=None,
 ):
     checkpoint_path = Path(checkpoint_path)
 
@@ -137,7 +186,8 @@ def evaluate(
     image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
     data_root = data_root or dataset_cfg.get("root", "data/raw")
     s_val = dataset_cfg.get("subjects_val", [81, 90])
-    decode_method = auto_decode_method(config)
+    # Default to argmax for all evaluations unless specifically overridden
+    decode_method = decode_method_override or "argmax"
 
     # --- Setup Device & Distributed ---
     rank = int(os.environ.get("RANK", -1))
@@ -154,7 +204,9 @@ def evaluate(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if rank <= 0:
-        print(f"Using device: {device} (Distributed: {is_distributed}, World Size: {world_size})")
+        print(
+            f"Using device: {device} (Distributed: {is_distributed}, World Size: {world_size})"
+        )
         print(f"Decode method: {decode_method}")
         print(f"Image size: {image_size}")
 
@@ -184,19 +236,21 @@ def evaluate(
 
     model.eval()
 
-    # Setup Dataset — covered images only (task target domain)
+    # Setup Dataset — include uncover for sanity, plus cover1/2
     val_dataset = VIPCupDataset(
         root=data_root,
         subjects=range(s_val[0], s_val[1] + 1),
         modalities=dataset_cfg.get("modalities", ["IR"]),
-        covers=["cover1", "cover2"],
+        covers=["uncover", "cover1", "cover2"],
         split="valid",
         image_size=image_size,
     )
 
     if len(val_dataset) == 0:
         if rank <= 0:
-            print("WARNING: Validation set is empty. Check data_root and covers configuration.")
+            print(
+                "WARNING: Validation set is empty. Check data_root and covers configuration."
+            )
         return
 
     val_sampler = (
@@ -213,11 +267,18 @@ def evaluate(
     )
 
     if rank <= 0:
-        print(f"Validation samples: {len(val_dataset)} (subjects {s_val[0]}-{s_val[1]}, cover1+cover2)")
+        print(
+            f"Validation samples: {len(val_dataset)} (subjects {s_val[0]}-{s_val[1]})"
+        )
 
     per_joint_correct_total = torch.zeros(len(JOINT_NAMES), device=device)
     per_joint_count_total = torch.zeros(len(JOINT_NAMES), device=device)
     per_joint_error_total = torch.zeros(len(JOINT_NAMES), device=device)
+
+    # Sanity check metrics
+    total_spread_ratio = 0.0
+    num_spread_samples = 0
+
     criterion = torch.nn.MSELoss()
     total_loss = 0.0
     num_batches = 0
@@ -247,21 +308,36 @@ def evaluate(
 
             p_pck, p_count, _ = compute_pck(preds, joints, threshold=pck_threshold)
 
-            gt_xy = joints[:, :2, :].permute(0, 2, 1)   # (B, J, 2)
-            gt_vis = joints[:, 2, :]                      # (B, J)
-            valid = (gt_vis <= 1).float()                 # (B, J)
-            dists = torch.norm(preds - gt_xy, dim=-1)      # (B, J)
-            per_joint_error = (dists * valid).sum(dim=0) / valid.sum(dim=0).clamp(min=1)
+            # Euclidean distance per joint
+            gt_xy = joints[:, :2, :].permute(0, 2, 1)  # (B, J, 2)
+            gt_vis = joints[:, 2, :]  # (B, J)
+            valid = (gt_vis <= 1).float()  # (B, J)
+            dists = torch.norm(preds - gt_xy, dim=-1)  # (B, J)
+
+            # Skeleton spread check
+            for b in range(preds.shape[0]):
+                pred_spread = calculate_skeleton_spread(preds[b])
+                gt_spread = calculate_skeleton_spread(gt_xy[b])
+                if gt_spread > 100:  # Ignore tiny skeletons (e.g. all joints occluded)
+                    total_spread_ratio += pred_spread / gt_spread
+                    num_spread_samples += 1
 
             per_joint_correct_total += (p_pck * p_count).to(device)
             per_joint_count_total += p_count.to(device)
-            per_joint_error_total += per_joint_error.to(device)
+            per_joint_error_total += (dists * valid).sum(dim=0).to(device)
 
     # Synchronize metrics across processes
     if is_distributed:
         dist.all_reduce(per_joint_correct_total, op=dist.ReduceOp.SUM)
         dist.all_reduce(per_joint_count_total, op=dist.ReduceOp.SUM)
         dist.all_reduce(per_joint_error_total, op=dist.ReduceOp.SUM)
+
+        sync_spread = torch.tensor(
+            [total_spread_ratio, float(num_spread_samples)], device=device
+        )
+        dist.all_reduce(sync_spread, op=dist.ReduceOp.SUM)
+        total_spread_ratio = sync_spread[0].item()
+        num_spread_samples = int(sync_spread[1].item())
 
         if num_batches > 0:
             loss_tensor = torch.tensor([total_loss, float(num_batches)], device=device)
@@ -271,6 +347,8 @@ def evaluate(
 
     if rank <= 0:
         avg_loss = total_loss / max(num_batches, 1)
+        mean_spread_ratio = total_spread_ratio / max(num_spread_samples, 1)
+
         per_joint_pck = (
             (per_joint_correct_total / per_joint_count_total.clamp(min=1)).cpu().numpy()
         )
@@ -280,7 +358,10 @@ def evaluate(
         mean_pck = per_joint_pck.mean()
         mean_mpjpe = per_joint_error.mean()
 
-        print(f"\n=== Evaluation Results (Loss: {avg_loss:.4f}, MPJPE: {mean_mpjpe:.1f}px) ===")
+        print(f"\n=== Evaluation Results (MPJPE: {mean_mpjpe:.1f}px) ===")
+        print(f"Skeleton Spread Ratio: {mean_spread_ratio:.2f} (Target: >0.7)")
+        if mean_spread_ratio < 0.6:
+            print("WARNING: Skeleton spread is low! Possible joint collapse detected.")
         print(f"=== PCK@{pck_threshold} Results ===")
         print(f"{'Joint':<15} {'PCK':>6} {'MPJPE':>8}")
         print("-" * 32)
@@ -288,22 +369,26 @@ def evaluate(
             print(f"{name:<15} {pck * 100:>5.1f}% {err:>8.1f}px")
         print("-" * 32)
         print(f"{'Mean':<15} {mean_pck * 100:>5.1f}% {mean_mpjpe:>8.1f}px")
-        print(f"\nDecode method : {decode_method}")
-        print(f"Image size    : {image_size}")
-        print(f"Val subjects  : {s_val[0]}–{s_val[1]}, covers: cover1 + cover2")
-        print("Visibility    : vis <= 1 (visible + occluded)")
+
+        # Visual Audit (MANDATORY)
+        audit_path = (
+            checkpoint_path.parent.parent / f"visual_audit_{checkpoint_path.stem}.png"
+        )
+        visualize_audit(
+            model, val_dataset, device, image_size, decode_method, audit_path
+        )
 
         metrics = {
             "pck": float(mean_pck),
             "mpjpe": float(mean_mpjpe),
             "loss": avg_loss,
+            "skeleton_spread_ratio": mean_spread_ratio,
             "decode_method": decode_method,
             "image_size": list(image_size),
             "per_joint_pck": per_joint_pck.tolist(),
             "per_joint_mpjpe": per_joint_error.tolist(),
             "joint_names": JOINT_NAMES,
-            "threshold": pck_threshold,
-            "samples": len(val_dataset),
+            "visual_audit": str(audit_path.relative_to(project_root)),
         }
 
         if save_json:
@@ -333,9 +418,11 @@ if __name__ == "__main__":
         type=str,
         default="best_model.pth",
         help="Checkpoint filename within the run's checkpoints/ dir (default: best_model.pth), "
-             "or an absolute path to a .pth file.",
+        "or an absolute path to a .pth file.",
     )
-    parser.add_argument("--data_root", type=str, default=None, help="Override data root path.")
+    parser.add_argument(
+        "--data_root", type=str, default=None, help="Override data root path."
+    )
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument(
         "--threshold",
@@ -349,6 +436,13 @@ if __name__ == "__main__":
         default=None,
         help="Path to save metrics JSON (e.g. results/runs/<run_id>/eval_results.json)",
     )
+    parser.add_argument(
+        "--method",
+        type=str,
+        default=None,
+        choices=["argmax", "soft-argmax"],
+        help="Override heatmap decoding method.",
+    )
     args = parser.parse_args()
 
     # Resolve checkpoint path
@@ -356,7 +450,9 @@ if __name__ == "__main__":
         if os.path.isabs(args.checkpoint):
             checkpoint_path = args.checkpoint
         else:
-            checkpoint_path = f"results/runs/{args.run_id}/checkpoints/{args.checkpoint}"
+            checkpoint_path = (
+                f"results/runs/{args.run_id}/checkpoints/{args.checkpoint}"
+            )
         # Default save_json to the run directory
         if args.save_json is None:
             args.save_json = f"results/runs/{args.run_id}/eval_results.json"
@@ -373,6 +469,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         pck_threshold=args.threshold,
         save_json=args.save_json,
+        decode_method_override=args.method,
     )
 
     if dist.is_initialized():

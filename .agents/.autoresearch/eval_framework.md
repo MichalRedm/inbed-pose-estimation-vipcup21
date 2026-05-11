@@ -25,12 +25,21 @@ python scripts/evaluate.py --run_id loop16_sigma_curriculum
 ### Training-integrated Evaluation
 From next run onward, `val_pck` is logged each epoch in `history.json` and `best_model.pth` is saved at the epoch of highest `val_pck`. See `src/training/base_trainer.py → compute_val_pck()`.
 
+### Verification Protocol (Mandatory for Baselines)
+All "Verified" metrics in this repository must meet the following criteria:
+1. **Local Execution**: Evaluation MUST be run locally or via the fixed `scripts/evaluate.py` to ensure local config parity.
+2. **Run-Specific Config**: Must use the `config.json` found in the run's own directory, NOT the global `default.yaml`.
+3. **Correct Mask**: Must use `vis <= 1` (visible + occluded) for PCK/MPJPE.
+4. **Decoder Match**: Must manually or automatically select the decoder (argmax vs soft-argmax) that matches the training method.
+5. **Traceability**: The `history.json` and `best_model.pth` must be present and uncorrupted.
+
 ## Results Tracker (CORRECTED — cover1+cover2, vis≤1, run config, correct decoder)
 
-| Experiment | PCK@0.5 | MPJPE | Notes |
-|------------|---------|-------|-------|
-| Loop 9: Hinge Loss | ~78% | ~27 px | vis==0 only; true vis≤1 not yet measured |
-| Loop 16: Sigma Curriculum | **78.8%** | 26.4 px | Verified 2026-05-11 |
+| loop17_uncertainty | **74.2%** | 24.7 px | **SUCCESS** (Uncertainty weighted) |
+| loop9_anatomical_hinge | 73.0% | 27.4 px | RELIABLE BASELINE (vis≤1) |
+| loop14_integral_reg | 30.5% | 69.3 px | FAILURE (Loss imbalance) |
+| loop15_occlusion_aware | 31.9% | 63.6 px | FAILURE (Loss imbalance) |
+| loop16_sigma_curr | 33.9% | 57.4 px | FAILURE (Loss imbalance) |
 
 > Previous figures (76.4%, 78.5%, 81.0%, 84.6% etc.) were computed by the flawed remote evaluate.py. They are directionally useful (comparing relative improvement) but not accurate absolute baselines.
 

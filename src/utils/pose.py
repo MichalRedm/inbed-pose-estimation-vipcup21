@@ -41,7 +41,7 @@ LSP_JOINT_NAMES = [
 def decode_heatmaps(heatmaps, image_size, method="argmax", temperature=10.0):
     """
     Convert heatmaps (B, J, H, W) to joint coordinates (B, J, 2) in image space.
-    
+
     Methods:
       - "argmax": Standard peak detection (fast, sensitive to noise)
       - "soft-argmax": Expected value / Center of mass (precise, robust)
@@ -75,7 +75,7 @@ def decode_heatmaps(heatmaps, image_size, method="argmax", temperature=10.0):
         idx = flat.argmax(dim=-1)
         y = (idx // W).float()
         x = (idx % W).float()
-        
+
         x = x * (img_w / W)
         y = y * (img_h / H)
         return torch.stack([x, y], dim=-1)

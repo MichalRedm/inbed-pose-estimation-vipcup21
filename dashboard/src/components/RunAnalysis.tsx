@@ -112,7 +112,11 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" vertical={false} />
               <XAxis dataKey="epoch" stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis stroke="var(--text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-purple)', borderRadius: '8px' }} />
+              <Tooltip 
+                contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-purple)', borderRadius: '8px' }}
+                itemStyle={{ color: '#fff' }}
+                labelStyle={{ color: '#fff' }}
+              />
               <Line type="monotone" dataKey="loss" stroke="var(--accent-lime)" strokeWidth={2.5} dot={false} animationDuration={300} name="Train Loss" />
               <Line type="monotone" dataKey="val_loss" stroke="var(--accent-primary)" strokeWidth={2} dot={false} strokeDasharray="5 3" name="Val Loss" />
               {hasAdvHistory && <Line type="monotone" dataKey="adv" stroke="var(--accent-pink)" strokeWidth={1.5} dot={false} strokeDasharray="4 4" name="Adv Loss" />}
@@ -176,7 +180,12 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" horizontal={true} vertical={false} />
                     <XAxis type="number" domain={[0, 100]} hide />
                     <YAxis type="category" dataKey="name" stroke="var(--text-secondary)" fontSize={10} width={80} />
-                    <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ background: 'var(--bg-secondary)', border: 'none', borderRadius: '8px' }} />
+                    <Tooltip 
+                      cursor={{ fill: 'rgba(255,255,255,0.05)' }} 
+                      contentStyle={{ background: 'var(--bg-secondary)', border: 'none', borderRadius: '8px' }}
+                      itemStyle={{ color: '#fff' }}
+                      labelStyle={{ color: '#fff' }}
+                    />
                     <Bar dataKey="pck" radius={[0, 4, 4, 0]}>
                       {pckData.map((entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={entry.pck > 80 ? 'var(--accent-lime)' : 'var(--accent-primary)'} />
@@ -192,7 +201,12 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" vertical={false} />
                     <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={9} tick={{ angle: -45, textAnchor: 'end' }} height={60} interval={0} />
                     <YAxis stroke="var(--text-secondary)" fontSize={10} domain={['auto', 'auto']} />
-                    <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ background: 'var(--bg-secondary)', border: 'none', borderRadius: '8px' }} />
+                    <Tooltip 
+                      cursor={{ fill: 'rgba(255,255,255,0.05)' }} 
+                      contentStyle={{ background: 'var(--bg-secondary)', border: 'none', borderRadius: '8px' }}
+                      itemStyle={{ color: '#fff' }}
+                      labelStyle={{ color: '#fff' }}
+                    />
                     <Bar dataKey="error" fill="var(--accent-pink)" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>

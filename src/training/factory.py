@@ -41,7 +41,7 @@ def create_trainer(
         trainer = UDATrainer(
             model=model,
             discriminator=discriminator,
-            optimizer=None, # Will set below
+            optimizer=None,  # Will set below
             optimizer_d=optimizer_d,
             criterion=criterion,
             config=config,
@@ -54,7 +54,7 @@ def create_trainer(
         # Standard Setup
         trainer = StandardTrainer(
             model=model,
-            optimizer=None, # Will set below
+            optimizer=None,  # Will set below
             criterion=criterion,
             config=config,
             device=device,
@@ -72,7 +72,9 @@ def create_trainer(
     trainer.optimizer = optimizer
 
     if use_uda and rank == 0:
-        print(f"[Factory] Created UDATrainer (Lambda Adv: {uda_cfg.get('lambda_adv', 0.001)})")
+        print(
+            f"[Factory] Created UDATrainer (Lambda Adv: {uda_cfg.get('lambda_adv', 0.001)})"
+        )
     elif not use_uda and rank == 0:
         print("[Factory] Created StandardTrainer")
 

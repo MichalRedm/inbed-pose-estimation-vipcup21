@@ -250,7 +250,9 @@ async def list_runs():
 
     runs = []
     # Get current active run from manager
-    active_run_id = training_manager.current_run_id if training_manager.is_running else None
+    active_run_id = (
+        training_manager.current_run_id if training_manager.is_running else None
+    )
 
     for run_path in sorted(
         runs_dir.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True
@@ -265,7 +267,8 @@ async def list_runs():
             "status": "active" if run_id == active_run_id else "completed",
             "has_config": (run_path / "config.json").exists(),
             "has_history": (run_path / "history.json").exists(),
-            "has_eval": (run_path / "eval_results.json").exists() or (run_path / "evaluation.json").exists(),
+            "has_eval": (run_path / "eval_results.json").exists()
+            or (run_path / "evaluation.json").exists(),
             "has_audit": (run_path / "visual_audit_best_model.png").exists(),
         }
 
@@ -281,9 +284,9 @@ async def list_runs():
                         run_info["final_val_pck"] = history[-1].get("val_pck")
             except Exception:
                 pass
-        
+
         if run_info["has_eval"]:
-             try:
+            try:
                 eval_file = run_path / "eval_results.json"
                 if not eval_file.exists():
                     eval_file = run_path / "evaluation.json"
@@ -291,8 +294,8 @@ async def list_runs():
                     eval_data = json.load(f)
                     run_info["eval_pck"] = eval_data.get("pck")
                     run_info["eval_mpjpe"] = eval_data.get("mpjpe")
-             except Exception:
-                 pass
+            except Exception:
+                pass
 
         runs.append(run_info)
 
@@ -321,14 +324,16 @@ async def get_run_details(run_id: str):
     eval_file = run_path / "eval_results.json"
     if not eval_file.exists():
         eval_file = run_path / "evaluation.json"
-        
+
     if eval_file.exists():
         with open(eval_file, "r") as f:
             details["evaluation"] = json.load(f)
 
     # Visual audit path
     if (run_path / "visual_audit_best_model.png").exists():
-        details["visual_audit_url"] = f"/static/runs/{run_id}/visual_audit_best_model.png"
+        details["visual_audit_url"] = (
+            f"/static/runs/{run_id}/visual_audit_best_model.png"
+        )
 
     # List checkpoints
     ckpt_dir = run_path / "checkpoints"
@@ -762,8 +767,8 @@ async def predict(
         )  # Convert to Grayscale (1-channel)
 
         # Preprocess
-        original_size = image.size # (W, H)
-        
+        original_size = image.size  # (W, H)
+
         # Determine checkpoint path
         checkpoint_path = None
         if run_id:
@@ -784,7 +789,7 @@ async def predict(
             checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
             if checkpoints:
                 checkpoint_path = checkpoints[-1]
-        
+
         # Determine image size and decoding method from run config
         model_image_size = (256, 256)
         # Default to argmax for Heatmap models (more robust peak detection)
@@ -792,7 +797,9 @@ async def predict(
         if checkpoint_path and (checkpoint_path.parent.parent / "config.json").exists():
             with open(checkpoint_path.parent.parent / "config.json", "r") as f:
                 run_cfg = json.load(f)
-                model_image_size = tuple(run_cfg.get("dataset", {}).get("image_size", [256, 256]))
+                model_image_size = tuple(
+                    run_cfg.get("dataset", {}).get("image_size", [256, 256])
+                )
                 # For future flexibility, we could add a "decode_method" field to config.json
                 # For now, we prefer argmax for all HRNet heatmap models as soft-argmax
                 # without high temperature causes joint clustering.
@@ -800,12 +807,15 @@ async def predict(
                     decode_method = "soft-argmax"
                     print(f"[API] Forced soft-argmax decoding for {run_id}")
                 else:
-                    print(f"[API] Using argmax decoding for {run_id} (Heatmap standard)")
+                    print(
+                        f"[API] Using argmax decoding for {run_id} (Heatmap standard)"
+                    )
 
         image_resized = image.resize(model_image_size)
         # (1, 1, H, W)
         img_tensor = (
-            torch.from_numpy(np.array(image_resized)).unsqueeze(0).unsqueeze(0).float() / 255.0
+            torch.from_numpy(np.array(image_resized)).unsqueeze(0).unsqueeze(0).float()
+            / 255.0
         ).to(model_container["device"])
 
         # Check if file exists and get mtime
@@ -882,7 +892,9 @@ async def predict(
         with torch.no_grad():
             outputs = model(img_tensor)
             if model.output_type == "heatmap":
-                preds = decode_heatmaps(outputs.cpu(), model_image_size, method=decode_method)
+                preds = decode_heatmaps(
+                    outputs.cpu(), model_image_size, method=decode_method
+                )
             else:
                 # Direct coordinates (1, 14, 2)
                 preds = outputs.cpu()

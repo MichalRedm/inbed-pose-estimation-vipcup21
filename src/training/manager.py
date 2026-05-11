@@ -63,9 +63,34 @@ class TrainingManager:
             self.loss_history = []
             self.adv_loss_history = []
 
-        self._thread = threading.Thread(
-            target=self._run_training, args=(actual_overrides,)
-        )
+        # Final structure must follow default.yaml schema
+        # Move training specific keys under 'training' key
+        final_config = {}
+        training_keys = [
+            "lr",
+            "epochs",
+            "batch_size",
+            "weight_decay",
+            "lambda_anatomical",
+            "augmentation",
+        ]
+
+        training_section = {}
+        for k in training_keys:
+            if k in actual_overrides:
+                training_section[k] = actual_overrides[k]
+
+        final_config["training"] = training_section
+
+        # Move project/remote/uda keys to their sections
+        if "remote" in actual_overrides:
+            final_config["remote"] = {"use_remote": actual_overrides["remote"]}
+        if "uda" in actual_overrides:
+            final_config["uda"] = {"enabled": actual_overrides["uda"]}
+            if "lambda_adv" in actual_overrides:
+                final_config["uda"]["lambda_adv"] = actual_overrides["lambda_adv"]
+
+        self._thread = threading.Thread(target=self._run_training, args=(final_config,))
         self._thread.start()
         return True, "Training started"
 
@@ -139,32 +164,23 @@ class TrainingManager:
                 self.status_message = "Starting local training..."
                 cmd = [sys.executable, str(project_root / "scripts" / "train.py")]
 
-            # Pass overrides as CLI args (works for both local and remote scripts)
-            if config_overrides:
-                if "lr" in config_overrides:
-                    cmd.extend(["--lr", str(config_overrides["lr"])])
-                if "epochs" in config_overrides:
-                    cmd.extend(["--epochs", str(config_overrides["epochs"])])
-                if "batch_size" in config_overrides:
-                    cmd.extend(["--batch_size", str(config_overrides["batch_size"])])
-                if config_overrides.get("resume"):
-                    cmd.append("--resume")
-                if "lambda_anatomical" in config_overrides:
-                    cmd.extend(
-                        [
-                            "--lambda_anatomical",
-                            str(config_overrides["lambda_anatomical"]),
-                        ]
-                    )
-                if config_overrides.get("uda"):
-                    cmd.append("--uda")
-                    if "lambda_adv" in config_overrides:
-                        cmd.extend(
-                            ["--lambda_adv", str(config_overrides["lambda_adv"])]
-                        )
-
             if self.current_run_id:
                 cmd.extend(["--run_id", self.current_run_id])
+
+            # If a full config was provided, save it to a temporary file and pass it
+            if config_overrides:
+                # We'll save it in the results/runs/RUN_ID dir if it exists, else models/temp_config.yaml
+                run_dir = project_root / "results" / "runs" / self.current_run_id
+                run_dir.mkdir(parents=True, exist_ok=True)
+                config_path = run_dir / "config.yaml"
+
+                import yaml
+
+                with open(config_path, "w") as f:
+                    yaml.dump(config_overrides, f)
+
+                cmd.extend(["--config", str(config_path)])
+                print(f"[TrainingManager] Using custom config: {config_path}")
 
             print(f"  Executing training command: {' '.join(cmd)}")
             process = subprocess.Popen(

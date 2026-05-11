@@ -96,7 +96,7 @@ class AnatomicalLoss(nn.Module):
 class UncertaintyWeighting(nn.Module):
     """
     Implements multi-task loss weighting using learned uncertainties.
-    Kendall et al., "Multi-Task Learning Using Uncertainty to Weigh Losses 
+    Kendall et al., "Multi-Task Learning Using Uncertainty to Weigh Losses
     for Scene Geometry and Semantics", CVPR 2018.
     """
 
@@ -105,7 +105,9 @@ class UncertaintyWeighting(nn.Module):
         # Initial log-variances set to 0 (sigma=1)
         self.log_vars = nn.Parameter(torch.zeros(num_tasks))
 
-    def forward(self, losses: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def forward(
+        self, losses: Dict[str, torch.Tensor]
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """
         losses: Dictionary of individual losses.
         Returns: (total_loss, weighted_losses_dict)
@@ -113,7 +115,7 @@ class UncertaintyWeighting(nn.Module):
         total_loss = 0
         weighted_dict = {}
 
-        # We need a stable order for the log_vars. 
+        # We need a stable order for the log_vars.
         # We'll use the sorted keys of the input dictionary.
         keys = sorted(losses.keys())
         for i, key in enumerate(keys):
@@ -122,7 +124,7 @@ class UncertaintyWeighting(nn.Module):
             # s = log(sigma^2)
             log_var = self.log_vars[i]
             weighted_loss = torch.exp(-log_var) * loss + log_var
-            
+
             total_loss += weighted_loss
             weighted_dict[f"w_{key}"] = weighted_loss.item()
             weighted_dict[f"sigma_{key}"] = torch.exp(0.5 * log_var).item()

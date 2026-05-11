@@ -132,9 +132,7 @@ class BaseTrainer(ABC):
             mean_pck: float in [0, 1].
         """
         self.model.eval()
-        image_size = tuple(
-            self.config.get("dataset", {}).get("image_size", [256, 256])
-        )
+        image_size = tuple(self.config.get("dataset", {}).get("image_size", [256, 256]))
 
         all_preds, all_gts, all_vis = [], [], []
 
@@ -145,7 +143,9 @@ class BaseTrainer(ABC):
             images = batch["image"].to(self.device)
             joints = batch["joints"]  # (B, 3, 14)
 
-            raw_model = self.model.module if hasattr(self.model, "module") else self.model
+            raw_model = (
+                self.model.module if hasattr(self.model, "module") else self.model
+            )
             outputs = raw_model(images)
 
             if raw_model.output_type == "heatmap":
@@ -153,8 +153,8 @@ class BaseTrainer(ABC):
             else:
                 preds = outputs.cpu()
 
-            gt_xy = joints[:, :2, :].permute(0, 2, 1).numpy()   # (B, 14, 2)
-            vis = (joints[:, 2, :] <= 1).numpy()                  # (B, 14) visible+occluded
+            gt_xy = joints[:, :2, :].permute(0, 2, 1).numpy()  # (B, 14, 2)
+            vis = (joints[:, 2, :] <= 1).numpy()  # (B, 14) visible+occluded
 
             all_preds.append(preds.numpy())
             all_gts.append(gt_xy)
@@ -163,15 +163,15 @@ class BaseTrainer(ABC):
         if not all_preds:
             return 0.0
 
-        P = np.concatenate(all_preds)   # (N, 14, 2)
-        G = np.concatenate(all_gts)     # (N, 14, 2)
-        V = np.concatenate(all_vis)     # (N, 14)
+        P = np.concatenate(all_preds)  # (N, 14, 2)
+        G = np.concatenate(all_gts)  # (N, 14, 2)
+        V = np.concatenate(all_vis)  # (N, 14)
 
         # Torso diameter: R_Shoulder (8) to L_Hip (3)
         torso = np.linalg.norm(G[:, 8, :] - G[:, 3, :], axis=-1, keepdims=True)
         torso = np.maximum(torso, 1e-6)  # (N, 1)
 
-        dist = np.linalg.norm(P - G, axis=-1)   # (N, 14)
+        dist = np.linalg.norm(P - G, axis=-1)  # (N, 14)
         correct = (dist < 0.5 * torso) * V
 
         mean_pck = float(correct.sum() / np.maximum(V.sum(), 1))

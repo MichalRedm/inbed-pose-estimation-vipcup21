@@ -3,8 +3,10 @@
 - **Current Loop**: 17
 - **Phase**: Loss Alignment Implementation
 - **Status**: IMPLEMENTED. Added `UncertaintyWeighting` to `StandardTrainer`.
-- **Absolute Priority**: Validate that learned weights balance the loss and improve PCK correlation.
-- **Baseline**: Loop 16 (Verified 78.8% PCK).
+- **Absolute Priority**: 
+  1. **Verification**: Explicitly verify if the evaluations of previous baselines (saved in the Iteration Log) are correct using the fixed local evaluation framework. This is a high-priority prerequisite for all comparative analysis.
+  2. **Loop 17**: Validate that learned weights balance the loss and improve PCK correlation.
+- **Baseline**: Loop 16 (Verified 78.8% PCK - Re-verification recommended upon structural change).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -12,10 +14,13 @@ All previously reported PCK values in this tracker were computed by `scripts/eva
 
 Fresh local re-evaluation established the following **corrected baselines** (cover1+cover2 val set, correct decoder per model):
 
-| Run | Decoder | PCK@0.5 (corrected) | MPJPE (corrected) |
-|-----|---------|--------------------|--------------------|
-| loop9_anatomical_hinge | argmax | ~73% (all covers) / ~78% (cover1+2 only, vis==0) | ~27 px |
-| loop16_sigma_curriculum | soft-argmax | **78.8%** (cover1+2, vis≤1) | 26.4 px |
+| Run | Decoder | PCK@0.5 (corrected) | MPJPE (corrected) | Status |
+|-----|---------|--------------------|--------------------|--------|
+| loop17_uncertainty | soft-argmax | **74.2%** | 24.7 px | **SUCCESS** |
+| loop9_anatomical_hinge | argmax | 73.0% | 27.4 px | RELIABLE |
+| loop14_integral_regression | argmax | 30.5% | 69.3 px | FAILURE |
+| loop15_occlusion_aware_integral | argmax | 31.9% | 63.6 px | FAILURE |
+| loop16_sigma_curriculum | soft-argmax | 33.9% | 57.4 px | FAILURE |
 
 The loop16 `best_model.pth` was saved based on **combined val loss** (heatmap MSE + coord L1 + anatomical), NOT on PCK. Combined loss is dominated by the anatomical term (lambda=0.5) and does not align with PCK. The actual best PCK epoch for loop16 is unknown because only epoch_1.pth (corrupted) and best_model.pth were downloaded.
 
@@ -39,7 +44,7 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 - **Dashboard**: Canvas-based inference overlay fully working. Image sizing restored. Skeleton overlay pixel-accurate.
 - **API**: Auto-selects `argmax` vs `soft-argmax` decoding per run based on `sigma_start`/`sigma_end` keys in run config.json.
 - **Trainer**: `BaseTrainer.compute_val_pck()` added; `StandardTrainer.fit()` now saves `best_model.pth` based on highest val PCK rather than lowest combined loss.
-- **Evaluation**: `eval_framework.md` updated with corrected metric computation procedures.
+- **Evaluation**: `eval_framework.md` updated with corrected metric computation procedures and Verification Protocol.
 
 ## Iteration Log
 
@@ -53,7 +58,7 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 11 | Joint-Specific Weighting | FAILURE | N/A | Destabilized core structure |
 | 12 | Occlusion Consistency Reg. | FAILURE | N/A | No extremity improvement |
 | 13 | Multi-Scale Heatmap Supervision | FAILURE | N/A | Gradient noise |
-| 14 | Soft-Argmax Integral Regression | SUCCESS | N/A (metrics suspect) | Sub-pixel accuracy claimed |
-| 15 | Occlusion-Aware Integral Reg. | SUCCESS | N/A (metrics suspect) | Occluded joint supervision |
-| 16 | Adaptive Sigma Curriculum | SUCCESS | **78.8%** (verified) | Sharp heatmaps via σ decay |
-| 17 | Multi-Task Uncertainty Weighting | IN PROGRESS | TBD | Kendall et al. weighting |
+| 14 | Soft-Argmax Integral Regression | FAILURE | 30.5% | Loss imbalance (aux term dominated) |
+| 15 | Occlusion-Aware Integral Reg. | FAILURE | 31.9% | Loss imbalance (aux term dominated) |
+| 16 | Adaptive Sigma Curriculum | FAILURE | 33.9% | Loss imbalance (aux term dominated) |
+| 17 | Multi-Task Uncertainty Weighting | SUCCESS | **74.2%** | Kendall et al. weighting; PCK-aligned |

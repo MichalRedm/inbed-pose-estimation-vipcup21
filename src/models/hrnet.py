@@ -248,7 +248,7 @@ class HRNet(BaseModel):
             config_model = config.get("model", {}).get("hrnet", {})
         else:
             config_model = config
-            
+
         num_joints = config_model.get("num_joints", 14)
         in_channels = config_model.get("in_channels", 1)
         C = self.W32  # shorthand

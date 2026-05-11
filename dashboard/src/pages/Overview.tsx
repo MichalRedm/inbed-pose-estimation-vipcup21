@@ -170,7 +170,13 @@ const Overview: React.FC = () => {
               exit={{ opacity: 0, y: -10 }}
               style={{ padding: '40px', height: '100%', overflowY: 'auto' }}
             >
-              <TrainingForm onStarted={() => { setIsStartingNew(false); fetchRuns(); }} />
+              <TrainingForm onStarted={async () => { 
+                setIsStartingNew(false); 
+                await fetchRuns();
+                // Immediately check status to get the new run_id
+                const status = await getTrainingStatus();
+                if (status.run_id) setSelectedRun(status.run_id);
+              }} />
             </motion.div>
           ) : selectedRun ? (
             <motion.div 

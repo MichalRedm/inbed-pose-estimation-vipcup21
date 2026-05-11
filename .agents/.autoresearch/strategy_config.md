@@ -54,3 +54,8 @@
 - Kaggle T4: ~40s/epoch, 30-epoch run ~20min.
 - Submission via `scripts/remote_train.py --run_id <id> --eval`.
 - History/checkpoints downloaded automatically to `results/runs/<run_id>/`.
+
+### Baseline Verification
+- All baselines must be re-evaluated locally using `scripts/evaluate.py` to ensure absolute parity.
+- Suspect metrics from remote environments must be flagged in `state_tracker.md` and verified before being used for comparative research.
+- Verification is a mandatory prerequisite for each new research phase.

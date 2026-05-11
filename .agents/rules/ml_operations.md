@@ -12,6 +12,20 @@ To ensure real-time visibility and centralized monitoring, all machine learning 
 - **On-Demand**: Trigger evaluations from the "Analysis" tab in the Runs Hub.
 - **Integration**: Results are automatically saved to the run directory and visualized in the dashboard.
 
-### Resource Management
-- **Checkpoint Hygiene**: Only the "best" model checkpoint (based on validation PCK) should be persisted long-term to save disk space. 
-- **Failed Runs**: Periodically prune run directories that did not complete or had poor performance.
+### Backend API Management
+- **Availability Check**: Before starting any ML task, verify if the backend API is running (usually on `http://localhost:8000`).
+- **Starting the API**: If the API is not available, start it using:
+  ```powershell
+  python src/api/main.py
+  ```
+- **Dashboard Dev Server**: If UI development is needed, start the frontend using:
+  ```powershell
+  cd dashboard; npm run dev
+  ```
+
+### Integration Verification
+- **Smoke Tests**: After making changes to the trainer or dashboard, perform a 1-epoch smoke test training run via the dashboard to verify:
+  - Real-time loss curve updates.
+  - Progress bar functionality.
+  - Log streaming.
+  - Post-training evaluation triggers and visualization.

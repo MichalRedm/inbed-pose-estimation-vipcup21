@@ -39,13 +39,21 @@ def check_cuda():
 
 
 def train():
-    # 1. Load Baseline Configuration
-    config = load_config()
+    # 1. Parse Initial Config Path (to load before other overrides)
+    parser = argparse.ArgumentParser(
+        description="Unified Training Script", add_help=False
+    )
+    parser.add_argument("--config", type=str, default="configs/default.yaml")
+    args_config, _ = parser.parse_known_args()
+
+    # 2. Load Configuration
+    config = load_config(args_config.config)
     train_cfg = config.get("training", {})
     dataset_cfg = config.get("dataset", {})
 
-    # 2. Parse CLI Arguments (Overrides)
+    # 3. Parse CLI Overrides
     parser = argparse.ArgumentParser(description="Unified Training Script")
+    parser.add_argument("--config", type=str, default="configs/default.yaml")
     parser.add_argument(
         "--data_root", type=str, default=dataset_cfg.get("root", "data/raw")
     )
@@ -57,6 +65,11 @@ def train():
     parser.add_argument("--lambda_coord_occluded", type=float, default=None)
     parser.add_argument("--sigma_start", type=float, default=None)
     parser.add_argument("--sigma_end", type=float, default=None)
+    parser.add_argument(
+        "--use_uncertainty_weighting",
+        action="store_true",
+        help="Enable uncertainty loss weighting",
+    )
     parser.add_argument(
         "--uda", action="store_true", help="Enable Unsupervised Domain Adaptation"
     )
@@ -84,6 +97,8 @@ def train():
         config["training"]["sigma_start"] = args.sigma_start
     if args.sigma_end is not None:
         config["training"]["sigma_end"] = args.sigma_end
+    if args.use_uncertainty_weighting:
+        config["training"]["use_uncertainty_weighting"] = True
 
     if args.uda:
         config["training_type"] = "uda"
