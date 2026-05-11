@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Upload, Play, RefreshCw, Download, Layers } from 'lucide-react';
 import { predictPose } from '../services/api';
 import { useGlobalState } from '../context/GlobalStateContext';
@@ -35,13 +35,83 @@ const JOINT_COLORS: Record<number, string> = {
   3: '#6a5fc1', 4: '#6a5fc1', 5: '#6a5fc1' // Left leg
 };
 
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result
+    ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) }
+    : { r: 194, g: 239, b: 78 };
+}
+
 const Inference: React.FC = () => {
   const { selectedModel, selectedRun } = useGlobalState();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<InferenceResult | null>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Draw pose after React re-renders the canvas into the DOM
+  useEffect(() => {
+    if (!result || !previewUrl) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const { predictions, original_size: { width: origW, height: origH } } = result;
+
+    const img = new Image();
+    img.onload = () => {
+      // Match original dropzone: contain within panel, capped at 70vh
+      const maxW = containerRef.current?.clientWidth ?? 520;
+      const maxH = window.innerHeight * 0.7;
+      const scale = Math.min(maxW / origW, maxH / origH);
+      const displayW = Math.round(origW * scale);
+      const displayH = Math.round(origH * scale);
+
+      canvas.width = displayW;
+      canvas.height = displayH;
+
+      // Draw image
+      ctx.drawImage(img, 0, 0, displayW, displayH);
+
+      // Scale: original image px → canvas display px
+      const sx = displayW / origW;
+      const sy = displayH / origH;
+
+      // Draw skeleton connections
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.lineWidth = Math.max(1.5, displayW / 150);
+      for (const [i1, i2] of SKELETON_CONNECTIONS) {
+        const j1 = predictions[i1];
+        const j2 = predictions[i2];
+        if (!j1 || !j2) continue;
+        ctx.beginPath();
+        ctx.moveTo(j1.x * sx, j1.y * sy);
+        ctx.lineTo(j2.x * sx, j2.y * sy);
+        ctx.stroke();
+      }
+
+      // Draw joint circles
+      const radius = Math.max(4, displayW / 35);
+      for (let i = 0; i < predictions.length; i++) {
+        const pred = predictions[i];
+        const color = JOINT_COLORS[i] ?? '#c2ef4e';
+        const { r, g, b } = hexToRgb(color);
+        ctx.beginPath();
+        ctx.arc(pred.x * sx, pred.y * sy, radius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.9)`;
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = Math.max(1.5, displayW / 250);
+        ctx.stroke();
+      }
+    };
+    img.src = previewUrl;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -54,11 +124,10 @@ const Inference: React.FC = () => {
 
   const handleRunInference = async () => {
     if (!selectedFile) return;
-
     setLoading(true);
     try {
       const data = await predictPose(selectedFile, selectedModel, selectedRun);
-      setResult(data);
+      setResult(data); // triggers useEffect which draws on canvas after re-render
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string };
       console.error('Inference failed:', error);
@@ -78,7 +147,7 @@ const Inference: React.FC = () => {
 
       <div className="inference-grid">
         <div className="glass card upload-section">
-          
+
           <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid var(--border-purple)' }}>
             <div className="micro-label text-secondary" style={{ marginBottom: '8px' }}>Active Model</div>
             {selectedRun ? (
@@ -96,64 +165,83 @@ const Inference: React.FC = () => {
             )}
           </div>
 
-          <div className={`dropzone ${selectedFile ? 'has-file' : ''}`}>
-            <input type="file" id="file-upload" onChange={handleFileChange} accept="image/*" />
-            <label htmlFor="file-upload">
-              {previewUrl ? (
-                <div className="preview-container">
-                  <img ref={imageRef} src={previewUrl} alt="Preview" className="image-preview" />
-                  {result && (
-                    <svg 
-                      className="pose-overlay"
-                      viewBox={`0 0 ${result.original_size.width} ${result.original_size.height}`}
-                      preserveAspectRatio="xMidYMid meet"
-                    >
-                      {/* Connections */}
-                      {SKELETON_CONNECTIONS.map(([idx1, idx2], i) => {
-                        const j1 = result.predictions[idx1];
-                        const j2 = result.predictions[idx2];
-                        if (!j1 || !j2) return null;
-                        return (
-                          <line
-                            key={`line-${i}`}
-                            x1={j1.x} y1={j1.y}
-                            x2={j2.x} y2={j2.y}
-                            stroke="white"
-                            strokeWidth={result.original_size.width / 300}
-                            strokeOpacity="0.5"
-                          />
-                        );
-                      })}
+          {/* Display area — shows image before inference, canvas (image + pose) after */}
+          <div
+            ref={containerRef}
+            style={{
+              flex: 1,
+              border: '2px dashed var(--border-purple)',
+              borderRadius: '12px',
+              minHeight: '400px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              position: 'relative',
+              overflow: 'hidden',
+              background: 'rgba(0,0,0,0.2)',
+            }}
+          >
+            <input
+              type="file"
+              id="file-upload"
+              onChange={handleFileChange}
+              accept="image/*"
+              style={{ display: 'none' }}
+            />
 
-                      {/* Joints */}
-                      {result.predictions.map((pred, i) => (
-                        <g key={i}>
-                          <circle
-                            cx={pred.x}
-                            cy={pred.y}
-                            r={result.original_size.width / 100}
-                            fill={JOINT_COLORS[i] || 'var(--accent-lime)'}
-                            stroke="white"
-                            strokeWidth={result.original_size.width / 400}
-                          />
-                        </g>
-                      ))}
-                    </svg>
-                  )}
-                </div>
-              ) : (
-                <div className="upload-placeholder">
-                  <Upload size={48} color="var(--accent-primary)" />
-                  <p className="text-uppercase" style={{ marginTop: '16px', fontWeight: '600' }}>Drop image here or click to upload</p>
-                </div>
-              )}
-            </label>
+            {/* Canvas — always mounted so canvasRef is valid; shown only after inference */}
+            <canvas
+              ref={canvasRef}
+              style={{
+                display: result ? 'block' : 'none',
+                maxWidth: '100%',
+                borderRadius: '8px',
+              }}
+            />
+
+            {/* Raw image preview — shown after file selected, before inference */}
+            {!result && previewUrl && (
+              <img
+                src={previewUrl}
+                alt="Preview"
+                style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain', borderRadius: '8px', display: 'block' }}
+              />
+            )}
+
+            {/* Upload placeholder — shown when no file */}
+            {!previewUrl && !result && (
+              <label
+                htmlFor="file-upload"
+                style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px' }}
+              >
+                <Upload size={48} color="var(--accent-primary)" />
+                <p className="text-uppercase" style={{ marginTop: '16px', fontWeight: '600' }}>
+                  Drop image here or click to upload
+                </p>
+              </label>
+            )}
+
+            {/* Change image button */}
+            {(previewUrl || result) && (
+              <label
+                htmlFor="file-upload"
+                style={{
+                  position: 'absolute', bottom: '8px', right: '8px',
+                  background: 'rgba(0,0,0,0.6)', color: 'white', padding: '4px 10px',
+                  borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer',
+                  backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.2)',
+                  zIndex: 2,
+                }}
+              >
+                Change image
+              </label>
+            )}
           </div>
-          
+
           <div className="upload-actions">
-            <button 
-              className="btn-lime" 
-              onClick={handleRunInference} 
+            <button
+              className="btn-lime"
+              onClick={handleRunInference}
               disabled={!selectedFile || loading || (!selectedModel && !selectedRun)}
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >

@@ -204,7 +204,8 @@ const Dataset: React.FC = () => {
   const currentRes = selectedSample?.resolutions?.[viewModality] || { width: 256, height: 256 };
 
   return (
-    <div className="dataset-page">
+    <div className="padded-container">
+      <div className="dataset-page">
       {/* Local Styles for Dataset Page */}
       <style>{`
         .dataset-header {
@@ -685,6 +686,7 @@ const Dataset: React.FC = () => {
         </div>
       )}
 
+      </div>
     </div>
   );
 };

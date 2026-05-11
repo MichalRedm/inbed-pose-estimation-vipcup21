@@ -1,172 +1,339 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getSystemInfo, getTrainingStatus, getModels } from '../services/api';
-import { Activity, Cpu, Server, CheckCircle2, PlayCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  History, 
+  Trash2, 
+  Activity, 
+  Target, 
+  Eye, 
+  Info,
+  Clock,
+  Plus
+} from 'lucide-react';
+import { getRuns, getRunDetails, deleteRun, getTrainingStatus } from '../services/api';
+import { useGlobalState } from '../context/GlobalStateContext';
 
-interface SystemInfo {
-  status: string;
-  version: string;
-  gpu: {
-    available: boolean;
-    name?: string;
-    memory?: {
-      free: number;
-      total: number;
-      used: number;
-    };
+// Components
+import TrainingForm from '../components/TrainingForm';
+import RunInference from '../components/RunInference';
+import RunAnalysis from '../components/RunAnalysis';
+
+export interface RunDetails {
+  id: string;
+  status?: 'active' | 'completed' | 'failed';
+  created_at?: string;
+  eval_pck?: number;
+  config?: Record<string, unknown>;
+  evaluation?: {
+    pck: number;
+    mpjpe: number;
+    loss?: number;
+    per_joint_metrics?: Array<{
+      name: string;
+      pck: number;
+      error: number;
+    }>;
   };
+  history?: Array<Record<string, number>>;
 }
 
 interface TrainingStatus {
   is_running: boolean;
-  progress: number;
+  run_id: string | null;
   current_epoch: number;
   total_epochs: number;
-  status_message: string;
+  progress: number;
+  loss_history: number[];
+  val_loss_history: number[];
+  adv_loss_history: number[];
+  log_history: string[];
 }
 
 const Overview: React.FC = () => {
-  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const { selectedRun, setSelectedRun } = useGlobalState();
+  const [runs, setRuns] = useState<RunDetails[]>([]);
+  const [activeTab, setActiveTab] = useState<'analysis' | 'inference'>('analysis');
+  const [isStartingNew, setIsStartingNew] = useState(false);
   const [trainingStatus, setTrainingStatus] = useState<TrainingStatus | null>(null);
-  const [latestModel, setLatestModel] = useState<string>('N/A');
+  const [runDetails, setRunDetails] = useState<RunDetails | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchRuns = useCallback(async () => {
     try {
-      const [sys, train, mods] = await Promise.all([
-        getSystemInfo(),
-        getTrainingStatus(),
-        getModels()
-      ]);
-      setSystemInfo(sys);
-      setTrainingStatus(train);
-      if (mods.models && mods.models.length > 0) {
-        setLatestModel(mods.models[mods.models.length - 1].name);
-      }
+      const data = await getRuns();
+      setRuns(data.runs);
     } catch (error) {
-      console.error('Failed to fetch overview data:', error);
+      console.error('Failed to fetch runs:', error);
     }
   }, []);
 
+  const fetchTrainingStatus = useCallback(async () => {
+    try {
+      const status = await getTrainingStatus();
+      setTrainingStatus(status);
+      
+      // If a run just started and we aren't viewing anything, select it
+      if (status.is_running && status.run_id && !selectedRun && !isStartingNew) {
+        setSelectedRun(status.run_id);
+      }
+    } catch (error) {
+      console.error('Failed to fetch training status:', error);
+    }
+  }, [selectedRun, isStartingNew, setSelectedRun]);
+
   useEffect(() => {
-    let isMounted = true;
+    const interval = setInterval(() => {
+      fetchRuns();
+      fetchTrainingStatus();
+    }, 5000);
     
-    const fetch = async () => {
-      if (isMounted) await fetchData();
-    };
+    // Mount fetch via microtask
+    Promise.resolve().then(() => {
+      fetchRuns();
+      fetchTrainingStatus();
+    });
 
-    fetch();
-    const interval = setInterval(fetch, 5000);
+    return () => clearInterval(interval);
+  }, [fetchRuns, fetchTrainingStatus]);
+
+  useEffect(() => {
+    if (!selectedRun) return;
     
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [fetchData]);
+    let isCancelled = false;
+    getRunDetails(selectedRun).then(details => {
+      if (!isCancelled) setRunDetails(details);
+    });
+    
+    return () => { isCancelled = true; };
+  }, [selectedRun]);
 
-  const gpuMemoryUsedPercent = systemInfo?.gpu.memory 
-    ? (systemInfo.gpu.memory.used / systemInfo.gpu.memory.total) * 100 
-    : 0;
+  const handleDeleteRun = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete run ${id}?`)) return;
+    try {
+      await deleteRun(id);
+      if (selectedRun === id) setSelectedRun('');
+      fetchRuns();
+    } catch (error) {
+      console.error('Delete failed:', error);
+    }
+  };
 
   return (
-    <div className="overview-page">
-      <div className="page-header">
-        <h1 className="text-uppercase">Dashboard Overview</h1>
-        <p className="text-secondary">System status and training progress summary.</p>
-      </div>
+    <div className="runs-hub-container" style={{ 
+      display: 'flex', 
+      height: 'calc(100vh - 72px)',
+      width: '100%',
+      overflow: 'hidden'
+    }}>
       
-      <div className="grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px' }}>
-        
-        {/* Training / Latest Model Card */}
-        <div className="glass card" style={{ borderLeft: '4px solid var(--accent-lime)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-            <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-lime)' }}>
-              {trainingStatus?.is_running ? 'Active Training' : 'Latest Checkpoint'}
-            </h3>
-            {trainingStatus?.is_running ? (
-              <PlayCircle size={20} color="var(--accent-lime)" className="spin-slow" />
-            ) : (
-              <CheckCircle2 size={20} color="var(--accent-lime)" />
-            )}
-          </div>
-          
-          <h2 style={{ margin: '12px 0', fontSize: '1.5rem' }}>
-            {trainingStatus?.is_running ? `Epoch ${trainingStatus.current_epoch} / ${trainingStatus.total_epochs}` : latestModel}
+      {/* Runs Browser (Left) */}
+      <div className="runs-browser" style={{ 
+        width: '320px', 
+        background: 'var(--bg-secondary)', 
+        borderRight: '1px solid var(--border-purple)', 
+        display: 'flex', 
+        flexDirection: 'column',
+        height: '100%'
+      }}>
+        <div style={{ padding: '24px', borderBottom: '1px solid var(--border-purple)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 className="text-uppercase" style={{ fontSize: '0.9rem', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <History size={16} />
+            Runs
           </h2>
-          
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-            Status: {trainingStatus?.status_message || 'Idle'}
-          </p>
-          
-          <div style={{ marginTop: '20px' }}>
-            {trainingStatus?.is_running ? (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.8rem' }}>
-                  <span>Progress</span>
-                  <span>{Math.round(trainingStatus.progress * 100)}%</span>
+          <button 
+            className="btn-lime" 
+            style={{ padding: '6px', borderRadius: '50%' }}
+            onClick={() => { 
+              setIsStartingNew(true); 
+              setSelectedRun(''); 
+              setRunDetails(null);
+            }}
+          >
+            <Plus size={18} />
+          </button>
+        </div>
+
+        <div className="runs-list" style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+          {runs.map((run) => (
+            <motion.div 
+              key={run.id}
+              layoutId={run.id}
+              onClick={() => { 
+                setSelectedRun(run.id); 
+                setIsStartingNew(false); 
+                if (selectedRun !== run.id) setRunDetails(null);
+              }}
+              className={`run-card ${selectedRun === run.id ? 'active' : ''}`}
+              style={{
+                padding: '12px 16px',
+                borderRadius: '8px',
+                marginBottom: '8px',
+                cursor: 'pointer',
+                background: selectedRun === run.id ? 'var(--accent-vibrant)' : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${selectedRun === run.id ? 'var(--accent-primary)' : 'rgba(255,255,255,0.05)'}`,
+                position: 'relative',
+              }}
+              whileHover={{ x: 4 }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{run.id}</span>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                   {run.status === 'active' ? (
+                    <Activity size={12} className="spin" color="var(--accent-lime)" />
+                  ) : null}
+                  <button onClick={(e) => handleDeleteRun(e, run.id)} style={{ background: 'none', border: 'none', color: 'var(--accent-pink)', opacity: 0.4 }}>
+                    <Trash2 size={12} />
+                  </button>
                 </div>
-                <div style={{ height: '6px', background: 'var(--bg-secondary)', borderRadius: '3px', overflow: 'hidden' }}>
-                  <div style={{ 
-                    width: `${trainingStatus.progress * 100}%`, 
-                    height: '100%', 
-                    background: 'var(--accent-lime)',
-                    transition: 'width 0.5s ease'
-                  }}></div>
-                </div>
-              </>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Activity size={16} color="var(--accent-lime)" />
-                <span style={{ fontSize: '1.2rem', fontWeight: '700' }}>Ready</span>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>for inference</span>
               </div>
-            )}
-          </div>
+
+              <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <div className="run-tag" style={{ fontSize: '0.6rem' }}><Clock size={10} /> {new Date(run.created_at || '').toLocaleDateString()}</div>
+                {run.eval_pck && (
+                  <div className="run-tag" style={{ fontSize: '0.6rem', background: 'rgba(194, 239, 78, 0.1)', color: 'var(--accent-lime)' }}>PCK: {(run.eval_pck * 100).toFixed(1)}%</div>
+                )}
+              </div>
+            </motion.div>
+          ))}
         </div>
-
-        {/* System Status Card */}
-        <div className="glass card" style={{ borderLeft: '4px solid var(--accent-pink)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-            <h3 className="text-uppercase micro-label" style={{ color: 'var(--accent-pink)' }}>System Status</h3>
-            {systemInfo?.gpu.available ? (
-              <Server size={20} color="var(--accent-pink)" />
-            ) : (
-              <Cpu size={20} color="var(--text-secondary)" />
-            )}
-          </div>
-
-          <h2 style={{ margin: '12px 0', fontSize: '1.5rem' }}>
-            {systemInfo?.gpu.available ? systemInfo.gpu.name : 'CPU Only'}
-          </h2>
-
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-            {systemInfo?.gpu.available && systemInfo.gpu.memory 
-              ? `VRAM: ${systemInfo.gpu.memory.used.toFixed(1)} / ${systemInfo.gpu.memory.total.toFixed(1)} GB`
-              : `Compute: ${systemInfo?.gpu.available ? 'CUDA Active' : 'Fallback Mode'}`}
-          </p>
-
-          <div style={{ marginTop: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.8rem' }}>
-              <span>{systemInfo?.gpu.available ? 'GPU Load' : 'CPU Load'}</span>
-              <span>{systemInfo?.gpu.available && systemInfo.gpu.memory ? `${Math.round(gpuMemoryUsedPercent)}%` : 'Active'}</span>
-            </div>
-            <div style={{ height: '6px', background: 'var(--bg-secondary)', borderRadius: '3px', overflow: 'hidden' }}>
-              <div style={{ 
-                width: systemInfo?.gpu.available ? `${gpuMemoryUsedPercent}%` : '100%', 
-                height: '100%', 
-                background: 'var(--accent-pink)',
-                transition: 'width 0.5s ease'
-              }}></div>
-            </div>
-          </div>
-        </div>
-
       </div>
-      
-      <div style={{ marginTop: '32px', padding: '20px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px border-purple' }}>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: systemInfo?.status === 'online' ? '#4ade80' : '#f87171' }}></span>
-          API Backend: {systemInfo?.status || 'Offline'} (v{systemInfo?.version || '0.0.0'})
-        </p>
+
+      {/* Run Detail Area (Right) */}
+      <div className="run-detail-area" style={{ flex: 1, background: 'var(--bg-primary)', position: 'relative', overflow: 'hidden' }}>
+        <AnimatePresence mode="wait">
+          {isStartingNew ? (
+            <motion.div 
+              key="new-training"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              style={{ padding: '40px', height: '100%', overflowY: 'auto' }}
+            >
+              <TrainingForm onStarted={async () => { 
+                setIsStartingNew(false); 
+                await fetchRuns();
+                // Immediately check status to get the new run_id
+                const status = await getTrainingStatus();
+                if (status.run_id) setSelectedRun(status.run_id);
+              }} />
+            </motion.div>
+          ) : selectedRun ? (
+            <motion.div 
+              key={selectedRun}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={{ padding: '40px', height: '100%', display: 'flex', flexDirection: 'column' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+                <div style={{ display: 'flex', gap: '24px' }}>
+                  <button 
+                    className={`tab-btn ${activeTab === 'analysis' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('analysis')}
+                  >
+                    <Target size={18} />
+                    Analysis
+                  </button>
+                  <button 
+                    className={`tab-btn ${activeTab === 'inference' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('inference')}
+                  >
+                    <Eye size={18} />
+                    Inference
+                  </button>
+                </div>
+                <div className="run-id-badge" style={{ fontSize: '0.7rem' }}>{selectedRun}</div>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                <AnimatePresence mode="wait">
+                  {activeTab === 'analysis' ? (
+                    <motion.div key="analysis" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                      <RunAnalysis 
+                        key={selectedRun}
+                        details={runDetails || { id: selectedRun }} 
+                        isActive={!!(trainingStatus?.is_running && trainingStatus.run_id === selectedRun)}
+                        trainingStatus={trainingStatus || undefined}
+                      />
+                    </motion.div>
+                  ) : (
+                    <motion.div key="inference" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ height: '100%' }}>
+                      <RunInference runId={selectedRun} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div 
+              key="empty"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="empty-state-hub"
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '20px', opacity: 0.5 }}
+            >
+              <Info size={64} />
+              <div style={{ textAlign: 'center' }}>
+                <h3 className="text-uppercase">Select an Experiment</h3>
+                <p>Choose a run from the list or start a new training session.</p>
+              </div>
+              <button className="btn-lime" onClick={() => setIsStartingNew(true)}>
+                <Plus size={18} /> Start New Run
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
+      <style>{`
+        .run-card.active {
+          box-shadow: 0 4px 20px rgba(106, 95, 193, 0.3);
+        }
+        .run-tag {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 0.7rem;
+          padding: 2px 8px;
+          background: rgba(255,255,255,0.05);
+          border-radius: 4px;
+          color: var(--text-secondary);
+          font-weight: 600;
+        }
+        .tab-btn {
+          background: none;
+          border: none;
+          color: var(--text-secondary);
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 1.1rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          padding: 8px 0;
+          border-bottom: 3px solid transparent;
+          transition: all 0.2s;
+          opacity: 0.6;
+        }
+        .tab-btn:hover { opacity: 1; }
+        .tab-btn.active {
+          color: var(--accent-lime);
+          border-bottom-color: var(--accent-lime);
+          opacity: 1;
+        }
+        .run-id-badge {
+          padding: 4px 12px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-purple);
+          border-radius: 20px;
+          font-family: var(--font-mono);
+          font-size: 0.8rem;
+          color: var(--accent-primary);
+        }
+        .spin { animation: spin 2s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 };

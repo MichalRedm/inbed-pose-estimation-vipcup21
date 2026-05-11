@@ -45,7 +45,8 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -93,7 +94,8 @@ button {
 #root {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* Global utility classes */
@@ -179,23 +181,36 @@ button.glass:hover {
 /* Layout */
 .app-container {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
   width: 100%;
+  overflow: hidden;
 }
 
 .main-content {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background-color: var(--bg-primary);
-  overflow-y: auto;
+  overflow: hidden;
+  height: 100vh;
 }
 
 .page-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow: hidden; /* Prevent parent scrolling for full-height pages */
+}
+
+.padded-container {
   padding: 40px;
-  max-width: 1400px; /* Increased for better dashboard spread */
+  max-width: 1400px;
   width: 100%;
   margin: 0 auto;
+  overflow-y: auto; /* Enable scrolling for standard pages */
+  height: 100%;
 }
 
 .page-header {
@@ -209,39 +224,51 @@ button.glass:hover {
 
 /* Sidebar */
 .sidebar {
-  width: 260px;
+  width: 90px;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border-purple);
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  position: sticky;
-  top: 0;
+  height: 100%;
+  flex-shrink: 0;
+  z-index: 100;
 }
 
 .sidebar-logo {
-  padding: 32px 24px;
+  padding: 32px 10px;
   border-bottom: 1px solid var(--border-purple);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+}
+
+.sidebar-logo h2 {
+  line-height: 1;
 }
 
 .sidebar-nav {
   flex: 1;
-  padding: 24px 12px;
+  padding: 32px 8px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 20px;
 }
 
 .nav-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
+  justify-content: center;
+  gap: 8px;
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
   color: var(--text-secondary);
-  font-size: 0.9rem;
-  font-weight: 500;
   transition: var(--transition-fast);
+  text-decoration: none;
 }
 
 .nav-item:hover {
@@ -251,24 +278,35 @@ button.glass:hover {
 
 .nav-item.active {
   background-color: var(--accent-vibrant);
-  color: var(--text-primary);
-  box-shadow: rgba(0, 0, 0, 0.2) 0px 4px 12px;
+  color: var(--accent-lime);
+  box-shadow: rgba(0, 0, 0, 0.3) 0px 8px 24px;
+}
+
+.nav-item .nav-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .sidebar-footer {
-  padding: 24px;
+  padding: 24px 10px;
   border-top: 1px solid var(--border-purple);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .status-indicator {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
 }
 
@@ -618,6 +656,9 @@ button.glass:hover {
   font-size: 0.85rem;
   font-weight: 500;
   transition: var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .btn-tab.active {

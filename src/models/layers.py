@@ -9,13 +9,13 @@ class SoftArgmax2D(nn.Module):
     Converts (B, J, H, W) heatmaps to (B, J, 2) coordinates.
     """
 
-    def __init__(self, base_size=(256, 256), heatmap_size=(64, 64)):
+    def __init__(self, base_size=(256, 256), heatmap_size=(64, 64), temperature=10.0):
         super().__init__()
         self.base_size = base_size
         self.heatmap_size = heatmap_size
+        self.temperature = temperature
 
         # Create coordinate grids
-        # (W,) and (H,)
         grid_x = torch.arange(heatmap_size[0]).float()
         grid_y = torch.arange(heatmap_size[1]).float()
 
@@ -33,10 +33,10 @@ class SoftArgmax2D(nn.Module):
         """
         B, J, H, W = heatmaps.shape
 
-        # Apply softmax to each heatmap to get probability distributions
+        # Apply temperature-scaled softmax to each heatmap to get probability distributions
         # Flatten H, W first: (B, J, H*W)
         flat_heatmaps = heatmaps.view(B, J, -1)
-        probs = F.softmax(flat_heatmaps, dim=-1)
+        probs = F.softmax(flat_heatmaps * self.temperature, dim=-1)
         probs = probs.view(B, J, H, W)
 
         # Compute expected x and y

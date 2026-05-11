@@ -25,7 +25,6 @@ def create_trainer(
     # 3. Setup Optimizer & Criterion
     lr = train_cfg.get("lr", 0.0001)
     weight_decay = train_cfg.get("weight_decay", 0.0001)
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     criterion = nn.MSELoss()
 
     # 4. Decide Trainer Type
@@ -34,14 +33,7 @@ def create_trainer(
 
     if use_uda:
         # UDA Setup
-        # Discriminator in_channels should match model's bottleneck/feature layer
-        # For HRNet-W32, features are concatenated streams (32+64+128+256 = 480)
-        in_channels = 480
-        if config.get("model", {}).get("name") != "hrnet":
-            # Potential fallback or different model handling
-            pass
-
-        discriminator = DomainDiscriminator(in_channels=in_channels).to(device)
+        discriminator = DomainDiscriminator(in_channels=480).to(device)
         optimizer_d = optim.Adam(
             discriminator.parameters(), lr=lr, weight_decay=weight_decay
         )
@@ -49,7 +41,7 @@ def create_trainer(
         trainer = UDATrainer(
             model=model,
             discriminator=discriminator,
-            optimizer=optimizer,
+            optimizer=None,  # Will set below
             optimizer_d=optimizer_d,
             criterion=criterion,
             config=config,
@@ -57,22 +49,33 @@ def create_trainer(
             rank=rank,
             world_size=world_size,
         )
-        if rank == 0:
-            print(
-                f"[Factory] Created UDATrainer (Lambda Adv: {uda_cfg.get('lambda_adv', 0.001)})"
-            )
+        params = list(model.parameters())
     else:
         # Standard Setup
         trainer = StandardTrainer(
             model=model,
-            optimizer=optimizer,
+            optimizer=None,  # Will set below
             criterion=criterion,
             config=config,
             device=device,
             rank=rank,
             world_size=world_size,
         )
-        if rank == 0:
-            print("[Factory] Created StandardTrainer")
+        params = list(model.parameters())
+        if hasattr(trainer, "uncertainty_loss"):
+            params += list(trainer.uncertainty_loss.parameters())
+            if rank == 0:
+                print("[Factory] Added uncertainty weighting parameters to optimizer")
+
+    # 5. Finalize Optimizer
+    optimizer = optim.Adam(params, lr=lr, weight_decay=weight_decay)
+    trainer.optimizer = optimizer
+
+    if use_uda and rank == 0:
+        print(
+            f"[Factory] Created UDATrainer (Lambda Adv: {uda_cfg.get('lambda_adv', 0.001)})"
+        )
+    elif not use_uda and rank == 0:
+        print("[Factory] Created StandardTrainer")
 
     return trainer, model

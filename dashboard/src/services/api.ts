@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000'; // Default, should be configurable
+export const API_BASE_URL = 'http://localhost:8000'; // Default, should be configurable
 
 export const predictPose = async (file: File, modelName?: string, runId?: string) => {
   const formData = new FormData();
