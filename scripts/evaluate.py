@@ -25,20 +25,20 @@ import torch
 import torch.distributed as dist
 from torch.utils.data import DataLoader, DistributedSampler
 
+import matplotlib.pyplot as plt
 from pathlib import Path
 
 # Add project root to sys.path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
+from src.models import build_model  # noqa: E402
 from src.utils import (  # noqa: E402
     decode_heatmaps,
     LSP_JOINT_NAMES as JOINT_NAMES,
     draw_pose,
 )
-import matplotlib.pyplot as plt
-from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
-from src.models import build_model  # noqa: E402
 
 # LSP joint indices for torso diameter
 R_SHOULDER = 8
