@@ -64,8 +64,8 @@ const TrainingForm: React.FC<TrainingFormProps> = ({ onStarted }) => {
 
   const handleStart = async () => {
     try {
-      await saveTrainingConfig(config as any);
-      await startTraining(config as any);
+      await saveTrainingConfig(config as unknown as Record<string, unknown>);
+      await startTraining(config as unknown as Record<string, unknown>);
       onStarted();
     } catch (error) {
       console.error('Failed to start training:', error);

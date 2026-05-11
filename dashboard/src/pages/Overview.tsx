@@ -18,13 +18,44 @@ import TrainingForm from '../components/TrainingForm';
 import RunInference from '../components/RunInference';
 import RunAnalysis from '../components/RunAnalysis';
 
+export interface RunDetails {
+  id: string;
+  status?: 'active' | 'completed' | 'failed';
+  created_at?: string;
+  eval_pck?: number;
+  config?: Record<string, unknown>;
+  evaluation?: {
+    pck: number;
+    mpjpe: number;
+    loss?: number;
+    per_joint_metrics?: Array<{
+      name: string;
+      pck: number;
+      error: number;
+    }>;
+  };
+  history?: Array<Record<string, number>>;
+}
+
+interface TrainingStatus {
+  is_running: boolean;
+  run_id: string | null;
+  current_epoch: number;
+  total_epochs: number;
+  progress: number;
+  loss_history: number[];
+  val_loss_history: number[];
+  adv_loss_history: number[];
+  log_history: string[];
+}
+
 const Overview: React.FC = () => {
   const { selectedRun, setSelectedRun } = useGlobalState();
-  const [runs, setRuns] = useState<any[]>([]);
+  const [runs, setRuns] = useState<RunDetails[]>([]);
   const [activeTab, setActiveTab] = useState<'analysis' | 'inference'>('analysis');
   const [isStartingNew, setIsStartingNew] = useState(false);
-  const [trainingStatus, setTrainingStatus] = useState<any>(null);
-  const [runDetails, setRunDetails] = useState<any>(null);
+  const [trainingStatus, setTrainingStatus] = useState<TrainingStatus | null>(null);
+  const [runDetails, setRunDetails] = useState<RunDetails | null>(null);
 
   const fetchRuns = useCallback(async () => {
     try {
@@ -50,14 +81,17 @@ const Overview: React.FC = () => {
   }, [selectedRun, isStartingNew, setSelectedRun]);
 
   useEffect(() => {
+    // Initial fetch
     fetchRuns();
     fetchTrainingStatus();
+    
     const interval = setInterval(() => {
       fetchRuns();
       fetchTrainingStatus();
     }, 5000);
     return () => clearInterval(interval);
-  }, [fetchRuns, fetchTrainingStatus]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount to avoid sync effect warnings
 
   useEffect(() => {
     if (selectedRun) {
@@ -65,7 +99,7 @@ const Overview: React.FC = () => {
         setRunDetails(details);
       });
     } else {
-      setRunDetails(null);
+      setRunDetails(prev => prev !== null ? null : prev);
     }
   }, [selectedRun]);
 
@@ -143,7 +177,7 @@ const Overview: React.FC = () => {
               </div>
 
               <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                <div className="run-tag" style={{ fontSize: '0.6rem' }}><Clock size={10} /> {new Date(run.created_at).toLocaleDateString()}</div>
+                <div className="run-tag" style={{ fontSize: '0.6rem' }}><Clock size={10} /> {new Date(run.created_at || '').toLocaleDateString()}</div>
                 {run.eval_pck && (
                   <div className="run-tag" style={{ fontSize: '0.6rem', background: 'rgba(194, 239, 78, 0.1)', color: 'var(--accent-lime)' }}>PCK: {(run.eval_pck * 100).toFixed(1)}%</div>
                 )}
@@ -207,8 +241,8 @@ const Overview: React.FC = () => {
                       <RunAnalysis 
                         key={selectedRun}
                         details={runDetails || { id: selectedRun }} 
-                        isActive={trainingStatus?.is_running && trainingStatus.run_id === selectedRun}
-                        trainingStatus={trainingStatus}
+                        isActive={!!(trainingStatus?.is_running && trainingStatus.run_id === selectedRun)}
+                        trainingStatus={trainingStatus || undefined}
                       />
                     </motion.div>
                   ) : (

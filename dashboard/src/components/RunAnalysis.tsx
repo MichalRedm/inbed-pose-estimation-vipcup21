@@ -21,16 +21,20 @@ import {
   Cell
 } from 'recharts';
 import { evaluateModel } from '../services/api';
+import type { RunDetails } from '../pages/Overview';
 
 interface RunAnalysisProps {
-  details: {
-    id: string;
-    config?: any;
-    evaluation?: any;
-    history?: any[];
-  };
+  details: RunDetails;
   isActive?: boolean;
-  trainingStatus?: any;
+  trainingStatus?: {
+    current_epoch: number;
+    total_epochs: number;
+    progress: number;
+    loss_history: number[];
+    val_loss_history: number[];
+    adv_loss_history: number[];
+    log_history: string[];
+  };
 }
 
 const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingStatus }) => {
@@ -38,13 +42,13 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
   const [showConfig, setShowConfig] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
   // Local override set by "Re-evaluate"; falls back to prop data
-  const [localEvalOverride, setLocalEvalOverride] = useState<any>(null);
+  const [localEvalOverride, setLocalEvalOverride] = useState<RunDetails['evaluation'] | null>(null);
 
   // Reset the override when run changes (key prop also handles this but this is belt-and-suspenders)
   useEffect(() => {
-    setLocalEvalOverride(null);
-    setShowLogs(false);
-    setShowConfig(false);
+    setLocalEvalOverride(prev => prev !== null ? null : prev);
+    setShowLogs(prev => prev !== false ? false : prev);
+    setShowConfig(prev => prev !== false ? false : prev);
   }, [details.id]);
 
   const evalResults = localEvalOverride ?? details.evaluation;
@@ -60,11 +64,11 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
       }));
     }
     // History entries are objects: {epoch, loss, val_loss, val_pck, loss_pose, ...}
-    return (details.history || []).map((h: any) => ({
+    return (details.history || []).map((h: Record<string, number>) => ({
       epoch: typeof h.epoch === 'number' ? h.epoch : (details.history!.indexOf(h) + 1),
-      loss: typeof h.loss === 'number' ? h.loss : (typeof h.loss_pose === 'number' ? h.loss_pose : null),
-      val_loss: typeof h.val_loss === 'number' ? h.val_loss : (typeof h.val_loss_pose === 'number' ? h.val_loss_pose : null),
-      val_pck: typeof h.val_pck === 'number' ? h.val_pck : null,
+      loss: typeof h.loss === 'number' ? h.loss : (typeof h.loss_pose === 'number' ? h.loss_pose : 0),
+      val_loss: typeof h.val_loss === 'number' ? h.val_loss : (typeof h.val_loss_pose === 'number' ? h.val_loss_pose : 0),
+      adv: 0, // Fallback for historical data
     }));
   })();
 
@@ -83,12 +87,12 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
     }
   };
 
-  const pckData = (evalResults?.per_joint_metrics || []).map((m: any) => ({
+  const pckData = (evalResults?.per_joint_metrics || []).map((m: { name: string; pck: number }) => ({
     name: m.name.replace('_', ' '),
     pck: m.pck * 100
   }));
 
-  const errorData = (evalResults?.per_joint_metrics || []).map((m: any) => ({
+  const errorData = (evalResults?.per_joint_metrics || []).map((m: { name: string; error: number }) => ({
     name: m.name.replace('_', ' '),
     error: m.error
   }));
@@ -186,7 +190,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                       labelStyle={{ color: '#fff' }}
                     />
                     <Bar dataKey="pck" radius={[0, 4, 4, 0]}>
-                      {pckData.map((entry: any, index: number) => (
+                      {pckData.map((entry: { name: string; pck: number }, index: number) => (
                         <Cell key={`cell-${index}`} fill={entry.pck > 80 ? 'var(--accent-lime)' : 'var(--accent-primary)'} />
                       ))}
                     </Bar>
