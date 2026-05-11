@@ -347,6 +347,17 @@ async def get_run_details(run_id: str):
             for cp in checkpoints
         ]
 
+    # Load logs
+    log_file = run_path / "training.log"
+    if log_file.exists():
+        try:
+            with open(log_file, "r", encoding="utf-8") as f:
+                # Return last 500 lines to avoid blowing up the response size
+                lines = f.readlines()
+                details["logs"] = [line.strip() for line in lines[-500:]]
+        except Exception:
+            details["logs"] = ["Error loading logs"]
+
     return details
 
 

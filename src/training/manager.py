@@ -69,8 +69,12 @@ class TrainingManager:
                         final_config[k] = config_overrides[k]
 
         self.is_running = True
+        
+        # Priority: 1. Payload run_id, 2. Config file run_id, 3. Timestamp
         self.current_run_id = (
-            final_config.get("run_id") or f"run_{time.strftime('%Y%m%d_%H%M%S')}"
+            config_overrides.get("run_id") or 
+            final_config.get("run_id") or 
+            f"run_{time.strftime('%Y%m%d_%H%M%S')}"
         )
         self._stop_event.clear()
         self.log_history = []
@@ -216,10 +220,18 @@ class TrainingManager:
                 if line:
                     # Add to log history with timestamp
                     timestamp = time.strftime("%H:%M:%S")
+                    log_line = f"[{timestamp}] {line}"
                     print(f"[TrainingManager] {line}")  # For backend debugging
-                    self.log_history.append(f"[{timestamp}] {line}")
+                    self.log_history.append(log_line)
                     if len(self.log_history) > 1000:
                         self.log_history.pop(0)
+
+                    # Persistence: Write to run-specific log file
+                    if self.current_run_id:
+                        log_dir = project_root / "results" / "runs" / self.current_run_id
+                        log_dir.mkdir(parents=True, exist_ok=True)
+                        with open(log_dir / "training.log", "a", encoding="utf-8") as f:
+                            f.write(log_line + "\n")
 
                     # --- Meaningful Status Extraction ---
 
