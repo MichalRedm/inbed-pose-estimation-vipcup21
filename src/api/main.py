@@ -13,6 +13,7 @@ from pydantic import BaseModel
 import shutil
 import time
 import os
+from fastapi.staticfiles import StaticFiles
 
 # Add project root to sys.path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
@@ -53,11 +54,16 @@ class GPUConfig(BaseModel):
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify the actual origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve static files from runs directory
+runs_static_dir = project_root / "results" / "runs"
+runs_static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static/runs", StaticFiles(directory=str(runs_static_dir)), name="runs")
 
 EVALUATION_CACHE_FILE = project_root / "models" / "evaluation_cache.json"
 
@@ -243,17 +249,24 @@ async def list_runs():
         return {"runs": []}
 
     runs = []
+    # Get current active run from manager
+    active_run_id = training_manager.current_run_id if training_manager.is_running else None
+
     for run_path in sorted(
         runs_dir.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True
     ):
         if not run_path.is_dir():
             continue
 
+        run_id = run_path.name
         run_info = {
-            "id": run_path.name,
+            "id": run_id,
             "created_at": time.ctime(run_path.stat().st_ctime),
+            "status": "active" if run_id == active_run_id else "completed",
             "has_config": (run_path / "config.json").exists(),
             "has_history": (run_path / "history.json").exists(),
+            "has_eval": (run_path / "eval_results.json").exists() or (run_path / "evaluation.json").exists(),
+            "has_audit": (run_path / "visual_audit_best_model.png").exists(),
         }
 
         # Load summary from history if available
@@ -265,8 +278,21 @@ async def list_runs():
                         run_info["epochs"] = len(history)
                         run_info["final_loss"] = history[-1].get("train_loss")
                         run_info["final_val_loss"] = history[-1].get("val_loss")
+                        run_info["final_val_pck"] = history[-1].get("val_pck")
             except Exception:
                 pass
+        
+        if run_info["has_eval"]:
+             try:
+                eval_file = run_path / "eval_results.json"
+                if not eval_file.exists():
+                    eval_file = run_path / "evaluation.json"
+                with open(eval_file, "r") as f:
+                    eval_data = json.load(f)
+                    run_info["eval_pck"] = eval_data.get("pck")
+                    run_info["eval_mpjpe"] = eval_data.get("mpjpe")
+             except Exception:
+                 pass
 
         runs.append(run_info)
 
@@ -290,6 +316,19 @@ async def get_run_details(run_id: str):
     if (run_path / "history.json").exists():
         with open(run_path / "history.json", "r") as f:
             details["history"] = json.load(f)
+
+    # Load evaluation results (check both standard filenames)
+    eval_file = run_path / "eval_results.json"
+    if not eval_file.exists():
+        eval_file = run_path / "evaluation.json"
+        
+    if eval_file.exists():
+        with open(eval_file, "r") as f:
+            details["evaluation"] = json.load(f)
+
+    # Visual audit path
+    if (run_path / "visual_audit_best_model.png").exists():
+        details["visual_audit_url"] = f"/static/runs/{run_id}/visual_audit_best_model.png"
 
     # List checkpoints
     ckpt_dir = run_path / "checkpoints"
@@ -748,19 +787,20 @@ async def predict(
         
         # Determine image size and decoding method from run config
         model_image_size = (256, 256)
-        decode_method = "argmax"  # safe default for standard heatmap MSE models
+        # Default to argmax for Heatmap models (more robust peak detection)
+        decode_method = "argmax"
         if checkpoint_path and (checkpoint_path.parent.parent / "config.json").exists():
             with open(checkpoint_path.parent.parent / "config.json", "r") as f:
                 run_cfg = json.load(f)
                 model_image_size = tuple(run_cfg.get("dataset", {}).get("image_size", [256, 256]))
-                # Use soft-argmax only for models trained with sigma curriculum
-                # (sigma_start/sigma_end keys present in training config)
-                train_cfg = run_cfg.get("training", {})
-                if "sigma_start" in train_cfg or "sigma_end" in train_cfg:
+                # For future flexibility, we could add a "decode_method" field to config.json
+                # For now, we prefer argmax for all HRNet heatmap models as soft-argmax
+                # without high temperature causes joint clustering.
+                if run_cfg.get("training", {}).get("force_soft_argmax", False):
                     decode_method = "soft-argmax"
-                    print(f"[API] Using soft-argmax decoding for {run_id} (sigma curriculum detected)")
+                    print(f"[API] Forced soft-argmax decoding for {run_id}")
                 else:
-                    print(f"[API] Using argmax decoding for {run_id} (standard heatmap model)")
+                    print(f"[API] Using argmax decoding for {run_id} (Heatmap standard)")
 
         image_resized = image.resize(model_image_size)
         # (1, 1, H, W)

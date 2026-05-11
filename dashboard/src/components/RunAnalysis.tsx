@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Target, 
   FileJson, 
@@ -38,7 +38,17 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
   const [showLogs, setShowLogs] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
-  const [evalResults, setEvalResults] = useState(details.evaluation);
+  // Local override set by "Re-evaluate"; falls back to prop data
+  const [localEvalOverride, setLocalEvalOverride] = useState<any>(null);
+
+  // Reset the override when run changes (key prop also handles this but this is belt-and-suspenders)
+  useEffect(() => {
+    setLocalEvalOverride(null);
+    setShowLogs(false);
+    setShowConfig(false);
+  }, [details.id]);
+
+  const evalResults = localEvalOverride ?? details.evaluation;
 
   // Build chart data from history - API returns objects with named fields
   const chartData = (() => {
@@ -65,7 +75,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
     setIsEvaluating(true);
     try {
       const results = await evaluateModel('val', undefined, details.id, true);
-      setEvalResults(results);
+      setLocalEvalOverride(results);
     } catch (error) {
       console.error('Evaluation failed:', error);
       alert('Evaluation failed');
@@ -181,7 +191,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                   <BarChart data={errorData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" vertical={false} />
                     <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={9} tick={{ angle: -45, textAnchor: 'end' }} height={60} interval={0} />
-                    <YAxis stroke="var(--text-secondary)" fontSize={10} />
+                    <YAxis stroke="var(--text-secondary)" fontSize={10} domain={['auto', 'auto']} />
                     <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ background: 'var(--bg-secondary)', border: 'none', borderRadius: '8px' }} />
                     <Bar dataKey="error" fill="var(--accent-pink)" radius={[4, 4, 0, 0]} />
                   </BarChart>

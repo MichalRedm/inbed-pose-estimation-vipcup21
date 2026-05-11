@@ -205,6 +205,7 @@ const Overview: React.FC = () => {
                   {activeTab === 'analysis' ? (
                     <motion.div key="analysis" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                       <RunAnalysis 
+                        key={selectedRun}
                         details={runDetails || { id: selectedRun }} 
                         isActive={trainingStatus?.is_running && trainingStatus.run_id === selectedRun}
                         trainingStatus={trainingStatus}
