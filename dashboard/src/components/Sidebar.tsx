@@ -49,9 +49,13 @@ const Sidebar: React.FC = () => {
             className={({ isActive }) => 
               `nav-item ${isActive ? 'active' : ''}`
             }
-          >
-            <item.icon size={22} strokeWidth={isActive ? 2.5 : 2} />
-            <span className="nav-label">{item.name}</span>
+            >
+            {({ isActive }) => (
+              <>
+                <item.icon size={22} strokeWidth={isActive ? 2.5 : 2} />
+                <span className="nav-label">{item.name}</span>
+              </>
+            )}
           </NavLink>
         ))}
       </nav>
