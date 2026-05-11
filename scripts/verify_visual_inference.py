@@ -10,8 +10,8 @@ import os
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.models import build_model
-from src.utils import decode_heatmaps, draw_pose
+from src.models import build_model  # noqa: E402
+from src.utils import decode_heatmaps, draw_pose  # noqa: E402
 
 
 def verify_inference(run_id, image_path, output_dir="results/debug_inference"):
