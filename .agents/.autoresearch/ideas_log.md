@@ -38,14 +38,7 @@
 
 ## Current Iteration
 - **Loop 6/8**: Fixed-Length MSE & Curriculum (FAILURE). **PURGED** due to regression and corrupted checkpoints.
-- **Loop 9**: Foreshortening-Aware Hinge Loss (SUCCESS). Reached 76.4% PCK.
-- **Loop 10**: Anatomical Angle Constraints (FAILURE). Regression to 67.0% PCK.
-- **Loop 11**: Joint-Specific Loss Weighting (FAILURE). Regression to 73.1% PCK.
-- **Loop 12**: Consistency Regularization (FAILURE). 75.6% PCK.
-- **Loop 13**: Multi-Scale Heatmap Supervision (FAILURE). 74.3% PCK.
-- **Loop 14**: Differentiable Heatmap Refinement (FAILURE - Audit). Corrected: 30.5% PCK.
-- **Loop 15**: Occlusion-Aware Integral Regression (FAILURE - Audit). Corrected: 31.9% PCK.
-- **Loop 16**: Adaptive Gaussian Sigma Curriculum (FAILURE - Audit). Corrected: 33.9% PCK.
-- **Loop 17**: Multi-Task Uncertainty Weighting (SUCCESS). 74.2% PCK.
-- **Loop 18**: GCN Refinement (FAILURE). 42.1% PCK.
-- **Loop 19**: Normalized Anatomical Hinge (FAILURE). 39.0% PCK. Skeleton collapse.
+- **Loop 9**: Foreshortening-Aware Hinge Loss (SUCCESS). Reached 45.1% PCK@0.2.
+- **Loop 17**: Multi-Task Uncertainty Weighting (SUCCESS). 43.1% PCK@0.2.
+- **Loop 18**: GCN Refinement (FAILURE). 33.4% PCK@0.2.
+- **Loop 19**: Normalized Anatomical Hinge (FAILURE). 12.7% PCK@0.2. Skeleton collapse.

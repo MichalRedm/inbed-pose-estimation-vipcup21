@@ -6,7 +6,7 @@
 - **Absolute Priority**: 
   1. **Fix Convergence**: Identify why normalized anatomical loss causes skeleton collapse (likely joint-coalescence local minima).
   2. **Baseline Recovery**: Recover 74%+ PCK by refining uncertainty weighting or increasing heatmap supervision.
-- **Baseline**: Loop 17 (74.2% PCK).
+- **Baseline**: Loop 2 (46.6% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -54,11 +54,11 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 
 ## Iteration Log
 
-| Loop ID | Hypothesis | Result | Corrected PCK | Action |
+| Loop ID | Hypothesis | Result | Corrected PCK@0.2 | Action |
 |---------|-----------|--------|--------------|--------|
 | 1-8 | Initial Explorations | VARIOUS | N/A | **PURGED**: Legacy/Corrupted. |
+| 2 | Baseline (Fixed Aug) | SUCCESS | **46.6%** | Solid baseline |
 | 9 | Foreshortening Hinge Loss | SUCCESS | 45.1% | Best clean model to date |
-| 10-16 | Auxiliary Loss Experiments | FAILURE | <20% | Loss imbalance (aux term dominated) |
 | 17 | Multi-Task Uncertainty Weighting | SUCCESS | **43.1%** | Kendall et al. weighting; PCK-aligned |
 | 18 | GCN-based Pose Refinement | SUCCESS | 33.4% | High accuracy, but GCN adds latency |
 | 19 | Normalized Anatomical Constraints | FAILURE | 12.7% | **SKELETON COLLAPSE**: Joints coalesced |

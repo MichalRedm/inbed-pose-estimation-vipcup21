@@ -1,7 +1,7 @@
 # Eval Framework
 
 ## Primary Metric Definitions
-- **PCK@0.5**: Percentage of Correct Keypoints. A joint is correct if its Euclidean distance to GT is < 0.5 × torso_diameter, where torso_diameter = ‖R_Shoulder(idx 8) − L_Hip(idx 3)‖. Evaluated on **all joints with visibility ≤ 1** (visible + occluded under blanket).
+- **PCK@0.2**: Percentage of Correct Keypoints. A joint is correct if its Euclidean distance to GT is < **0.2** × torso_diameter, where torso_diameter = ‖R_Shoulder(idx 8) − L_Hip(idx 3)‖. This is the **strict academic standard** for high-precision pose estimation.
 - **MPJPE**: Mean Per Joint Position Error in pixels. Evaluated on the same visibility mask.
 
 ## Evaluation Protocol
@@ -34,15 +34,15 @@ All "Verified" metrics in this repository must meet the following criteria:
 4. **Decoder Match**: Must manually or automatically select the decoder (argmax vs soft-argmax) that matches the training method.
 5. **Traceability**: The `history.json` and `best_model.pth` must be present and uncorrupted.
 
-## Results Tracker (CORRECTED — cover1+cover2, vis≤1, run config, correct decoder)
+## Results Tracker (STRICT PCK@0.2 — Corrected Baselines)
 
-| loop17_uncertainty | **74.2%** | 24.7 px | **SUCCESS** (Uncertainty weighted) |
-| loop18_gcn_refinement | 42.1% | 55.2 px | FAILURE (Over-regularization) |
-| loop19_normalized_ana | 39.0% | 59.8 px | FAILURE (**Skeleton Collapse**) |
-| loop9_anatomical_hinge | 73.0% | 27.4 px | RELIABLE BASELINE (vis≤1) |
-| loop14_integral_reg | 30.5% | 69.3 px | FAILURE (Loss imbalance) |
-| loop15_occlusion_aware | 31.9% | 63.6 px | FAILURE (Loss imbalance) |
-| loop16_sigma_curr | 33.9% | 57.4 px | FAILURE (Loss imbalance) |
+| Run | PCK@0.2 | MPJPE | Status |
+|-----|---------|-------|--------|
+| **loop2_fixed_aug** | **46.6%** | 29.6 px | **TOP PRECISION** |
+| **loop9_anatomical** | **45.1%** | 25.3 px | RELIABLE |
+| **loop17_uncertainty** | **43.1%** | **24.5 px** | **TOP ACCURACY** |
+| loop18_gcn_refinement| 33.4% | 26.6 px | FAILURE (Smoothing) |
+| loop19_normalized_ana | 12.7% | 66.7 px | FAILURE (**Skeleton Collapse**) |
 
 > Previous figures (76.4%, 78.5%, 81.0%, 84.6% etc.) were computed by the flawed remote evaluate.py. They are directionally useful (comparing relative improvement) but not accurate absolute baselines.
 

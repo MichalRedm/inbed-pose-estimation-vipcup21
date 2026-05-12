@@ -14,9 +14,9 @@
 ## Hard Constraints
 - **Training domain**: Uncovered images only (cover = "uncover"), subjects 1–80
 - **Validation domain**: Covered images ONLY (cover1 + cover2), subjects 81–90 — this is the task objective
-- **Evaluation**: Always use run's own `config.json`, not global `load_config()`. Always use vis≤1 mask.
+- **Evaluation**: Always use run's own `config.json`, or the embedded `decoding_config` in the checkpoint. Threshold standard: **PCK@0.2**.
 - **Anatomical priors**: Must use normalized [0,1] coordinate space if implementing coordinate-space constraints
-- **Remote GPU**: Use Kaggle T4 for training (40s/epoch typical). Local CPU only for quick eval/debug.
+- **Remote GPU**: Use Kaggle T4 for training (40s/epoch typical). Be sure to wait for the training to finish before proceeding to the next step.
 - **Environment**: Use `.venv\Scripts\python.exe` for all local backend services (API, Training Manager) to ensure strict dependency parity.
 - **Paths**: `scripts/evaluate.py` requires absolute paths for reliable visual audit plot generation.
 
@@ -40,9 +40,10 @@
 - Very small final sigma (e.g., σ=1.0 in 64×64 space) produces very sparse, peaked heatmaps — good for localization but sensitive to model convergence.
 
 ### Checkpointing
-- `best_model.pth` checkpoint format: `{model_state_dict, config, best_val_pck, best_val_loss, optimizer_state_dict}`
+- **Self-Contained Checkpoints (2026-05-12)**: `best_model.pth` now bundles `{model_state_dict, config, decoding_config, metrics}`.
+- **Decoding Autopilot**: `src/models/__init__.py → load_model_for_inference` and `scripts/evaluate.py` automatically load `decoding_config` (method, temperature) from the checkpoint.
 - Per-epoch checkpoints: `epoch_N.pth` (same format)
-- Remote training (Kaggle): historically only downloads `best_model.pth` — individual epoch checkpoints may be unavailable locally. `epoch_1.pth` for loop16 is corrupted (partial download).
+- Remote training (Kaggle): historically only downloads `best_model.pth`.
 
 ### Data
 - **Joint convention**: LSP 14-joint order. Index 0=R_Ankle ... 13=Head. Visibility: 0=visible, 1=occluded, 2=missing/OOB.
