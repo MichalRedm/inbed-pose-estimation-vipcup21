@@ -133,9 +133,22 @@ class StandardTrainer(BaseTrainer):
             targets = batch["target"].to(self.device)
             sigma = 2.0
 
-        outputs = self.model(images)
-        loss_pose = self.criterion(outputs, targets)
+        # Forward pass
+        model_to_call = (
+            self.model.module if hasattr(self.model, "module") else self.model
+        )
 
+        if (
+            hasattr(model_to_call, "forward")
+            and "return_refined" in model_to_call.forward.__code__.co_varnames
+        ):
+            outputs, pred_coords = self.model(images, return_refined=True)
+            using_model_coords = True
+        else:
+            outputs = self.model(images)
+            using_model_coords = False
+
+        loss_pose = self.criterion(outputs, targets)
         metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
 
         if self.use_uncertainty:
@@ -145,7 +158,9 @@ class StandardTrainer(BaseTrainer):
 
         # 1. Coordinate regression loss
         if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
-            pred_coords = self.soft_argmax(outputs)
+            if not using_model_coords:
+                pred_coords = self.soft_argmax(outputs)
+
             gt_coords = joints[:, :2, :].permute(0, 2, 1)
             visibility = joints[:, 2, :]
 
@@ -207,9 +222,22 @@ class StandardTrainer(BaseTrainer):
             targets = batch["target"].to(self.device)
             sigma = 2.0
 
-        outputs = self.model(images)
-        loss_pose = self.criterion(outputs, targets)
+        # Forward pass
+        model_to_call = (
+            self.model.module if hasattr(self.model, "module") else self.model
+        )
 
+        if (
+            hasattr(model_to_call, "forward")
+            and "return_refined" in model_to_call.forward.__code__.co_varnames
+        ):
+            outputs, pred_coords = self.model(images, return_refined=True)
+            using_model_coords = True
+        else:
+            outputs = self.model(images)
+            using_model_coords = False
+
+        loss_pose = self.criterion(outputs, targets)
         metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
 
         if self.use_uncertainty:
@@ -218,7 +246,9 @@ class StandardTrainer(BaseTrainer):
             loss = loss_pose
 
         if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
-            pred_coords = self.soft_argmax(outputs)
+            if not using_model_coords:
+                pred_coords = self.soft_argmax(outputs)
+
             gt_coords = joints[:, :2, :].permute(0, 2, 1)
             visibility = joints[:, 2, :]
 
@@ -274,7 +304,7 @@ class StandardTrainer(BaseTrainer):
                 f"[Trainer] Checkpoint saving criterion: best val PCK (decoder: {decode_method})"
             )
 
-        for epoch in range(self.epochs):
+        for epoch in range(self.start_epoch, self.epochs):
             self.current_epoch = epoch
             train_metrics = self.train_epoch(train_loader, epoch)
             val_metrics = {}
@@ -291,9 +321,20 @@ class StandardTrainer(BaseTrainer):
                     log_str += " | " + " ".join(
                         [f"val_{k}={v:.4f}" for k, v in val_metrics.items()]
                     )
+                # Stream comprehensive JSON summary to sidecar file
+                summary_payload = {
+                    "epoch": epoch + 1,
+                    "progress": 1.0,
+                    "is_summary": True,
+                }
+                summary_payload.update(train_metrics)
+                if val_metrics:
+                    summary_payload.update(
+                        {f"val_{k}": v for k, v in val_metrics.items()}
+                    )
                 if val_pck is not None:
-                    log_str += f" | val_pck={val_pck * 100:.2f}%"
-                print(log_str)
+                    summary_payload["val_pck"] = val_pck
+                self._stream_metric(summary_payload)
 
                 # is_best: PCK improved (primary) or loss improved if no PCK yet
                 val_loss = val_metrics.get("loss", float("inf"))

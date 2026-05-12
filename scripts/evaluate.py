@@ -1,9 +1,9 @@
 """
 evaluate.py — Evaluate a trained pose estimation model on the validation set.
 
-Metric: PCK@0.5 (Percentage of Correct Keypoints)
+Metric: PCK@0.2 (Percentage of Correct Keypoints)
   A predicted joint is "correct" if its distance to ground truth is within
-  50% of the torso diameter (right shoulder midpoint to left hip midpoint).
+  20% of the torso diameter (right shoulder midpoint to left hip midpoint).
 
 Usage:
   # Evaluate a specific run (recommended — uses the run's own config):
@@ -45,7 +45,7 @@ R_SHOULDER = 8
 L_HIP = 3
 
 
-def compute_pck(pred_joints, gt_joints, threshold=0.5):
+def compute_pck(pred_joints, gt_joints, threshold=0.2):
     """
     Compute PCK@threshold per joint.
 
@@ -97,7 +97,7 @@ def load_run_config(checkpoint_path: Path):
     to the run's config.json, then the global default.
     """
     if checkpoint_path.exists():
-        state = torch.load(checkpoint_path, map_location="cpu")
+        state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         if isinstance(state, dict) and "config" in state:
             return state["config"], state
     # Fallback: run-level config.json
@@ -106,7 +106,9 @@ def load_run_config(checkpoint_path: Path):
         with open(run_config) as f:
             cfg = json.load(f)
         return cfg, None
-    # Last resort: global default
+    from src.utils import load_config
+
+    return load_config(), None
 
 
 def calculate_skeleton_spread(joints):
@@ -174,7 +176,7 @@ def evaluate(
     checkpoint_path,
     data_root=None,
     batch_size=16,
-    pck_threshold=0.5,
+    pck_threshold=0.2,
     save_json=None,
     decode_method_override=None,
 ):
@@ -186,8 +188,17 @@ def evaluate(
     image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
     data_root = data_root or dataset_cfg.get("root", "data/raw")
     s_val = dataset_cfg.get("subjects_val", [81, 90])
-    # Default to argmax for all evaluations unless specifically overridden
-    decode_method = decode_method_override or "argmax"
+    # Use decoding config from checkpoint if available, otherwise default
+    decode_method = decode_method_override
+    decode_temp = 10.0
+    if state is not None and "decoding_config" in state:
+        d_cfg = state["decoding_config"]
+        if decode_method is None:
+            decode_method = d_cfg.get("method", "argmax")
+        decode_temp = d_cfg.get("temperature", 10.0)
+
+    if decode_method is None:
+        decode_method = "argmax"
 
     # --- Setup Device & Distributed ---
     rank = int(os.environ.get("RANK", -1))
@@ -216,7 +227,7 @@ def evaluate(
         print(f"Loading: {checkpoint_path}")
 
     if state is None:
-        state = torch.load(checkpoint_path, map_location=device)
+        state = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     if isinstance(state, dict) and "model_state_dict" in state:
         state_dict = state["model_state_dict"]
@@ -227,7 +238,7 @@ def evaluate(
     if any(k.startswith("module.") for k in state_dict.keys()):
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
 
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict, strict=False)
 
     if is_distributed:
         model = torch.nn.parallel.DistributedDataParallel(
@@ -294,17 +305,42 @@ def evaluate(
             if joints is None:
                 continue
 
-            outputs = model(images)
+            model_to_call = model.module if is_distributed else model
+            if (
+                hasattr(model_to_call, "forward")
+                and "return_refined" in model_to_call.forward.__code__.co_varnames
+            ):
+                outputs, refined_coords = model(images, return_refined=True)
+                preds = refined_coords.cpu()
+                using_refined = True
+            else:
+                outputs = model(images)
+                import matplotlib.pyplot as plt
+
+                plt.imsave(
+                    "debug_heatmap_raw.png", outputs[0, 0].cpu().numpy(), cmap="hot"
+                )
+                print(
+                    f"DEBUG: Saved debug_heatmap_raw.png. Max={outputs.max().item():.4f}"
+                )
+                using_refined = False
 
             if targets is not None:
+                # Use heatmaps for loss calculation
                 total_loss += criterion(outputs, targets).item()
                 num_batches += 1
 
-            raw_model = model.module if is_distributed else model
-            if raw_model.output_type == "heatmap":
-                preds = decode_heatmaps(outputs.cpu(), image_size, method=decode_method)
-            else:
-                preds = outputs.cpu()
+            if not using_refined:
+                raw_model = model.module if is_distributed else model
+                if raw_model.output_type == "heatmap":
+                    preds = decode_heatmaps(
+                        outputs.cpu(),
+                        image_size,
+                        method=decode_method,
+                        temperature=decode_temp,
+                    )
+                else:
+                    preds = outputs.cpu()
 
             p_pck, p_count, _ = compute_pck(preds, joints, threshold=pck_threshold)
 
@@ -388,7 +424,9 @@ def evaluate(
             "per_joint_pck": per_joint_pck.tolist(),
             "per_joint_mpjpe": per_joint_error.tolist(),
             "joint_names": JOINT_NAMES,
-            "visual_audit": str(audit_path.relative_to(project_root)),
+            "visual_audit": str(
+                audit_path.resolve().relative_to(project_root.resolve())
+            ),
         }
 
         if save_json:
@@ -427,8 +465,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--threshold",
         type=float,
-        default=0.5,
-        help="PCK threshold as fraction of torso diameter (default: 0.5)",
+        default=0.2,
+        help="PCK threshold as fraction of torso diameter (default: 0.2)",
     )
     parser.add_argument(
         "--save_json",

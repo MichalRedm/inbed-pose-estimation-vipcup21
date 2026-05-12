@@ -14,6 +14,7 @@ import shutil
 import time
 import os
 from fastapi.staticfiles import StaticFiles
+from typing import Dict, Any
 
 # Add project root to sys.path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
@@ -25,10 +26,9 @@ from src.utils import (  # noqa: E402
     load_config,
     get_training_config,
     save_training_config,
-    decode_heatmaps,
     LSP_JOINT_NAMES,
 )
-from src.models import build_model  # noqa: E402
+from src.models import build_model, load_model_for_inference  # noqa: E402
 from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
 from src.training.trainer import PoseTrainer  # noqa: E402
@@ -59,6 +59,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def format_evaluation_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """Helper to format raw evaluation metrics for dashboard display."""
+    pj_pck = metrics.get("per_joint_pck")
+    pj_error = metrics.get("per_joint_error", metrics.get("per_joint_mpjpe"))
+    j_names = metrics.get("joint_names", LSP_JOINT_NAMES)
+
+    if pj_pck is not None and pj_error is not None:
+        metrics["per_joint_metrics"] = [
+            {"name": name, "pck": float(pck), "error": float(error)}
+            for name, pck, error in zip(j_names, pj_pck, pj_error)
+        ]
+
+        # Clean up original arrays for JSON serialization
+        if "per_joint_pck" in metrics:
+            del metrics["per_joint_pck"]
+        if "per_joint_error" in metrics:
+            del metrics["per_joint_error"]
+        if "per_joint_mpjpe" in metrics:
+            del metrics["per_joint_mpjpe"]
+
+    # Convert other metrics to float for JSON
+    for key in ["loss", "mpjpe", "pck"]:
+        if key in metrics and metrics[key] is not None:
+            metrics[key] = float(metrics[key])
+
+    return metrics
+
 
 # Serve static files from runs directory
 runs_static_dir = project_root / "results" / "runs"
@@ -327,7 +356,7 @@ async def get_run_details(run_id: str):
 
     if eval_file.exists():
         with open(eval_file, "r") as f:
-            details["evaluation"] = json.load(f)
+            details["evaluation"] = format_evaluation_metrics(json.load(f))
 
     # Visual audit path
     if (run_path / "visual_audit_best_model.png").exists():
@@ -346,6 +375,17 @@ async def get_run_details(run_id: str):
             }
             for cp in checkpoints
         ]
+
+    # Load logs
+    log_file = run_path / "training.log"
+    if log_file.exists():
+        try:
+            with open(log_file, "r", encoding="utf-8") as f:
+                # Return last 500 lines to avoid blowing up the response size
+                lines = f.readlines()
+                details["logs"] = [line.strip() for line in lines[-500:]]
+        except Exception:
+            details["logs"] = ["Error loading logs"]
 
     return details
 
@@ -411,11 +451,7 @@ async def evaluate_model(
             raise HTTPException(
                 status_code=404, detail=f"Checkpoint not found at {checkpoint_path}"
             )
-        state = torch.load(checkpoint_path, map_location=device)
-        if isinstance(state, dict) and "model_state_dict" in state:
-            model.load_state_dict(state["model_state_dict"])
-        else:
-            model.load_state_dict(state)
+        model = load_model_for_inference(str(checkpoint_path), device, eval_config)
 
     if remote:
         if not run_id:
@@ -459,18 +495,8 @@ async def evaluate_model(
         trainer = PoseTrainer(model, device=device, config=eval_config)
         metrics = trainer.evaluate(loader)
 
-    # Format per-joint metrics for display if they exist
-    if "per_joint_error" in metrics:
-        metrics["per_joint_metrics"] = [
-            {"name": name, "pck": float(pck), "error": float(error)}
-            for name, pck, error in zip(
-                LSP_JOINT_NAMES, metrics["per_joint_pck"], metrics["per_joint_error"]
-            )
-        ]
-
-        # Clean up numpy arrays for JSON serialization
-        del metrics["per_joint_pck"]
-        del metrics["per_joint_error"]
+    # Format per-joint metrics for display
+    metrics = format_evaluation_metrics(metrics)
 
     # Convert other metrics to float for JSON
     for key in ["loss", "mpjpe", "pck"]:
@@ -688,25 +714,26 @@ async def startup_event():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Initialize model using factory
-    model = build_model(config).to(device)
-
     # Find latest checkpoint
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
     checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
 
     if not checkpoints:
+        # Initialize model using factory if no checkpoints
+        model = build_model(config).to(device)
+        # Wrap to ensure consistent output format (joints instead of heatmaps)
+        from src.models import PoseDecodingWrapper
+
+        model = PoseDecodingWrapper(
+            model, config.get("model", {}).get("hrnet", {}).get("decoding_config", {})
+        )
         print(
             f"WARNING: No checkpoints found in {checkpoint_dir}. Model will use random weights."
         )
     else:
         latest_checkpoint = checkpoints[-1]
         print(f"Loading checkpoint: {latest_checkpoint}")
-        state = torch.load(latest_checkpoint, map_location=device)
-        if isinstance(state, dict) and "model_state_dict" in state:
-            model.load_state_dict(state["model_state_dict"])
-        else:
-            model.load_state_dict(state)
+        model = load_model_for_inference(str(latest_checkpoint), device, config)
 
     model.eval()
 
@@ -790,26 +817,14 @@ async def predict(
             if checkpoints:
                 checkpoint_path = checkpoints[-1]
 
-        # Determine image size and decoding method from run config
+        # Determine image size from run config
         model_image_size = (256, 256)
-        # Default to argmax for Heatmap models (more robust peak detection)
-        decode_method = "argmax"
         if checkpoint_path and (checkpoint_path.parent.parent / "config.json").exists():
             with open(checkpoint_path.parent.parent / "config.json", "r") as f:
                 run_cfg = json.load(f)
                 model_image_size = tuple(
                     run_cfg.get("dataset", {}).get("image_size", [256, 256])
                 )
-                # For future flexibility, we could add a "decode_method" field to config.json
-                # For now, we prefer argmax for all HRNet heatmap models as soft-argmax
-                # without high temperature causes joint clustering.
-                if run_cfg.get("training", {}).get("force_soft_argmax", False):
-                    decode_method = "soft-argmax"
-                    print(f"[API] Forced soft-argmax decoding for {run_id}")
-                else:
-                    print(
-                        f"[API] Using argmax decoding for {run_id} (Heatmap standard)"
-                    )
 
         image_resized = image.resize(model_image_size)
         # (1, 1, H, W)
@@ -860,15 +875,10 @@ async def predict(
                             f"[API] Warning: Failed to load run config, using global: {e}"
                         )
 
-            # Build new model
-            model = build_model(current_config).to(device)
-            # Load state dict
-            state = torch.load(checkpoint_path, map_location=device)
-            if isinstance(state, dict) and "model_state_dict" in state:
-                model.load_state_dict(state["model_state_dict"])
-            else:
-                model.load_state_dict(state)
-            model.eval()
+            # Load model for inference (automatically applies wrapper)
+            model = load_model_for_inference(
+                str(checkpoint_path), device, current_config
+            )
 
             # Update container
             model_container[model_key] = {"model": model, "mtime": file_mtime}
@@ -890,14 +900,8 @@ async def predict(
             )
 
         with torch.no_grad():
-            outputs = model(img_tensor)
-            if model.output_type == "heatmap":
-                preds = decode_heatmaps(
-                    outputs.cpu(), model_image_size, method=decode_method
-                )
-            else:
-                # Direct coordinates (1, 14, 2)
-                preds = outputs.cpu()
+            # PoseDecodingWrapper returns joints (B, J, 2)
+            preds = model(img_tensor).cpu()
 
         # Rescale predictions to original image size
         # preds is (1, 14, 2) in model_image_size space

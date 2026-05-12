@@ -47,6 +47,7 @@ interface TrainingStatus {
   val_loss_history: number[];
   adv_loss_history: number[];
   log_history: string[];
+  current_metrics?: Record<string, number | string>;
 }
 
 const Overview: React.FC = () => {

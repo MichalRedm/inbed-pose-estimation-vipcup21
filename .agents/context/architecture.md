@@ -17,10 +17,11 @@ The project uses the High-Resolution Net (HRNet) backbone, which is specifically
 - The model is designed to be modality-agnostic or multi-modal (input channels adjustable via config).
 - Current configuration supports **RGB** and **IR** (LWIR).
     
-## Inference API
-- **Framework**: FastAPI
-- **Capability**: Serving the trained HRNet model for real-time keypoint prediction.
-  - Image Upload -> Resize (256x256) -> Model Inference (Heatmaps) -> Decoding -> Coordinate Rescaling -> JSON Response.
+## Inference Architecture
+- **Self-Contained Decoding**: Models are wrapped in a `PoseDecodingWrapper` during inference. This wrapper encapsulates the heatmap-to-coordinate transformation (decoding), ensuring consistent behavior across different architectures and environments.
+- **Decoding Configuration**: Every checkpoint (`.pth`) stores its optimal `decoding_config` (method, temperature, image size).
+- **Loading**: The `src.models.load_model_for_inference` helper automatically detects the configuration and applies the wrapper.
+- **Workflow**: Image Upload -> Preprocess -> Wrapped Model Forward (direct coordinates) -> Coordinate Rescaling -> JSON Response.
 
 ## Training Pipeline
 - **Unified Entry Point**: `scripts/train.py` handles all training setups via a polymorphic factory.

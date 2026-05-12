@@ -178,3 +178,4 @@ node_modules/
 .npm/
 pretrained_models/
 configs/loop*_anatomical.yaml
+configs/runs/

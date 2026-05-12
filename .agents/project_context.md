@@ -20,14 +20,18 @@ Stabilize the multi-task pose estimation pipeline by reconciling previous evalua
 - [x] Implemented Gaussian Sigma Curriculum (3.0 -> 1.0).
 - [x] Automated evaluation trigger in remote training pipeline.
 - [x] Implemented Soft-Argmax decoding for robust inference.
-- [x] **Verified all previous baselines using corrected evaluation framework.**
-- [x] **Implemented Uncertainty-based multi-task loss weighting (Kendall et al., 2018).**
+- [x] Verified all previous baselines using corrected evaluation framework.
+- [x] Implemented Uncertainty-based multi-task loss weighting (Kendall et al., 2018).
+- [x] Implemented Self-Contained Decoding Wrappers (`PoseDecodingWrapper`).
+- [x] Standardized model loading for inference via `load_model_for_inference`.
+- [x] Retroactively optimized decoding parameters for all existing checkpoints.
 - [ ] Surpass Loop 9 (73.0% PCK) with stabilized Loop 17 training.
 
 ## Dashboard-Driven ML
 - **Real-time Monitoring**: All training and evaluation MUST be performed via the Dashboard API (see `ml_operations.md` rule).
 - **Runs Hub**: The unified hub in the dashboard is the primary source of truth for experiment status, loss curves, and evaluation metrics.
 - **Agent Workflow**: Use the `TrainingManager` via API to trigger runs so that progress is visible to the USER in real-time.
+- **CLI Skill**: Use the [api-client](file:///d:/C/Users/Micha%C5%82/Documents/GitHub/inbed-pose-estimation-vipcup21/.agents/skills/api-client/SKILL.md) skill for standardized command-line interaction with the training pipeline.
 
 ## Critical Secrets Required
 The following must be provided in the root `.env` file:

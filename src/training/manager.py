@@ -5,7 +5,7 @@ import re
 import time
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 
 from src.utils import get_training_config
@@ -21,74 +21,107 @@ class TrainingManager:
         self.adv_loss_history: List[float] = []
         self.log_history: List[str] = []
         self.status_message = "Idle"
+        self.current_metrics: Dict[str, float] = {}
         self.current_run_id: Optional[str] = None
+        self.last_run_id: Optional[str] = self._detect_last_run_id()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
+    def _detect_last_run_id(self) -> Optional[str]:
+        """Scans results/runs for the most recently modified run folder."""
+        try:
+            project_root = Path(__file__).parent.parent.parent
+            runs_dir = project_root / "results" / "runs"
+            if not runs_dir.exists():
+                return None
+
+            runs = [d for d in runs_dir.iterdir() if d.is_dir()]
+            if not runs:
+                return None
+
+            # Sort by modification time of the directory
+            latest_run = max(runs, key=lambda d: d.stat().st_mtime)
+            return latest_run.name
+        except Exception:
+            return None
+
     def start_training(self, config_overrides: Optional[Dict] = None):
+        config_overrides = config_overrides or {}
         if self.is_running:
             return False, "Training already in progress"
 
-        # Load saved config as baseline overrides if nothing is passed or to fill gaps
-        base_overrides = get_training_config()
+        # 1. Start with full default config from disk
+        from src.utils import load_config
 
-        # Merge passed overrides into base
+        final_config = load_config()
+
+        # 2. Merge user_training.json (legacy/frontend settings)
+        user_settings = get_training_config()
+        if "training" not in final_config:
+            final_config["training"] = {}
+
+        # Only merge specific keys from user_settings to avoid overwriting everything
+        for k in ["lr", "epochs", "batch_size", "augmentation"]:
+            if k in user_settings:
+                final_config["training"][k] = user_settings[k]
+
+        if "remote" in user_settings:
+            final_config["remote"] = {"use_remote": user_settings["remote"]}
+
+        # 3. Apply passed overrides (highest priority)
         if config_overrides:
-            # Handle possible nesting from frontend
-            if "training" in config_overrides:
-                base_overrides.update(config_overrides["training"])
-                if "remote" in config_overrides:
-                    base_overrides["remote"] = config_overrides["remote"]
-                if "resume" in config_overrides:
-                    base_overrides["resume"] = config_overrides["resume"]
-            else:
-                base_overrides.update(config_overrides)
+            # If the payload has a 'config_path', load it first
+            if config_overrides.get("config_path"):
+                special_cfg = load_config(config_overrides["config_path"])
+                final_config.update(special_cfg)
 
-        actual_overrides = base_overrides
+            # Then apply direct overrides
+            if "training" in config_overrides:
+                if "training" not in final_config:
+                    final_config["training"] = {}
+                final_config["training"].update(config_overrides["training"])
+
+            # Handle other top-level keys (model, dataset, etc.)
+            for k in ["model", "dataset", "remote", "uda", "run_id"]:
+                if k in config_overrides:
+                    if isinstance(config_overrides[k], dict) and k in final_config:
+                        final_config[k].update(config_overrides[k])
+                    else:
+                        final_config[k] = config_overrides[k]
 
         self.is_running = True
-        self.current_run_id = f"run_{time.strftime('%Y%m%d_%H%M%S')}"
+
+        # Priority: 1. Payload run_id, 2. Config file run_id, 3. Timestamp
+        self.current_run_id = (
+            config_overrides.get("run_id")
+            or final_config.get("run_id")
+            or f"run_{time.strftime('%Y%m%d_%H%M%S')}"
+        )
+        self.last_run_id = self.current_run_id
         self._stop_event.clear()
         self.log_history = []
         self.progress = 0.0
-        self.current_epoch = 0
-        self.total_epochs = 0
+        self.total_epochs = final_config.get("training", {}).get("epochs", 0)
 
         # Load existing history if resuming
-        if actual_overrides and actual_overrides.get("resume"):
-            self.loss_history, self.adv_loss_history = self._load_history_dual()
-            if self.loss_history:
-                self.current_epoch = len(self.loss_history)
+        is_resume = final_config.get("training", {}).get("resume") or final_config.get(
+            "resume"
+        )
+        if is_resume:
+            file_history_dict = self._load_history_dict()
+            if file_history_dict:
+                max_ep = max(file_history_dict.keys())
+                self.loss_history = [None] * max_ep
+                self.adv_loss_history = [None] * max_ep
+                for ep, metrics in file_history_dict.items():
+                    idx = ep - 1
+                    self.loss_history[idx] = metrics["loss"]
+                    self.adv_loss_history[idx] = metrics["adv_loss"]
+                self.current_epoch = max_ep
         else:
             self.loss_history = []
             self.adv_loss_history = []
-
-        # Final structure must follow default.yaml schema
-        # Move training specific keys under 'training' key
-        final_config = {}
-        training_keys = [
-            "lr",
-            "epochs",
-            "batch_size",
-            "weight_decay",
-            "lambda_anatomical",
-            "augmentation",
-        ]
-
-        training_section = {}
-        for k in training_keys:
-            if k in actual_overrides:
-                training_section[k] = actual_overrides[k]
-
-        final_config["training"] = training_section
-
-        # Move project/remote/uda keys to their sections
-        if "remote" in actual_overrides:
-            final_config["remote"] = {"use_remote": actual_overrides["remote"]}
-        if "uda" in actual_overrides:
-            final_config["uda"] = {"enabled": actual_overrides["uda"]}
-            if "lambda_adv" in actual_overrides:
-                final_config["uda"]["lambda_adv"] = actual_overrides["lambda_adv"]
+            self.current_epoch = 0
 
         self._thread = threading.Thread(target=self._run_training, args=(final_config,))
         self._thread.start()
@@ -102,25 +135,148 @@ class TrainingManager:
         self.status_message = "Stopping..."
         return True, "Stop signal sent"
 
-    def get_status(self):
-        # Refresh loss history from file if it's more complete than our in-memory version
+    def _handle_metrics_line(self, line: str):
+        """Parse a dedicated metrics JSON line and update internal state."""
+        try:
+            import json
+            import re
+
+            # Find the JSON part within the line (anything between { and })
+            match = re.search(r"(\{.*\})", line)
+            if not match:
+                return
+
+            json_str = match.group(1)
+            metrics = json.loads(json_str)
+
+            # Safely update current metrics (excluding internal keys)
+            for k, v in metrics.items():
+                if k not in ["epoch", "progress", "is_summary"]:
+                    self.current_metrics[k] = v
+
+            self.current_epoch = metrics.get("epoch", self.current_epoch)
+            self.progress = metrics.get("progress", self.progress)
+
+            # If it's a final epoch summary, safely append to history arrays
+            if metrics.get("is_summary"):
+                idx = self.current_epoch - 1
+                if idx >= 0:
+                    while len(self.loss_history) <= idx:
+                        self.loss_history.append(None)
+                        self.adv_loss_history.append(None)
+
+                    # Fallback keys for different trainers
+                    loss_val = metrics.get(
+                        "loss", metrics.get("train_loss", metrics.get("loss_pose"))
+                    )
+                    if loss_val is not None:
+                        self.loss_history[idx] = float(loss_val)
+                    if "adv_loss" in metrics:
+                        self.adv_loss_history[idx] = float(metrics["adv_loss"])
+
+        except Exception as e:
+            print(f"[TrainingManager] Error parsing metrics stream: {e}")
+
+    def get_status(self) -> Dict[str, Any]:
+        # Always try to restore history from disk if in-memory lists are empty
+        # but we have a valid run to look at.
+        run_id = self.current_run_id or self.last_run_id
+
+        if not self.loss_history and run_id:
+            file_history_dict = self._load_history_dict()
+            if file_history_dict:
+                max_ep = max(file_history_dict.keys())
+                self.loss_history = [None] * max_ep
+                self.adv_loss_history = [None] * max_ep
+                for ep, metrics in file_history_dict.items():
+                    idx = ep - 1
+                    if idx < len(self.loss_history):
+                        self.loss_history[idx] = metrics["loss"]
+                        self.adv_loss_history[idx] = metrics["adv_loss"]
+
+        # Refresh loss history from file using explicit epoch indices to avoid desyncs
         # (Especially useful for remote training where history.json is synced periodically)
-        file_history, file_adv_history = self._load_history_dual()
-        if len(file_history) > len(self.loss_history):
-            self.loss_history = file_history
-            self.adv_loss_history = file_adv_history
+        file_history_dict = self._load_history_dict()
+
+        # Ensure our in-memory list is long enough
+        if file_history_dict:
+            max_epoch_in_file = max(file_history_dict.keys())
+            while len(self.loss_history) < max_epoch_in_file:
+                self.loss_history.append(None)
+                self.adv_loss_history.append(None)
+
+            # Merge disk history into in-memory array at explicit indices
+            for ep, metrics in file_history_dict.items():
+                idx = ep - 1
+                if idx >= 0:
+                    self.loss_history[idx] = metrics["loss"]
+                    self.adv_loss_history[idx] = metrics["adv_loss"]
+
+        # Calculate overall progress: (completed epochs + current epoch progress) / total epochs
+        overall_progress = 0.0
+        if self.total_epochs > 0:
+            completed = max(0, self.current_epoch - 1)
+            # If we are in the middle of an epoch, add the batch progress
+            # Note: self.progress is the 0.0-1.0 progress within the CURRENT epoch
+            overall_progress = (completed + self.progress) / self.total_epochs
+            overall_progress = min(1.0, overall_progress)
 
         return {
             "is_running": self.is_running,
-            "run_id": self.current_run_id,
-            "progress": self.progress,
+            "run_id": self.current_run_id or self.last_run_id,
+            "progress": 1.0
+            if (not self.is_running and self.total_epochs > 0)
+            else overall_progress,
             "current_epoch": self.current_epoch,
             "total_epochs": self.total_epochs,
             "loss_history": self.loss_history,
             "adv_loss_history": self.adv_loss_history,
+            "history_dict": file_history_dict,
             "log_history": self.log_history,
             "status_message": self.status_message,
+            "current_metrics": self.current_metrics,
         }
+
+    def _load_history_dict(self) -> Dict[int, Dict[str, float]]:
+        """Loads history from disk and returns a dict mapping explicit epoch number to metrics."""
+        try:
+            project_root = Path(__file__).parent.parent.parent
+            run_id = self.current_run_id or self.last_run_id
+            if run_id:
+                history_path = (
+                    project_root / "results" / "runs" / run_id / "history.json"
+                )
+                if history_path.exists():
+                    with open(history_path, "r", encoding="utf-8") as f:
+                        history = json.load(f)
+                        result = {}
+                        import math
+
+                        for i, entry in enumerate(history):
+                            # Fallback to index-based epoch if 'epoch' key is missing
+                            ep = entry.get("epoch", i + 1)
+
+                            def sanitize(val):
+                                try:
+                                    f_val = float(val)
+                                    return (
+                                        None
+                                        if math.isnan(f_val) or math.isinf(f_val)
+                                        else f_val
+                                    )
+                                except Exception:
+                                    return None
+
+                            result[ep] = {
+                                "loss": sanitize(
+                                    entry.get("loss", entry.get("train_loss", 0.0))
+                                ),
+                                "adv_loss": sanitize(entry.get("adv_loss", 0.0)),
+                            }
+                        return result
+        except Exception as e:
+            print(f"[TrainingManager] Error loading history: {e}")
+        return {}
 
     def _load_history_dual(self) -> tuple[List[float], List[float]]:
         try:
@@ -137,9 +293,19 @@ class TrainingManager:
                 history_path = project_root / "models" / "checkpoints" / "history.json"
 
             if history_path.exists():
-                with open(history_path, "r") as f:
+                with open(history_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    train_losses = [float(entry.get("train_loss", 0)) for entry in data]
+                    # Support multiple loss keys for robustness
+                    train_losses = []
+                    for entry in data:
+                        loss_val = (
+                            entry.get("loss")
+                            or entry.get("loss_pose")
+                            or entry.get("train_loss")
+                            or 0
+                        )
+                        train_losses.append(float(loss_val))
+
                     adv_losses = [float(entry.get("adv_loss", 0)) for entry in data]
                     return train_losses, adv_losses
         except Exception as e:
@@ -150,39 +316,57 @@ class TrainingManager:
         try:
             self.status_message = "Initializing..."
             project_root = Path(__file__).parent.parent.parent
-            is_remote = (
-                config_overrides.get("remote", False) if config_overrides else False
-            )
+
+            # Extract remote flag from multiple possible locations in the config
+            is_remote = False
+            if config_overrides:
+                remote_cfg = config_overrides.get("remote", {})
+                if isinstance(remote_cfg, dict):
+                    is_remote = remote_cfg.get("use_remote", False)
+                else:
+                    is_remote = bool(remote_cfg)
 
             if is_remote:
                 self.status_message = "Starting remote training..."
                 cmd = [
                     sys.executable,
+                    "-u",
                     str(project_root / "scripts" / "remote_train.py"),
                 ]
             else:
                 self.status_message = "Starting local training..."
-                cmd = [sys.executable, str(project_root / "scripts" / "train.py")]
+                cmd = [sys.executable, "-u", str(project_root / "scripts" / "train.py")]
 
             if self.current_run_id:
                 cmd.extend(["--run_id", self.current_run_id])
 
+            # Propagate resume flag
+            is_resume = config_overrides.get("training", {}).get(
+                "resume"
+            ) or config_overrides.get("resume")
+            if is_resume:
+                cmd.append("--resume")
+
             # If a full config was provided, save it to a temporary file and pass it
             if config_overrides:
-                # We'll save it in the results/runs/RUN_ID dir if it exists, else models/temp_config.yaml
-                run_dir = project_root / "results" / "runs" / self.current_run_id
+                # We'll save it in the configs/runs/RUN_ID dir (which is NOT excluded from sync)
+                run_dir = project_root / "configs" / "runs" / self.current_run_id
                 run_dir.mkdir(parents=True, exist_ok=True)
                 config_path = run_dir / "config.yaml"
 
                 import yaml
 
-                with open(config_path, "w") as f:
+                with open(config_path, "w", encoding="utf-8") as f:
                     yaml.dump(config_overrides, f)
 
-                cmd.extend(["--config", str(config_path)])
-                print(f"[TrainingManager] Using custom config: {config_path}")
+                # Use relative POSIX path so it works on both local and remote (after sync)
+                relative_config_path = config_path.relative_to(project_root).as_posix()
+                cmd.extend(["--config", str(relative_config_path)])
+                print(f"[TrainingManager] Using custom config: {relative_config_path}")
 
-            print(f"  Executing training command: {' '.join(cmd)}")
+            self.log_history.append(
+                f"[{time.strftime('%H:%M:%S')}] [Manager] Executing: {' '.join(cmd)}"
+            )
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -190,6 +374,9 @@ class TrainingManager:
                 text=True,
                 bufsize=1,
                 cwd=str(project_root),
+            )
+            self.log_history.append(
+                f"[{time.strftime('%H:%M:%S')}] [Manager] Process started (PID: {process.pid})"
             )
 
             for line in process.stdout:
@@ -200,12 +387,27 @@ class TrainingManager:
 
                 line = line.strip()
                 if line:
+                    # Robust JSON Metrics Stream (skip log history)
+                    if "[METRICS]" in line:
+                        self._handle_metrics_line(line)
+                        continue
+
                     # Add to log history with timestamp
                     timestamp = time.strftime("%H:%M:%S")
+                    log_line = f"[{timestamp}] {line}"
                     print(f"[TrainingManager] {line}")  # For backend debugging
-                    self.log_history.append(f"[{timestamp}] {line}")
+                    self.log_history.append(log_line)
                     if len(self.log_history) > 1000:
                         self.log_history.pop(0)
+
+                    # Persistence: Write to run-specific log file
+                    if self.current_run_id:
+                        log_dir = (
+                            project_root / "results" / "runs" / self.current_run_id
+                        )
+                        log_dir.mkdir(parents=True, exist_ok=True)
+                        with open(log_dir / "training.log", "a", encoding="utf-8") as f:
+                            f.write(log_line + "\n")
 
                     # --- Meaningful Status Extraction ---
 
@@ -231,6 +433,27 @@ class TrainingManager:
                         self.status_message = f"Resuming from {ckpt}"
                         continue
 
+                    if "Resuming from global epoch" in line:
+                        try:
+                            ep_num = int(line.split("global epoch")[1].strip())
+                            self.current_epoch = ep_num
+                            self.status_message = f"Resuming from Epoch {ep_num}"
+                        except Exception:
+                            pass
+                        continue
+
+                    if (
+                        "Remote Training Session Complete" in line
+                        or "Training finished" in line
+                    ):
+                        self.status_message = "Finished"
+                        self.is_running = False
+                        self.progress = 1.0
+                        self.current_run_id = (
+                            None  # Signal that it's no longer "active"
+                        )
+                        continue
+
                     # 2. Parse initial message: "Starting training for 10 epochs (from epoch 31)..."
                     start_match = re.search(
                         r"Starting training for (\d+) epochs \(from epoch (\d+)\)", line
@@ -243,34 +466,128 @@ class TrainingManager:
                         self.status_message = f"Session started: {count} epochs"
                         continue
 
-                    # 3. Parse Epoch progress: "--- Epoch 31/40 ---"
+                    # 3. Parse batch progress from tqdm (Flexible matching)
+                    is_tqdm = "%|" in line and "|" in line
+                    if is_tqdm:
+                        # Extract epoch if it's in the prefix (e.g., "Epoch 21/30: 10%|...")
+                        epoch_prefix_match = re.search(r"Epoch (\d+)/(\d+)", line)
+                        if epoch_prefix_match:
+                            self.current_epoch = int(epoch_prefix_match.group(1))
+                            self.total_epochs = int(epoch_prefix_match.group(2))
+
+                        # Extract percentage and steps
+                        prog_match = re.search(r"(\d+)%\|.*\| (\d+)/(\d+)", line)
+                        if prog_match:
+                            self.progress = float(prog_match.group(1)) / 100.0
+
+                        # Extract speed and ETA
+                        speed_match = re.search(r",\s*([\d\.]+)it/s", line)
+                        if speed_match:
+                            self.current_metrics["speed"] = speed_match.group(1)
+
+                        eta_match = re.search(r"<(\d+:\d+)", line)
+                        if eta_match:
+                            self.current_metrics["eta"] = eta_match.group(1)
+
+                    # 4. Extract ALL key=value pairs (supporting float, scientific, and percentage)
+                    # This now runs for EVERY line, including epoch summaries
+                    kv_matches = re.findall(
+                        r"([a-zA-Z_]\w*)=([\d\.]+(?:%|e-?\d+)?)", line
+                    )
+                    if kv_matches:
+                        import math
+
+                        current_batch_metrics = {}
+                        for k, v in kv_matches:
+                            try:
+                                # Strip % if present and convert to normalized float
+                                v_clean = v.rstrip("%")
+                                f_val = float(v_clean)
+                                if v.endswith("%"):
+                                    f_val /= 100.0
+
+                                if math.isnan(f_val) or math.isinf(f_val):
+                                    val = None
+                                else:
+                                    val = f_val
+                            except Exception:
+                                val = v
+
+                            # Store in temporary dict first
+                            current_batch_metrics[k] = val
+
+                            # If it's a progress bar (tqdm), store with prefix to avoid "double jump"
+                            if is_tqdm:
+                                self.current_metrics[f"batch_{k}"] = val
+                            else:
+                                # Finalized metric from summary line - update main dict
+                                self.current_metrics[k] = val
+
+                        # 5. Update loss history if it's an epoch summary line
+                        # We also catch the 100% tqdm line as a summary
+                        is_summary = (
+                            "Epoch" in line
+                            and ":" in line
+                            and (not is_tqdm or "100%" in line)
+                        )
+                        if is_summary:
+                            epoch_summary_match = re.search(r"Epoch (\d+)", line)
+                            if epoch_summary_match:
+                                target_epoch = int(epoch_summary_match.group(1))
+                                self.current_epoch = (
+                                    target_epoch  # Ensure synchronization
+                                )
+
+                                for k in ["loss", "loss_pose", "train_loss"]:
+                                    if k in current_batch_metrics:
+                                        val = current_batch_metrics[k]
+                                        idx = target_epoch - 1
+                                        if idx >= 0:
+                                            # Pad history if there's a gap
+                                            while len(self.loss_history) < idx:
+                                                self.loss_history.append(None)
+                                                self.adv_loss_history.append(None)
+
+                                            if val is not None:
+                                                if len(self.loss_history) <= idx:
+                                                    self.loss_history.append(val)
+                                                    self.adv_loss_history.append(
+                                                        current_batch_metrics.get(
+                                                            "adv_loss"
+                                                        )
+                                                    )
+                                                else:
+                                                    self.loss_history[idx] = val
+                                                    self.adv_loss_history[idx] = (
+                                                        current_batch_metrics.get(
+                                                            "adv_loss"
+                                                        )
+                                                    )
+
+                                # Also update val_pck if found in summary
+                                if "val_pck" in current_batch_metrics:
+                                    self.current_metrics["val_pck"] = (
+                                        current_batch_metrics["val_pck"]
+                                    )
+                                break
+                        continue
+
+                    # 4. Parse Epoch progress: "--- Epoch 31/40 ---"
                     epoch_match = re.search(r"(?:--- )?Epoch (\d+)/(\d+)", line)
                     if epoch_match:
                         current = int(epoch_match.group(1))
                         total = int(epoch_match.group(2))
                         self.current_epoch = current
                         self.total_epochs = total
-                        self.progress = current / total if total > 0 else 0
+                        # Only set progress to 0 if it's the exact header (no tqdm)
+                        if ":" not in line:
+                            self.progress = current / total if total > 0 else 0
                         self.status_message = f"Starting Epoch {current}..."  # "Epoch n / m" is in header, so just show start
                         continue
 
-                    # 4. Parse batch progress from tqdm: "Epoch 1/10:  20%|██        | 20/100 [00:10<00:40,  2.00it/s]"
-                    tqdm_match = re.search(
-                        r"Epoch \d+/\d+:\s+(\d+)%\|.*\| (\d+)/(\d+)", line
-                    )
-                    if tqdm_match:
-                        pct = tqdm_match.group(1)
-                        curr_batch = tqdm_match.group(2)
-                        total_batches = tqdm_match.group(3)
-                        # More concise during training
-                        self.status_message = (
-                            f"Progress: {pct}% (Batch {curr_batch}/{total_batches})"
-                        )
-                        continue
-
-                    # 5. Parse loss: "train_loss=0.1234" or "Epoch 1: train_loss=0.1234  adv_loss=0.05 val_loss=0.5678"
+                    # 5. Parse loss: "train_loss=0.1234" or "Epoch 1: loss=0.1234  adv_loss=0.05 val_loss=0.5678"
                     loss_match = re.search(
-                        r"(?:Epoch (\d+): )?train_loss=([0-9.]+)(?:\s+adv_loss=([0-9.]+))?(?:\s+val_loss=([0-9.]+))?",
+                        r"(?:Epoch (\d+): )?(?:train_)?loss=([0-9.]+)(?:\s+adv_loss=([0-9.]+))?(?:\s+(?:val_)?loss=([0-9.]+))?",
                         line,
                     )
                     if loss_match:
@@ -346,7 +663,20 @@ class TrainingManager:
                         self.status_message = "Training finished, but evaluation failed"
                         self.progress = 1.0
                 else:
-                    self.status_message = f"Failed (exit {process.returncode})"
+                    # Find the last meaningful error in log history
+                    error_msg = f"Failed (exit {process.returncode})"
+                    for line in reversed(self.log_history):
+                        if (
+                            "Error:" in line
+                            or "Exception:" in line
+                            or "FileNotFoundError:" in line
+                        ):
+                            clean_err = (
+                                line.split("] ", 1)[-1] if "] " in line else line
+                            )
+                            error_msg = f"Error: {clean_err}"
+                            break
+                    self.status_message = error_msg
 
         except Exception as e:
             self.status_message = f"Error: {str(e)}"

@@ -1,0 +1,47 @@
+# Loop 18: GCN-based Pose Refinement
+# Hypothesis: Joint-joint dependencies can be better modeled via Graph Convolutions 
+# than independent heatmap supervision, especially under occlusion.
+
+project:
+  name: inbed-pose-estimation
+  seed: 42
+
+dataset:
+  root: "data/raw"
+  modalities: ["IR"]
+  subjects_train: [1, 80]
+  subjects_val: [81, 90]
+  image_size: [256, 256]
+
+model:
+  name: "refined_hrnet"
+  hrnet:
+    num_joints: 14
+    in_channels: 1 
+    architecture: "w32"
+    gcn_hidden_dim: 128
+    heatmap_size: [64, 64]
+    sigma: 2.0
+
+training:
+  batch_size: 16
+  epochs: 30
+  lr: 0.0001
+  weight_decay: 0.0001
+  
+  # Enable coordinate losses for GCN refinement
+  lambda_coord: 1.0
+  lambda_coord_occluded: 2.0
+  
+  # Enable Uncertainty Weighting to balance heatmap vs GCN
+  use_uncertainty_weighting: true
+  
+  warmup_epochs: 5
+  save_dir: "models/checkpoints"
+  
+  augmentation:
+    enabled: true
+    occlusion_prob: 0.7
+    flip_prob: 0.5
+    rotation_range: [-30, 30]
+    scaling_range: [0.8, 1.2]

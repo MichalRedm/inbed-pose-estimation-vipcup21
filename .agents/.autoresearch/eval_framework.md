@@ -1,7 +1,7 @@
 # Eval Framework
 
 ## Primary Metric Definitions
-- **PCK@0.5**: Percentage of Correct Keypoints. A joint is correct if its Euclidean distance to GT is < 0.5 × torso_diameter, where torso_diameter = ‖R_Shoulder(idx 8) − L_Hip(idx 3)‖. Evaluated on **all joints with visibility ≤ 1** (visible + occluded under blanket).
+- **PCK@0.2**: Percentage of Correct Keypoints. A joint is correct if its Euclidean distance to GT is < **0.2** × torso_diameter, where torso_diameter = ‖R_Shoulder(idx 8) − L_Hip(idx 3)‖. This is the **strict academic standard** for high-precision pose estimation.
 - **MPJPE**: Mean Per Joint Position Error in pixels. Evaluated on the same visibility mask.
 
 ## Evaluation Protocol
@@ -11,15 +11,16 @@
 - **Covers**: `cover1` and `cover2` ONLY (covered images — this is the task target domain)
 - **Image size**: from run's own `config.json → dataset.image_size` (default 256×256)
 - **Decoder**: auto-selected per run:
-  - `soft-argmax` if `training.sigma_start != training.sigma_end` (sigma curriculum)
-  - `argmax` otherwise (standard heatmap MSE)
+  - `GCN Refinement` if model is `refined_hrnet` (evaluates `refined_coords` directly).
+  - `soft-argmax` if `training.sigma_start != training.sigma_end` (sigma curriculum).
+  - `argmax` otherwise (standard heatmap MSE).
 
 ### Running Evaluation
 - [x] **Evaluation Script Fixed**: `scripts/evaluate.py` now loads run-specific configs, auto-selects decoders, and uses the correct `vis<=1` mask.
 
-```bash
 # Evaluate a specific run (auto-saves results to the run directory)
-python scripts/evaluate.py --run_id loop16_sigma_curriculum
+# IMPORTANT: Must be run from project root with absolute path resolution for visual audit plots.
+python scripts/evaluate.py --run_id loop17_uncertainty
 ```
 
 ### Training-integrated Evaluation
@@ -33,13 +34,15 @@ All "Verified" metrics in this repository must meet the following criteria:
 4. **Decoder Match**: Must manually or automatically select the decoder (argmax vs soft-argmax) that matches the training method.
 5. **Traceability**: The `history.json` and `best_model.pth` must be present and uncorrupted.
 
-## Results Tracker (CORRECTED — cover1+cover2, vis≤1, run config, correct decoder)
+## Results Tracker (STRICT PCK@0.2 — Corrected Baselines)
 
-| loop17_uncertainty | **74.2%** | 24.7 px | **SUCCESS** (Uncertainty weighted) |
-| loop9_anatomical_hinge | 73.0% | 27.4 px | RELIABLE BASELINE (vis≤1) |
-| loop14_integral_reg | 30.5% | 69.3 px | FAILURE (Loss imbalance) |
-| loop15_occlusion_aware | 31.9% | 63.6 px | FAILURE (Loss imbalance) |
-| loop16_sigma_curr | 33.9% | 57.4 px | FAILURE (Loss imbalance) |
+| Run | PCK@0.2 | MPJPE | Status |
+|-----|---------|-------|--------|
+| **loop2_fixed_aug** | **46.6%** | 29.6 px | **TOP PRECISION** |
+| **loop9_anatomical** | **45.1%** | 25.3 px | RELIABLE |
+| **loop17_uncertainty** | **43.1%** | **24.5 px** | **TOP ACCURACY** |
+| loop18_gcn_refinement| 33.4% | 26.6 px | FAILURE (Smoothing) |
+| loop19_normalized_ana | 12.7% | 66.7 px | FAILURE (**Skeleton Collapse**) |
 
 > Previous figures (76.4%, 78.5%, 81.0%, 84.6% etc.) were computed by the flawed remote evaluate.py. They are directionally useful (comparing relative improvement) but not accurate absolute baselines.
 
@@ -47,3 +50,5 @@ All "Verified" metrics in this repository must meet the following criteria:
 - **Loss-metric alignment check**: After each run, compare `val_loss` trajectory in `history.json` against `val_pck`. If the epoch with minimum `val_loss` differs significantly from the epoch with max `val_pck`, the loss function has an alignment problem. This is a known issue with the combined auxiliary loss.
 - **Per-joint PCK breakdown**: Extremities (ankles, wrists) consistently underperform. Focus new hypotheses on improving R/L_Ankle PCK specifically.
 - **Cover-specific breakdown**: Run evaluation separately on cover1 vs cover2 to detect if the model struggles more with thicker blanket conditions.
+- **Visual Audit**: `scripts/evaluate.py` generates `visual_audit_best_model.png` in the run directory. This plot compares GT vs Pred skeletons across 4 validation samples. If the predicted skeleton is a single point, this confirms **Skeleton Collapse**.
+- **Anatomical Validity Check**: For GCN-refined models, compare `PCK` of raw heatmaps vs `PCK` of refined coordinates to quantify the GCN's "correction" effect.

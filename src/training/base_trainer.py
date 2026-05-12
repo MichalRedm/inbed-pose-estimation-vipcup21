@@ -37,9 +37,11 @@ class BaseTrainer(ABC):
         # Training parameters
         train_cfg = config.get("training", {})
         self.epochs = train_cfg.get("epochs", 30)
-        self.save_dir = train_cfg.get("save_dir", "results/runs/default")
+        self.start_epoch = 0  # Default, can be set during resumption
+        self.current_epoch = 0
+        self.save_dir = train_cfg.get("save_dir", None)
 
-        if self.is_main:
+        if self.is_main and self.save_dir:
             os.makedirs(self.save_dir, exist_ok=True)
             os.makedirs(os.path.join(self.save_dir, "checkpoints"), exist_ok=True)
 
@@ -47,7 +49,37 @@ class BaseTrainer(ABC):
         self.best_val_pck = -1.0
         self.best_val_loss = float("inf")
         self.history = []
-        self.history_path = os.path.join(self.save_dir, "history.json")
+        self.history_path = (
+            os.path.join(self.save_dir, "history.json") if self.save_dir else None
+        )
+        if self.history_path and os.path.exists(self.history_path):
+            try:
+                with open(self.history_path, "r") as f:
+                    self.history = json.load(f)
+            except Exception:
+                pass
+
+        # Dedicated JSON stream for real-time dashboard updates
+        self.stream_path = (
+            os.path.join(self.save_dir, "stream.jsonl") if self.save_dir else None
+        )
+        if self.is_main:
+            # Clear previous stream file on start/resume to keep the pipe fresh
+            try:
+                with open(self.stream_path, "w") as f:
+                    pass
+            except Exception:
+                pass
+
+    def _stream_metric(self, data: Dict[str, Any]):
+        """Append a JSON line to the stream file for real-time telemetry."""
+        if not self.is_main:
+            return
+        try:
+            with open(self.stream_path, "a") as f:
+                f.write(json.dumps(data) + "\n")
+        except Exception:
+            pass
 
     @abstractmethod
     def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
@@ -86,11 +118,25 @@ class BaseTrainer(ABC):
                 pbar.set_postfix({k: f"{v:.4f}" for k, v in step_metrics.items()})
                 pbar.update(1)
 
+                # Stream JSON metrics to sidecar file
+                stream_payload = {
+                    "epoch": epoch + 1,
+                    "progress": count / max(len(dataloader), 1),
+                }
+                stream_payload.update(step_metrics)
+                self._stream_metric(stream_payload)
+
         if pbar:
             pbar.close()
 
         # Average metrics
         avg_metrics = {k: v / max(count, 1) for k, v in metrics_sum.items()}
+
+        # Stream final epoch summary to sidecar file
+        summary_payload = {"epoch": epoch + 1, "progress": 1.0, "is_summary": True}
+        summary_payload.update(avg_metrics)
+        self._stream_metric(summary_payload)
+
         return avg_metrics
 
     @torch.no_grad()
@@ -99,6 +145,10 @@ class BaseTrainer(ABC):
         metrics_sum = {}
         count = 0
 
+        pbar = None
+        if self.is_main:
+            pbar = tqdm(dataloader, desc="Validation", leave=False)
+
         for batch in dataloader:
             if batch is None:
                 continue
@@ -106,6 +156,16 @@ class BaseTrainer(ABC):
             for k, v in step_metrics.items():
                 metrics_sum[k] = metrics_sum.get(k, 0.0) + v
             count += 1
+
+            if pbar:
+                pbar.update(1)
+                # Optional: stream validation progress too
+                self._stream_metric(
+                    {"phase": "val", "progress": count / max(len(dataloader), 1)}
+                )
+
+        if pbar:
+            pbar.close()
 
         avg_metrics = {k: v / max(count, 1) for k, v in metrics_sum.items()}
 
@@ -119,14 +179,15 @@ class BaseTrainer(ABC):
         return avg_metrics
 
     @torch.no_grad()
-    def compute_val_pck(self, dataloader, decode_method: str = "argmax") -> float:
+    def compute_val_pck(self, dataloader, decode_method: str = None) -> float:
         """
-        Compute PCK@0.5 (torso-relative, covered validation images only).
+        Compute PCK@0.2 (torso-relative, covered validation images only).
         Used as the primary criterion for saving best_model.pth.
 
         Args:
             dataloader:    Validation DataLoader.
-            decode_method: 'argmax' or 'soft-argmax' — must match training decoder.
+            decode_method: 'argmax' or 'soft-argmax' (defaults to config).
+            temperature:   Soft-argmax temperature (defaults to config).
 
         Returns:
             mean_pck: float in [0, 1].
@@ -136,6 +197,10 @@ class BaseTrainer(ABC):
 
         all_preds, all_gts, all_vis = [], [], []
 
+        pbar = None
+        if self.is_main:
+            pbar = tqdm(dataloader, desc="PCK Eval", leave=False)
+
         for batch in dataloader:
             if batch is None:
                 continue
@@ -143,13 +208,22 @@ class BaseTrainer(ABC):
             images = batch["image"].to(self.device)
             joints = batch["joints"]  # (B, 3, 14)
 
+            if pbar:
+                pbar.update(1)
+
             raw_model = (
                 self.model.module if hasattr(self.model, "module") else self.model
             )
             outputs = raw_model(images)
 
             if raw_model.output_type == "heatmap":
-                preds = decode_heatmaps(outputs.cpu(), image_size, method=decode_method)
+                method = decode_method or self.config.get("training", {}).get(
+                    "decode_method", "argmax"
+                )
+                temp = self.config.get("training", {}).get("decode_temperature", 10.0)
+                preds = decode_heatmaps(
+                    outputs.cpu(), image_size, method=method, temperature=temp
+                )
             else:
                 preds = outputs.cpu()
 
@@ -159,6 +233,9 @@ class BaseTrainer(ABC):
             all_preds.append(preds.numpy())
             all_gts.append(gt_xy)
             all_vis.append(vis)
+
+        if pbar:
+            pbar.close()
 
         if not all_preds:
             return 0.0
@@ -172,13 +249,13 @@ class BaseTrainer(ABC):
         torso = np.maximum(torso, 1e-6)  # (N, 1)
 
         dist = np.linalg.norm(P - G, axis=-1)  # (N, 14)
-        correct = (dist < 0.5 * torso) * V
+        correct = (dist < 0.2 * torso) * V
 
         mean_pck = float(correct.sum() / np.maximum(V.sum(), 1))
         return mean_pck
 
     def save_checkpoint(self, name: str, is_best: bool = False):
-        if not self.is_main:
+        if not self.is_main or not self.save_dir:
             return
 
         checkpoint = {
@@ -186,20 +263,40 @@ class BaseTrainer(ABC):
             if hasattr(self.model, "module")
             else self.model.state_dict(),
             "config": self.config,
+            "epoch": self.current_epoch,
             "best_val_pck": self.best_val_pck,
             "best_val_loss": self.best_val_loss,
+            "decoding_config": {
+                "method": self.config.get("training", {}).get(
+                    "decode_method", "argmax"
+                ),
+                "temperature": self.config.get("training", {}).get(
+                    "decode_temperature", 10.0
+                ),
+                "image_size": self.config.get("dataset", {}).get(
+                    "image_size", [256, 256]
+                ),
+            },
         }
 
         # Let subclasses add their own state (optimizers, etc.)
         checkpoint.update(self._get_extra_checkpoint_data())
 
+        def _atomic_torch_save(obj, target_path):
+            tmp_path = str(target_path) + ".tmp"
+            torch.save(obj, tmp_path)
+            # Use os.replace for atomic rename on POSIX systems (Linux/Remote)
+            import os
+
+            os.replace(tmp_path, target_path)
+
         # Always save as latest for resumption
         latest_path = os.path.join(self.save_dir, "checkpoints", "latest_model.pth")
-        torch.save(checkpoint, latest_path)
+        _atomic_torch_save(checkpoint, latest_path)
 
         if is_best:
             best_path = os.path.join(self.save_dir, "checkpoints", "best_model.pth")
-            torch.save(checkpoint, best_path)
+            _atomic_torch_save(checkpoint, best_path)
             if self.is_main:
                 print(f"[Trainer] Saved new best model to {best_path}")
 
@@ -208,8 +305,14 @@ class BaseTrainer(ABC):
         return {}
 
     def update_history(self, epoch_data: Dict[str, Any]):
-        if not self.is_main:
+        if not self.is_main or not self.history_path:
             return
         self.history.append(epoch_data)
-        with open(self.history_path, "w") as f:
+
+        tmp_history = str(self.history_path) + ".tmp"
+        with open(tmp_history, "w") as f:
             json.dump(self.history, f, indent=4)
+
+        import os
+
+        os.replace(tmp_history, self.history_path)

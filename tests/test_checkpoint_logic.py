@@ -16,6 +16,8 @@ class MockTrainer(BaseTrainer):
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.01)
         self.best_val_pck = 0.0
         self.best_val_loss = float("inf")
+        self.current_epoch = 0
+        self.total_epochs = 10
         self.save_dir = save_dir
         self.is_main = True
         self.world_size = 1
