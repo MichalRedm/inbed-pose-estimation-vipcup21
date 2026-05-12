@@ -14,7 +14,7 @@ import shutil
 import time
 import os
 from fastapi.staticfiles import StaticFiles
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 
 # Add project root to sys.path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
@@ -26,7 +26,6 @@ from src.utils import (  # noqa: E402
     load_config,
     get_training_config,
     save_training_config,
-    decode_heatmaps,
     LSP_JOINT_NAMES,
 )
 from src.models import build_model, load_model_for_inference  # noqa: E402
@@ -812,26 +811,14 @@ async def predict(
             if checkpoints:
                 checkpoint_path = checkpoints[-1]
 
-        # Determine image size and decoding method from run config
+        # Determine image size from run config
         model_image_size = (256, 256)
-        # Default to argmax for Heatmap models (more robust peak detection)
-        decode_method = "argmax"
         if checkpoint_path and (checkpoint_path.parent.parent / "config.json").exists():
             with open(checkpoint_path.parent.parent / "config.json", "r") as f:
                 run_cfg = json.load(f)
                 model_image_size = tuple(
                     run_cfg.get("dataset", {}).get("image_size", [256, 256])
                 )
-                # For future flexibility, we could add a "decode_method" field to config.json
-                # For now, we prefer argmax for all HRNet heatmap models as soft-argmax
-                # without high temperature causes joint clustering.
-                if run_cfg.get("training", {}).get("force_soft_argmax", False):
-                    decode_method = "soft-argmax"
-                    print(f"[API] Forced soft-argmax decoding for {run_id}")
-                else:
-                    print(
-                        f"[API] Using argmax decoding for {run_id} (Heatmap standard)"
-                    )
 
         image_resized = image.resize(model_image_size)
         # (1, 1, H, W)

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from src.training.manager import TrainingManager
 
 
@@ -16,7 +16,7 @@ def test_manager_status_initial(manager):
 
 def test_manager_config_overrides(manager):
     # Mock _run_training to avoid any thread/process side effects
-    with patch.object(TrainingManager, "_run_training") as mock_run:
+    with patch.object(TrainingManager, "_run_training"):
         # Explicitly set remote to false for local testing
         success, message = manager.start_training({"epochs": -1, "remote": False})
         assert success is True
