@@ -177,6 +177,22 @@ class TrainingManager:
             print(f"[TrainingManager] Error parsing metrics stream: {e}")
 
     def get_status(self) -> Dict[str, Any]:
+        # Always try to restore history from disk if in-memory lists are empty
+        # but we have a valid run to look at.
+        run_id = self.current_run_id or self.last_run_id
+        
+        if not self.loss_history and run_id:
+            file_history_dict = self._load_history_dict()
+            if file_history_dict:
+                max_ep = max(file_history_dict.keys())
+                self.loss_history = [None] * max_ep
+                self.adv_loss_history = [None] * max_ep
+                for ep, metrics in file_history_dict.items():
+                    idx = ep - 1
+                    if idx < len(self.loss_history):
+                        self.loss_history[idx] = metrics["loss"]
+                        self.adv_loss_history[idx] = metrics["adv_loss"]
+
         # Refresh loss history from file using explicit epoch indices to avoid desyncs
         # (Especially useful for remote training where history.json is synced periodically)
         file_history_dict = self._load_history_dict()

@@ -402,7 +402,7 @@ def evaluate(
             "per_joint_pck": per_joint_pck.tolist(),
             "per_joint_mpjpe": per_joint_error.tolist(),
             "joint_names": JOINT_NAMES,
-            "visual_audit": str(audit_path.relative_to(project_root)),
+            "visual_audit": str(audit_path.resolve().relative_to(project_root.resolve())),
         }
 
         if save_json:

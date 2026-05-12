@@ -14,6 +14,7 @@ import shutil
 import time
 import os
 from fastapi.staticfiles import StaticFiles
+from typing import Dict, Any, List, Optional
 
 # Add project root to sys.path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
@@ -59,6 +60,34 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def format_evaluation_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """Helper to format raw evaluation metrics for dashboard display."""
+    pj_pck = metrics.get("per_joint_pck")
+    pj_error = metrics.get("per_joint_error", metrics.get("per_joint_mpjpe"))
+    j_names = metrics.get("joint_names", LSP_JOINT_NAMES)
+
+    if pj_pck is not None and pj_error is not None:
+        metrics["per_joint_metrics"] = [
+            {"name": name, "pck": float(pck), "error": float(error)}
+            for name, pck, error in zip(j_names, pj_pck, pj_error)
+        ]
+
+        # Clean up original arrays for JSON serialization
+        if "per_joint_pck" in metrics:
+            del metrics["per_joint_pck"]
+        if "per_joint_error" in metrics:
+            del metrics["per_joint_error"]
+        if "per_joint_mpjpe" in metrics:
+            del metrics["per_joint_mpjpe"]
+
+    # Convert other metrics to float for JSON
+    for key in ["loss", "mpjpe", "pck"]:
+        if key in metrics and metrics[key] is not None:
+            metrics[key] = float(metrics[key])
+
+    return metrics
 
 # Serve static files from runs directory
 runs_static_dir = project_root / "results" / "runs"
@@ -327,7 +356,7 @@ async def get_run_details(run_id: str):
 
     if eval_file.exists():
         with open(eval_file, "r") as f:
-            details["evaluation"] = json.load(f)
+            details["evaluation"] = format_evaluation_metrics(json.load(f))
 
     # Visual audit path
     if (run_path / "visual_audit_best_model.png").exists():
@@ -470,18 +499,8 @@ async def evaluate_model(
         trainer = PoseTrainer(model, device=device, config=eval_config)
         metrics = trainer.evaluate(loader)
 
-    # Format per-joint metrics for display if they exist
-    if "per_joint_error" in metrics:
-        metrics["per_joint_metrics"] = [
-            {"name": name, "pck": float(pck), "error": float(error)}
-            for name, pck, error in zip(
-                LSP_JOINT_NAMES, metrics["per_joint_pck"], metrics["per_joint_error"]
-            )
-        ]
-
-        # Clean up numpy arrays for JSON serialization
-        del metrics["per_joint_pck"]
-        del metrics["per_joint_error"]
+    # Format per-joint metrics for display
+    metrics = format_evaluation_metrics(metrics)
 
     # Convert other metrics to float for JSON
     for key in ["loss", "mpjpe", "pck"]:
