@@ -32,6 +32,7 @@ from src.models import build_model, load_model_for_inference  # noqa: E402
 from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
 from src.training.trainer import PoseTrainer  # noqa: E402
+from src.api.inference import inference_service  # noqa: E402
 
 app = FastAPI(
     title="In-Bed Pose Estimation API",
@@ -238,8 +239,7 @@ def verify_gpu():
         }
 
 
-# In-memory model cache: {model_key: {"model": model, "mtime": timestamp}}
-model_container = {}
+# InferenceService is used for model management
 
 
 @app.get("/hello")
@@ -419,39 +419,13 @@ async def evaluate_model(
     cache = load_evaluation_cache()
 
     # Determine checkpoint path and config
-    eval_config = model_container.get("config")
-    if run_id:
-        checkpoint_key = f"{run_id}:{checkpoint if checkpoint else 'best_model.pth'}"
-        run_path = project_root / "results" / "runs" / run_id
-        if not run_path.exists():
-            raise HTTPException(status_code=404, detail="Run not found")
-
-        checkpoint_name = checkpoint if checkpoint else "best_model.pth"
-        checkpoint_path = run_path / "checkpoints" / checkpoint_name
-
-        # Load run-specific config if available
-        run_config_path = run_path / "config.json"
-        if run_config_path.exists():
-            with open(run_config_path, "r") as f:
-                eval_config = json.load(f)
-    else:
-        checkpoint_key = checkpoint if checkpoint else "best_model.pth"
-        checkpoint_path = project_root / "models" / "checkpoints" / checkpoint_key
-
-    # Check if results are cached
-    if not force and checkpoint_key in cache and split in cache[checkpoint_key]:
-        return cache[checkpoint_key][split]
-
     # Load model with specific checkpoint if provided
-    device = model_container["device"]
-    model = model_container["model"]
-
     if checkpoint or run_id:
         if not checkpoint_path.exists():
             raise HTTPException(
                 status_code=404, detail=f"Checkpoint not found at {checkpoint_path}"
             )
-        model = load_model_for_inference(str(checkpoint_path), device, eval_config)
+        inference_service.load_model(str(checkpoint_path))
 
     if remote:
         if not run_id:
@@ -491,7 +465,10 @@ async def evaluate_model(
             ds, batch_size=8, shuffle=False, num_workers=0, collate_fn=collate_skip_none
         )
 
-        # Use the config from the run if available, otherwise global
+        # Use InferenceService model for evaluation
+        model = inference_service._model
+        device = inference_service._device
+        
         trainer = PoseTrainer(model, device=device, config=eval_config)
         metrics = trainer.evaluate(loader)
 
@@ -706,41 +683,15 @@ async def get_dataset_image(
     return StreamingResponse(img_byte_arr, media_type="image/png")
 
 
-@app.on_event("startup")
-async def startup_event():
-    config = load_config()
-    dataset_cfg = config.get("dataset", {})
-    image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Find latest checkpoint
+    # Initialize InferenceService with latest checkpoint
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
     checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
 
-    if not checkpoints:
-        # Initialize model using factory if no checkpoints
-        model = build_model(config).to(device)
-        # Wrap to ensure consistent output format (joints instead of heatmaps)
-        from src.models import PoseDecodingWrapper
-
-        model = PoseDecodingWrapper(
-            model, config.get("model", {}).get("hrnet", {}).get("decoding_config", {})
-        )
-        print(
-            f"WARNING: No checkpoints found in {checkpoint_dir}. Model will use random weights."
-        )
-    else:
+    if checkpoints:
         latest_checkpoint = checkpoints[-1]
-        print(f"Loading checkpoint: {latest_checkpoint}")
-        model = load_model_for_inference(str(latest_checkpoint), device, config)
-
-    model.eval()
-
-    model_container["model"] = model
-    model_container["device"] = device
-    model_container["image_size"] = image_size
-    model_container["config"] = config
+        inference_service.load_model(str(latest_checkpoint))
+    else:
+        print(f"WARNING: No checkpoints found in {checkpoint_dir}. Model will not be initialized.")
 
     # Initialize datasets
     try:
@@ -782,149 +733,54 @@ async def predict(
     run_id: str = Form(None),
     checkpoint: str = Form(None),
 ):
-    content_type = file.content_type or ""
-    if not content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File must be an image.")
-
     try:
         # Load image
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert(
-            "L"
-        )  # Convert to Grayscale (1-channel)
-
-        # Preprocess
-        original_size = image.size  # (W, H)
+        image = Image.open(io.BytesIO(contents)).convert("L")
+        original_size = image.size
 
         # Determine checkpoint path
         checkpoint_path = None
         if run_id:
-            checkpoint_name = checkpoint if checkpoint else "best_model.pth"
-            checkpoint_path = (
-                project_root
-                / "results"
-                / "runs"
-                / run_id
-                / "checkpoints"
-                / checkpoint_name
-            )
+            checkpoint_path = project_root / "results" / "runs" / run_id / "checkpoints" / (checkpoint or "best_model.pth")
         elif model_name:
             checkpoint_path = project_root / "models" / "checkpoints" / model_name
         else:
-            # Fallback to latest global checkpoint if nothing selected
             checkpoint_dir = Path(project_root) / "models" / "checkpoints"
             checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
             if checkpoints:
                 checkpoint_path = checkpoints[-1]
 
-        # Determine image size from run config
+        if checkpoint_path and not os.path.exists(checkpoint_path):
+            raise HTTPException(status_code=404, detail=f"Checkpoint not found: {checkpoint_path}")
+
+        # Load/Switch model in InferenceService
+        if checkpoint_path:
+            inference_service.load_model(str(checkpoint_path))
+
+        # Preprocess
         model_image_size = (256, 256)
-        if checkpoint_path and (checkpoint_path.parent.parent / "config.json").exists():
-            with open(checkpoint_path.parent.parent / "config.json", "r") as f:
-                run_cfg = json.load(f)
-                model_image_size = tuple(
-                    run_cfg.get("dataset", {}).get("image_size", [256, 256])
-                )
+        if inference_service._config:
+            model_image_size = tuple(inference_service._config.get("dataset", {}).get("image_size", [256, 256]))
 
         image_resized = image.resize(model_image_size)
-        # (1, 1, H, W)
-        img_tensor = (
-            torch.from_numpy(np.array(image_resized)).unsqueeze(0).unsqueeze(0).float()
-            / 255.0
-        ).to(model_container["device"])
+        img_tensor = torch.from_numpy(np.array(image_resized)).unsqueeze(0).unsqueeze(0).float() / 255.0
 
-        # Check if file exists and get mtime
-        if checkpoint_path and not os.path.exists(checkpoint_path):
-            raise HTTPException(
-                status_code=404, detail=f"Checkpoint not found: {checkpoint_path}"
-            )
+        # Perform inference using singleton service
+        preds = inference_service.predict(img_tensor)
 
-        file_mtime = os.path.getmtime(checkpoint_path) if checkpoint_path else 0
-
-        # Load model if not already loaded or if different run/checkpoint requested or if file is newer
-        model_key = f"{model_name}_{run_id}_{checkpoint}"
-
-        needs_load = False
-        if model_key not in model_container:
-            needs_load = True
-        elif (
-            isinstance(model_container[model_key], dict)
-            and model_container[model_key].get("mtime", 0) < file_mtime
-        ):
-            print(f"[API] Checkpoint {checkpoint} updated on disk. Reloading...")
-            needs_load = True
-
-        # Inference
-        device = model_container["device"]
-        if needs_load and checkpoint_path:
-            print(f"[API] Loading model: {model_name} from {checkpoint_path}")
-
-            # Use run-specific config if available
-            current_config = model_container["config"]
-            if run_id:
-                run_config_path = (
-                    project_root / "results" / "runs" / run_id / "config.json"
-                )
-                if run_config_path.exists():
-                    try:
-                        with open(run_config_path, "r") as f:
-                            current_config = json.load(f)
-                        print(f"[API] Using run-specific config for {run_id}")
-                    except Exception as e:
-                        print(
-                            f"[API] Warning: Failed to load run config, using global: {e}"
-                        )
-
-            # Load model for inference (automatically applies wrapper)
-            model = load_model_for_inference(
-                str(checkpoint_path), device, current_config
-            )
-
-            # Update container
-            model_container[model_key] = {"model": model, "mtime": file_mtime}
-
-        # Select active model from cache
-        if model_key in model_container:
-            active_model_entry = model_container[model_key]
-            model = (
-                active_model_entry["model"]
-                if isinstance(active_model_entry, dict)
-                else active_model_entry
-            )
-        elif "model" in model_container:
-            model = model_container["model"]
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail="No model available for inference. Check if checkpoints exist.",
-            )
-
-        with torch.no_grad():
-            # PoseDecodingWrapper returns joints (B, J, 2)
-            preds = model(img_tensor).cpu()
-
-        # Rescale predictions to original image size
-        # preds is (1, 14, 2) in model_image_size space
+        # Rescale predictions
         scale_x = original_size[0] / model_image_size[0]
         scale_y = original_size[1] / model_image_size[1]
+        scaled_preds = preds[0].cpu().numpy()
 
-        scaled_preds = preds[0].cpu().numpy().copy()
-        for i in range(len(scaled_preds)):
-            scaled_preds[i, 0] = float(scaled_preds[i, 0]) * scale_x
-            scaled_preds[i, 1] = float(scaled_preds[i, 1]) * scale_y
-
-        # Format response
         results = []
         for i, (x, y) in enumerate(scaled_preds):
-            results.append(
-                {
-                    "joint": LSP_JOINT_NAMES[i]
-                    if i < len(LSP_JOINT_NAMES)
-                    else f"Joint_{i}",
-                    "x": float(x),
-                    "y": float(y),
-                }
-            )
+            results.append({
+                "joint": LSP_JOINT_NAMES[i] if i < len(LSP_JOINT_NAMES) else f"Joint_{i}",
+                "x": float(x) * scale_x,
+                "y": float(y) * scale_y,
+            })
 
         return {
             "filename": file.filename,
