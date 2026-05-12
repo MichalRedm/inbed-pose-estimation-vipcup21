@@ -207,7 +207,7 @@ class TrainingManager:
         return {
             "is_running": self.is_running,
             "run_id": self.current_run_id or self.last_run_id,
-            "progress": 1.0 if not self.is_running else overall_progress,
+            "progress": 1.0 if (not self.is_running and self.total_epochs > 0) else overall_progress,
             "current_epoch": self.current_epoch,
             "total_epochs": self.total_epochs,
             "loss_history": self.loss_history,
