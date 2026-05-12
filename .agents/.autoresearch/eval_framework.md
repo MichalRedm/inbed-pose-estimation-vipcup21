@@ -18,9 +18,9 @@
 ### Running Evaluation
 - [x] **Evaluation Script Fixed**: `scripts/evaluate.py` now loads run-specific configs, auto-selects decoders, and uses the correct `vis<=1` mask.
 
-```bash
 # Evaluate a specific run (auto-saves results to the run directory)
-python scripts/evaluate.py --run_id loop16_sigma_curriculum
+# IMPORTANT: Must be run from project root with absolute path resolution for visual audit plots.
+python scripts/evaluate.py --run_id loop17_uncertainty
 ```
 
 ### Training-integrated Evaluation
@@ -37,6 +37,8 @@ All "Verified" metrics in this repository must meet the following criteria:
 ## Results Tracker (CORRECTED — cover1+cover2, vis≤1, run config, correct decoder)
 
 | loop17_uncertainty | **74.2%** | 24.7 px | **SUCCESS** (Uncertainty weighted) |
+| loop18_gcn_refinement | 42.1% | 55.2 px | FAILURE (Over-regularization) |
+| loop19_normalized_ana | 39.0% | 59.8 px | FAILURE (**Skeleton Collapse**) |
 | loop9_anatomical_hinge | 73.0% | 27.4 px | RELIABLE BASELINE (vis≤1) |
 | loop14_integral_reg | 30.5% | 69.3 px | FAILURE (Loss imbalance) |
 | loop15_occlusion_aware | 31.9% | 63.6 px | FAILURE (Loss imbalance) |
@@ -48,4 +50,5 @@ All "Verified" metrics in this repository must meet the following criteria:
 - **Loss-metric alignment check**: After each run, compare `val_loss` trajectory in `history.json` against `val_pck`. If the epoch with minimum `val_loss` differs significantly from the epoch with max `val_pck`, the loss function has an alignment problem. This is a known issue with the combined auxiliary loss.
 - **Per-joint PCK breakdown**: Extremities (ankles, wrists) consistently underperform. Focus new hypotheses on improving R/L_Ankle PCK specifically.
 - **Cover-specific breakdown**: Run evaluation separately on cover1 vs cover2 to detect if the model struggles more with thicker blanket conditions.
+- **Visual Audit**: `scripts/evaluate.py` generates `visual_audit_best_model.png` in the run directory. This plot compares GT vs Pred skeletons across 4 validation samples. If the predicted skeleton is a single point, this confirms **Skeleton Collapse**.
 - **Anatomical Validity Check**: For GCN-refined models, compare `PCK` of raw heatmaps vs `PCK` of refined coordinates to quantify the GCN's "correction" effect.

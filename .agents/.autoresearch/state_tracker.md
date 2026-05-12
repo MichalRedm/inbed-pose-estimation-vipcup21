@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 18
-- **Phase**: Implementation & Training
-- **Status**: IMPLEMENTED. Added `GCNRefinedHRNet` and integrated into `StandardTrainer` and `evaluate.py`.
+- **Current Loop**: 20
+- **Phase**: Brainstorming (Phase 1)
+- **Status**: LOOP 19 COMPLETED. Skeleton collapse observed in anatomical constraint run.
 - **Absolute Priority**: 
-  1. **Training**: Execute Loop 18 training run with GCN refinement.
-  2. **Comparison**: Verify if GCN improves extremity PCK (ankles/wrists) compared to Loop 17.
+  1. **Fix Convergence**: Identify why normalized anatomical loss causes skeleton collapse (likely joint-coalescence local minima).
+  2. **Baseline Recovery**: Recover 74%+ PCK by refining uncertainty weighting or increasing heatmap supervision.
 - **Baseline**: Loop 17 (74.2% PCK).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -39,12 +39,13 @@ The training pipeline has a **fundamental loss-metric alignment problem** that m
 
 The `best_model.pth` saving criterion has been fixed to use **val PCK** (implemented 2026-05-11 in `base_trainer.py`). This fix takes effect from the next training run onward.
 
-## Infrastructure Fixes Applied (2026-05-11)
+## Infrastructure Fixes Applied (2026-05-12)
 
-- **Dashboard**: Canvas-based inference overlay fully working. Image sizing restored. Skeleton overlay pixel-accurate.
-- **API**: Auto-selects `argmax` vs `soft-argmax` decoding per run based on `sigma_start`/`sigma_end` keys in run config.json.
-- **Trainer**: `BaseTrainer.compute_val_pck()` added; `StandardTrainer.fit()` now saves `best_model.pth` based on highest val PCK rather than lowest combined loss.
-- **Evaluation**: `eval_framework.md` updated with corrected metric computation procedures and Verification Protocol.
+- **API Stabilization**: Added missing `typing` imports (`Dict`, `Any`) to `src/api/main.py`. Fixed `NameError` on startup.
+- **Evaluation Reporting**: Implemented `format_evaluation_metrics` helper in API to correctly parse per-joint PCK/MPJPE from `evaluation.json`, restoring dashboard plots.
+- **History Persistence**: Updated `TrainingManager.get_status` to proactively reload `history.json` from disk, preventing "disappearing history" after training completion.
+- **Evaluation Script**: Patched `scripts/evaluate.py` to resolve absolute/relative path mismatches when generating visual audit plots.
+- **Environment**: Enforced `.venv\Scripts\python.exe` for all backend services to ensure dependency consistency.
 
 ## Iteration Log
 
@@ -62,4 +63,5 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 15 | Occlusion-Aware Integral Reg. | FAILURE | 31.9% | Loss imbalance (aux term dominated) |
 | 16 | Adaptive Sigma Curriculum | FAILURE | 33.9% | Loss imbalance (aux term dominated) |
 | 17 | Multi-Task Uncertainty Weighting | SUCCESS | **74.2%** | Kendall et al. weighting; PCK-aligned |
-| 18 | GCN-based Pose Refinement | IN_PROGRESS | N/A | Modeling anatomical joint dependencies |
+| 18 | GCN-based Pose Refinement | FAILURE | ~42% | GCN layer over-regularized prediction |
+| 19 | Normalized Anatomical Constraints | FAILURE | 39.0% | **SKELETON COLLAPSE**: Joints coalesced to minimize length error |

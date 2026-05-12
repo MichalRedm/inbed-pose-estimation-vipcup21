@@ -17,6 +17,8 @@
 - **Evaluation**: Always use run's own `config.json`, not global `load_config()`. Always use vis≤1 mask.
 - **Anatomical priors**: Must use normalized [0,1] coordinate space if implementing coordinate-space constraints
 - **Remote GPU**: Use Kaggle T4 for training (40s/epoch typical). Local CPU only for quick eval/debug.
+- **Environment**: Use `.venv\Scripts\python.exe` for all local backend services (API, Training Manager) to ensure strict dependency parity.
+- **Paths**: `scripts/evaluate.py` requires absolute paths for reliable visual audit plot generation.
 
 ## Discovered Mechanics & Quirks
 
@@ -29,6 +31,7 @@
 - **Argmax**: Correct for models trained with standard MSE heatmap loss (σ=2.0 constant). Produces quantized outputs at heatmap resolution / image scale. Identified by absence of `sigma_start`/`sigma_end` in training config.
 - **Soft-argmax**: Correct for models trained with sigma curriculum (`sigma_start != sigma_end`). Requires sharp heatmap peaks to work reliably. If heatmaps have low signal-to-noise (early training, high σ), soft-argmax collapses to center prediction.
 - **API auto-selection**: `src/api/main.py` reads run config.json and selects decoder automatically.
+- **API Metrics Formatting**: All evaluation metrics must pass through `format_evaluation_metrics()` in `src/api/main.py`. This normalizes `per_joint_mpjpe` and `per_joint_pck` into a unified `per_joint_metrics` list for the React dashboard charts.
 - **Trainer auto-selection**: `StandardTrainer.fit()` selects decoder for `compute_val_pck()` automatically.
 
 ### Sigma Curriculum
@@ -47,7 +50,8 @@
 - **Annotation offset**: Raw `.mat` files have 1-indexed coordinates; dataset subtracts 1 on load.
 
 ### Foreshortening
-- 2D bone lengths are NOT fixed — they project from 3D. Use Hinge Loss (upper-bound only) for anatomical constraints, never fixed-length MSE.
+- Foreshortening: 2D bone lengths are NOT fixed — they project from 3D. Use Hinge Loss (upper-bound only) for anatomical constraints, never fixed-length MSE.
+- **Skeleton Collapse Risk**: In normalized [0,1] coordinate space, a strong anatomical hinge loss can drive the model toward a degenerate solution where all joints are at (0.5, 0.5), as this yields zero bone length error. Requires strong heatmap supervision and low initial $\lambda_{ana}$ to anchor the structure.
 - Curriculum warmup (~10 epochs) required before anatomical constraints to avoid local minima.
 
 ### Remote Training
