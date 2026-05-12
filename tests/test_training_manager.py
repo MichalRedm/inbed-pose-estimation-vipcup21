@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import MagicMock, patch
 from src.training.manager import TrainingManager
 
 
@@ -14,18 +15,29 @@ def test_manager_status_initial(manager):
 
 
 def test_manager_config_overrides(manager):
-    # Explicitly set remote to false for local testing
-    success, message = manager.start_training({"epochs": -1, "remote": False})
-    assert isinstance(success, bool)
+    # Mock _run_training to avoid any thread/process side effects
+    with patch.object(TrainingManager, "_run_training") as mock_run:
+        # Explicitly set remote to false for local testing
+        success, message = manager.start_training({"epochs": -1, "remote": False})
+        assert success is True
+        assert manager.is_running is True
+        assert manager.current_run_id is not None
+        
+        # Cleanup
+        manager.is_running = False
 
 
 def test_manager_stop_when_not_running(manager):
+    # Stop should return False if not running
     success, message = manager.stop_training()
     assert success is False
-    assert "in progress" in message.lower()
+    assert "no training in progress" in message.lower()
 
 
 def test_run_id_generation(manager):
-    # Test if manager creates directories correctly for a new run
-    # (This assumes manager has some logic for this or we test the side effect)
-    pass
+    # Test if manager generates a run_id
+    with patch.object(TrainingManager, "_run_training"):
+        manager.start_training({})
+        assert manager.current_run_id is not None
+        assert manager.current_run_id.startswith("run_")
+        manager.is_running = False

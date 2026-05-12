@@ -39,9 +39,9 @@ class BaseTrainer(ABC):
         self.epochs = train_cfg.get("epochs", 30)
         self.start_epoch = 0  # Default, can be set during resumption
         self.current_epoch = 0
-        self.save_dir = train_cfg.get("save_dir", "results/runs/default")
+        self.save_dir = train_cfg.get("save_dir", None)
 
-        if self.is_main:
+        if self.is_main and self.save_dir:
             os.makedirs(self.save_dir, exist_ok=True)
             os.makedirs(os.path.join(self.save_dir, "checkpoints"), exist_ok=True)
 
@@ -49,8 +49,8 @@ class BaseTrainer(ABC):
         self.best_val_pck = -1.0
         self.best_val_loss = float("inf")
         self.history = []
-        self.history_path = os.path.join(self.save_dir, "history.json")
-        if os.path.exists(self.history_path):
+        self.history_path = os.path.join(self.save_dir, "history.json") if self.save_dir else None
+        if self.history_path and os.path.exists(self.history_path):
             try:
                 with open(self.history_path, "r") as f:
                     self.history = json.load(f)
@@ -58,7 +58,7 @@ class BaseTrainer(ABC):
                 pass
 
         # Dedicated JSON stream for real-time dashboard updates
-        self.stream_path = os.path.join(self.save_dir, "stream.jsonl")
+        self.stream_path = os.path.join(self.save_dir, "stream.jsonl") if self.save_dir else None
         if self.is_main:
             # Clear previous stream file on start/resume to keep the pipe fresh
             try:
@@ -251,7 +251,7 @@ class BaseTrainer(ABC):
         return mean_pck
 
     def save_checkpoint(self, name: str, is_best: bool = False):
-        if not self.is_main:
+        if not self.is_main or not self.save_dir:
             return
 
         checkpoint = {
@@ -301,7 +301,7 @@ class BaseTrainer(ABC):
         return {}
 
     def update_history(self, epoch_data: Dict[str, Any]):
-        if not self.is_main:
+        if not self.is_main or not self.history_path:
             return
         self.history.append(epoch_data)
 
