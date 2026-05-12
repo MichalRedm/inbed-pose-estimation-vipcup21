@@ -6,6 +6,7 @@ from torch.utils.data import Dataset, default_collate
 from pathlib import Path
 from PIL import Image
 from .augmentations import DataAugmenter
+import torchvision.transforms.v2 as v2
 
 
 def collate_skip_none(batch):
@@ -50,9 +51,13 @@ class VIPCupDataset(Dataset):
         self.samples = self._prepare_samples()
         if self.subjects and not self.samples:
             raise ValueError(
-                f"No samples found for split='{split}', subjects={self.subjects}, covers={covers}. "
+                f"No samples found for split='{self.split}', subjects={self.subjects}, covers={self.covers}. "
                 f"Check your data path: {self.root}"
             )
+
+    def set_sigma(self, sigma: float):
+        """Update the Gaussian sigma for heatmap generation (dynamic scheduling)."""
+        self.sigma = sigma
 
     def _prepare_samples(self):
         samples = []
@@ -193,32 +198,20 @@ class VIPCupDataset(Dataset):
             scaled_joints[1] *= scale_y
             joints = torch.from_numpy(scaled_joints).float()
 
+        # Convert to tensor if not already (augmenter might return tensors or PIL)
+        if not torch.is_tensor(image):
+            if target_mod == "IR":
+                image = v2.functional.to_image(image).float() / 255.0
+            else:
+                image = v2.functional.to_image(image).float() / 255.0
+
+        if image_source is not None and not torch.is_tensor(image_source):
+            image_source = v2.functional.to_image(image_source).float() / 255.0
+
         if self.transform:
             image = self.transform(image)
             if image_source:
                 image_source = self.transform(image_source)
-        else:
-            # Default to tensor conversion
-            if target_mod == "IR":
-                # (1, H, W)
-                image = torch.from_numpy(np.array(image)).unsqueeze(0).float() / 255.0
-                if image_source:
-                    image_source = (
-                        torch.from_numpy(np.array(image_source)).unsqueeze(0).float()
-                        / 255.0
-                    )
-            else:
-                # (3, H, W)
-                image = (
-                    torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0
-                )
-                if image_source:
-                    image_source = (
-                        torch.from_numpy(np.array(image_source))
-                        .permute(2, 0, 1)
-                        .float()
-                        / 255.0
-                    )
 
         target_heatmaps = None
         if joints is not None:

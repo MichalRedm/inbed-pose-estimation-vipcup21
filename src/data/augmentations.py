@@ -1,8 +1,10 @@
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Union, List
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
+import torch
 import random
-
+import torchvision.transforms.v2 as v2
+from torchvision import tv_tensors
 
 class ThermalDiffusionAugmenter:
     """
@@ -16,44 +18,47 @@ class ThermalDiffusionAugmenter:
         self.is_training = is_training
 
     def __call__(
-        self, image: Image.Image, joints: Optional[np.ndarray], is_ir: bool
-    ) -> Image.Image:
+        self, image: Union[Image.Image, torch.Tensor], joints: Optional[torch.Tensor], is_ir: bool
+    ) -> Union[Image.Image, torch.Tensor]:
         # Skip if not training, if it's NOT an IR image, or if the random check fails
         if not self.is_training or not is_ir or random.random() > self.probability:
             return image
 
-        w, h = image.size
+        # Handle both PIL and Tensor
+        is_tensor = torch.is_tensor(image)
+        if is_tensor:
+            device = image.device
+            img_pil = v2.functional.to_pil_image(image)
+        else:
+            img_pil = image
 
+        w, h = img_pil.size
+        
         # Determine coverage level
         coverage_options = []
         if joints is not None:
-            # Check visibility/annotation (0=visible, 1=occluded, 2=missing)
-            # We look for the Y coordinate of various joint pairs
-            for pair in [
-                (0, 5),
-                (1, 4),
-                (2, 3),
-                (8, 9),
-            ]:  # ankles, knees, hips, shoulders
-                if joints[2, pair[0]] < 2 and joints[2, pair[1]] < 2:
-                    coverage_options.append(min(joints[1, pair[0]], joints[1, pair[1]]))
+            # joints: (1, 14, 2) or (3, 14) or (14, 2)
+            if joints.shape[0] == 3:
+                j_np = joints.cpu().numpy()
+                for pair in [(0, 5), (1, 4), (2, 3), (8, 9)]:
+                    if j_np[2, pair[0]] < 2 and j_np[2, pair[1]] < 2:
+                        coverage_options.append(min(j_np[1, pair[0]], j_np[1, pair[1]]))
+            elif len(joints.shape) == 3: # (1, 14, 2)
+                j_np = joints[0].cpu().numpy()
+                for pair in [(0, 5), (1, 4), (2, 3), (8, 9)]:
+                    coverage_options.append(min(j_np[pair[0], 1], j_np[pair[1], 1]))
 
-        # Probability of full coverage
         full_coverage = random.random() < 0.1
-
         if full_coverage:
             base_y = 0
         elif coverage_options:
-            # Pick a random joint level to start the blanket from
             base_y = random.choice(coverage_options)
         else:
-            # Fallback to random height if no joints are visible
             base_y = random.randint(int(h * 0.1), int(h * 0.7))
 
-        # Create a wavy blanket edge using sine waves
-        mask = Image.new("L", image.size, 0)
+        # Create wavy mask
+        mask = Image.new("L", img_pil.size, 0)
         draw = ImageDraw.Draw(mask)
-
         points = []
         num_points = 20
         freq = random.uniform(2, 5)
@@ -62,38 +67,26 @@ class ThermalDiffusionAugmenter:
 
         for i in range(num_points + 1):
             x = int(i * w / num_points)
-            # Add some sine-based waviness
             y = int(base_y + amp * np.sin(freq * (x / w) * 2 * np.pi + phase))
-            # Clamp to image bounds
             y = max(0, min(h - 1, y))
             points.append((x, y))
 
-        # Close the polygon to the bottom
         points.append((w, h))
         points.append((0, h))
         draw.polygon(points, fill=255)
-
-        # Soften the mask edge slightly
         mask = mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(5, 10)))
 
-        # 1. Create a variable blurred version
-        # We'll use a strong blur for the "blanket" area
+        # 1. Blur
         blur_radius = random.uniform(4, 10)
-        blurred = image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+        blurred = img_pil.filter(ImageFilter.GaussianBlur(radius=blur_radius))
 
-        # 2. Create a dampened version (lower intensity)
-        # Convert to numpy for intensity manipulation
-        img_np = np.array(image).astype(np.float32)
-
-        # Random dampening factor
+        # 2. Dampen & Noise
+        img_np = np.array(img_pil).astype(np.float32)
         damp_factor = random.uniform(0.4, 0.7)
         dampened_np = img_np * damp_factor
-
-        # Add thermal noise (Gaussian noise + random hot/cold spots)
         noise = np.random.normal(0, 5, dampened_np.shape).astype(np.float32)
         dampened_np = np.clip(dampened_np + noise, 0, 255)
 
-        # Occasionally add "sensor noise" or "blanket texture"
         if random.random() < 0.3:
             grid_y, grid_x = np.mgrid[0:h, 0:w]
             texture = 5 * np.sin(grid_x / 5) * np.cos(grid_y / 5)
@@ -101,184 +94,103 @@ class ThermalDiffusionAugmenter:
 
         dampened = Image.fromarray(dampened_np.astype(np.uint8))
 
-        # 3. Combine: the "blanket" version is both blurred and dampened
+        # 3. Combine
         blanket_layer = Image.composite(
             dampened.filter(ImageFilter.GaussianBlur(radius=2)), blurred, mask
         )
+        final_image = Image.composite(blanket_layer, img_pil, mask)
 
-        # Final composition: original image blended with the "under-blanket" version
-        final_image = Image.composite(blanket_layer, image, mask)
-
+        if is_tensor:
+            # Use to_dtype to ensure proper tensor format without extra copies if already tensor
+            return v2.functional.to_image(final_image).to(device)
         return final_image
-
 
 class DataAugmenter:
     """
-    Modular data augmentation for pose estimation.
-    Handles simultaneous transformation of images and joint coordinates.
+    Optimized Data Augmentation using torchvision.transforms.v2.
     """
-
     def __init__(self, config: Optional[dict] = None, is_training: bool = True):
         self.config = config or {}
         self.enabled = self.config.get("enabled", False)
         self.is_training = is_training
-
-        # Initialize the thermal diffusion augmenter with config parameters
+        
+        # Thermal augmenter
         self.thermal_augmenter = ThermalDiffusionAugmenter(
             probability=self.config.get("occlusion_prob", 0.5),
             is_training=self.is_training,
         )
 
+        # Spatial transforms (Affine only, Flip handled manually)
+        if self.enabled and self.is_training:
+            rot_range = self.config.get("rotation_range", [-30, 30])
+            scale_range = self.config.get("scaling_range", [0.8, 1.2])
+            
+            self.affine_transform = v2.RandomAffine(
+                degrees=rot_range,
+                scale=scale_range,
+                interpolation=v2.InterpolationMode.BILINEAR
+            )
+        else:
+            self.affine_transform = None
+
     def __call__(
         self,
-        image: Image.Image,
+        image: Union[Image.Image, torch.Tensor],
         joints: Optional[np.ndarray],
         is_ir: bool = False,
         return_pair: bool = False,
     ) -> Any:
-        """
-        Apply enabled augmentations.
-        image: PIL Image
-        joints: numpy array of shape (3, 14) -> (x, y, visibility)
-        is_ir: boolean flag indicating if the current image is an Infrared/Thermal modality
-        return_pair: if True, returns (augmented_image, source_image, joints) for UDA
-        returns: (transformed_image, transformed_joints) OR (aug, src, joints)
-        """
         if not self.enabled:
             if return_pair:
                 return image, image, joints
             return image, joints
 
-        # 1. Spatial/Geometric transforms (affects both image and joints)
-        image, joints = self._random_flip(image, joints)
-        image, joints = self._random_rotate(image, joints)
-        image, joints = self._random_scale(image, joints)
+        # 1. Prepare Keypoints
+        if joints is not None:
+            coords = torch.from_numpy(joints[:2, :].T).float().unsqueeze(0)
+            vis = torch.from_numpy(joints[2, :]).float()
+            w, h = (image.width, image.height) if hasattr(image, 'width') else (image.shape[-1], image.shape[-2])
+            kpts = tv_tensors.KeyPoints(coords, canvas_size=(h, w))
+        else:
+            kpts = None
+            vis = None
 
-        # Keep a copy of the geometrically transformed image before pixel-level/thermal changes
-        source_image = image.copy()
+        # 2. Manual Horizontal Flip (for joint reordering)
+        if self.is_training:
+            flip_prob = self.config.get("flip_prob", 0.5)
+            if random.random() < flip_prob:
+                image = v2.functional.hflip(image)
+                if kpts is not None:
+                    kpts = v2.functional.hflip(kpts)
+                    # Reorder joints for symmetry
+                    flip_indices = [5, 4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 12, 13]
+                    vis = vis[flip_indices]
 
-        # 2. Pixel-level transforms (affects only image, joints stay the same)
-        # image, joints = self._color_jitter(image, joints)
+        # 3. Apply Affine (Rotation + Scaling)
+        if self.affine_transform:
+            if kpts is not None:
+                image, kpts = self.affine_transform(image, kpts)
+            else:
+                image = self.affine_transform(image)
+        
+        # 4. Thermal diffusion
+        source_image = image
+        if return_pair:
+            source_image = image.clone() if torch.is_tensor(image) else image.copy()
 
-        # 3. Apply the IR-only thermal diffusion (simulates blanket)
         if self.thermal_augmenter:
-            image = self.thermal_augmenter(image, joints=joints, is_ir=is_ir)
+            image = self.thermal_augmenter(image, joints=kpts, is_ir=is_ir)
+
+        # 5. Final Assembly
+        if kpts is not None:
+            final_coords = kpts.view(14, 2).T # (2, 14)
+            final_joints = torch.cat([final_coords, vis.unsqueeze(0)], dim=0).numpy()
+        else:
+            final_joints = None
 
         if return_pair:
-            return image, source_image, joints
-        return image, joints
+            return image, source_image, final_joints
+        return image, final_joints
 
-    def _random_flip(self, image: Image.Image, joints: Any) -> Tuple[Image.Image, Any]:
-        """Horizontal flip with probability flip_prob."""
-        flip_prob = self.config.get("flip_prob", 0.5)
-        if random.random() > flip_prob:
-            return image, joints
-
-        # Flip image
-        image = image.transpose(Image.FLIP_LEFT_RIGHT)
-
-        # Flip joints
-        if joints is not None:
-            # joints: (3, 14) -> (x, y, vis)
-            # x' = width - 1 - x
-            w, _ = image.size
-            joints = joints.copy()
-            joints[0] = w - 1 - joints[0]
-
-            # Reorder joints for symmetry (left side becomes right side)
-            # LSP joint order: 0: R ankle, 1: R knee, 2: R hip, 3: L hip, 4: L knee, 5: L ankle,
-            # 6: R wrist, 7: R elbow, 8: R shoulder, 9: L shoulder, 10: L elbow, 11: L wrist,
-            # 12: neck, 13: head
-            flip_indices = [5, 4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 12, 13]
-            joints = joints[:, flip_indices]
-
-        return image, joints
-
-    def _random_rotate(
-        self, image: Image.Image, joints: Any
-    ) -> Tuple[Image.Image, Any]:
-        """Random rotation within rotation_range."""
-        rot_range = self.config.get("rotation_range", [-30, 30])
-        angle = random.uniform(rot_range[0], rot_range[1])
-
-        if angle == 0:
-            return image, joints
-
-        # Rotate image
-        # Using BICUBIC for better quality, but IR might prefer NEAREST/BILINEAR
-        # We rotate around center
-        w, h = image.size
-        center = (w / 2, h / 2)
-        image = image.rotate(angle, resample=Image.BILINEAR)
-
-        # Rotate joints
-        if joints is not None:
-            joints = joints.copy()
-            # PIL rotate is counter-clockwise.
-            # In image coordinates (y-down), CCW rotation by angle 'a' is:
-            # x' = x*cos(a) + y*sin(a)
-            # y' = -x*sin(a) + y*cos(a)
-            angle_rad = np.deg2rad(angle)
-            cos_a = np.cos(angle_rad)
-            sin_a = np.sin(angle_rad)
-
-            # Shift to origin (center of rotation)
-            x = joints[0] - center[0]
-            y = joints[1] - center[1]
-
-            # Rotate
-            new_x = x * cos_a + y * sin_a
-            new_y = -x * sin_a + y * cos_a
-
-            # Shift back
-            joints[0] = new_x + center[0]
-            joints[1] = new_y + center[1]
-
-        return image, joints
-
-    def _random_scale(self, image: Image.Image, joints: Any) -> Tuple[Image.Image, Any]:
-        """Random scaling within scaling_range."""
-        scale_range = self.config.get("scaling_range", [0.8, 1.2])
-        scale = random.uniform(scale_range[0], scale_range[1])
-
-        if scale == 1.0:
-            return image, joints
-
-        w, h = image.size
-        new_w, new_h = int(w * scale), int(h * scale)
-
-        # Resize image
-        image_resized = image.resize((new_w, new_h), resample=Image.BILINEAR)
-
-        # Center crop or pad to original size
-        image_final = Image.new(image.mode, (w, h), color=0)
-
-        # Calculate offsets
-        offset_x = (w - new_w) // 2
-        offset_y = (h - new_h) // 2
-
-        # Paste onto new background
-        if scale < 1.0:
-            # Smaller: paste in center
-            image_final.paste(image_resized, (offset_x, offset_y))
-        else:
-            # Larger: crop center
-            image_final = image_resized.crop(
-                (-offset_x, -offset_y, -offset_x + w, -offset_y + h)
-            )
-
-        # Update joints
-        if joints is not None:
-            joints = joints.copy()
-            # Scale
-            joints[0] *= scale
-            joints[1] *= scale
-            # Offset
-            joints[0] += offset_x
-            joints[1] += offset_y
-
-        return image_final, joints
-
-    def _color_jitter(self, image: Image.Image, joints: Any) -> Tuple[Image.Image, Any]:
-        """Placeholder for color augmentation (image only)."""
-        return image, joints
+# Legacy alias
+DataAugmenterV2 = DataAugmenter

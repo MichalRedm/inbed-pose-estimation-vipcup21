@@ -51,6 +51,7 @@ def decode_heatmaps(heatmaps, image_size, method="argmax", temperature=10.0):
 
     B, J, H, W = heatmaps.shape
     img_h, img_w = image_size
+    device = heatmaps.device
 
     if method == "soft-argmax":
         # Apply temperature-scaled softmax to get probability distribution
@@ -59,12 +60,12 @@ def decode_heatmaps(heatmaps, image_size, method="argmax", temperature=10.0):
         probs = probs.view(B, J, H, W)
 
         # Coordinate grids
-        grid_x = torch.arange(W, device=heatmaps.device).float()
-        grid_y = torch.arange(H, device=heatmaps.device).float()
+        grid_x = torch.arange(W, device=device).float().view(1, 1, 1, W)
+        grid_y = torch.arange(H, device=device).float().view(1, 1, H, 1)
 
         # Expected values (center of mass)
-        expected_x = torch.sum(torch.sum(probs, dim=2) * grid_x, dim=2)
-        expected_y = torch.sum(torch.sum(probs, dim=3) * grid_y, dim=2)
+        expected_x = torch.sum(probs * grid_x, dim=(2, 3))
+        expected_y = torch.sum(probs * grid_y, dim=(2, 3))
 
         x = expected_x * (img_w / W)
         y = expected_y * (img_h / H)
@@ -145,28 +146,34 @@ def compute_mpjpe(preds, gts, visibility=None):
     visibility: (B, J) or (B, 3, J) - if (B, 3, J), index 2 is used as visibility.
     Returns: Average error per joint, and per-joint errors.
     """
-    if torch.is_tensor(preds):
-        preds = preds.cpu().numpy()
-    if torch.is_tensor(gts):
-        gts = gts.cpu().numpy()
+    device = preds.device
+    if not torch.is_tensor(gts):
+        gts = torch.from_numpy(gts).to(device)
+    else:
+        gts = gts.to(device)
 
     if visibility is not None:
-        if torch.is_tensor(visibility):
-            visibility = visibility.cpu().numpy()
+        if not torch.is_tensor(visibility):
+            visibility = torch.from_numpy(visibility).to(device)
+        else:
+            visibility = visibility.to(device)
 
         if len(visibility.shape) == 3:  # (B, 3, J)
-            visibility = (visibility[:, 2, :] <= 1).astype(float)
+            visibility = (visibility[:, 2, :] <= 1).float()
     else:
-        visibility = np.ones(preds.shape[:2])
+        visibility = torch.ones(preds.shape[:2], device=device)
 
     # Distance between preds and gts
-    dist = np.sqrt(np.sum((preds - gts) ** 2, axis=-1))  # (B, J)
+    dist = torch.sqrt(torch.sum((preds - gts) ** 2, dim=-1))  # (B, J)
 
     # Apply visibility mask
     dist = dist * visibility
 
-    per_joint_error = np.sum(dist, axis=0) / np.maximum(np.sum(visibility, axis=0), 1)
-    mean_error = np.sum(dist) / np.maximum(np.sum(visibility), 1)
+    sum_vis = torch.sum(visibility, dim=0)
+    per_joint_error = torch.sum(dist, dim=0) / torch.clamp(sum_vis, min=1e-6)
+    
+    total_vis = torch.sum(visibility)
+    mean_error = torch.sum(dist) / torch.clamp(total_vis, min=1e-6)
 
     return mean_error, per_joint_error
 
@@ -177,21 +184,24 @@ def compute_pck(preds, gts, visibility=None, threshold=0.5):
     threshold: If < 1.0, it's relative to torso diameter (PCK@threshold).
               If >= 1.0, it's absolute pixel threshold.
     """
-    if torch.is_tensor(preds):
-        preds = preds.cpu().numpy()
-    if torch.is_tensor(gts):
-        gts = gts.cpu().numpy()
+    device = preds.device
+    if not torch.is_tensor(gts):
+        gts = torch.from_numpy(gts).to(device)
+    else:
+        gts = gts.to(device)
 
     if visibility is not None:
-        if torch.is_tensor(visibility):
-            visibility = visibility.cpu().numpy()
+        if not torch.is_tensor(visibility):
+            visibility = torch.from_numpy(visibility).to(device)
+        else:
+            visibility = visibility.to(device)
 
         if len(visibility.shape) == 3:  # (B, 3, J)
-            visibility = (visibility[:, 2, :] <= 1).astype(float)
+            visibility = (visibility[:, 2, :] <= 1).float()
     else:
-        visibility = np.ones(preds.shape[:2])
+        visibility = torch.ones(preds.shape[:2], device=device)
 
-    dist = np.sqrt(np.sum((preds - gts) ** 2, axis=-1))  # (B, J)
+    dist = torch.sqrt(torch.sum((preds - gts) ** 2, dim=-1))  # (B, J)
 
     if threshold < 1.0:
         # Relative threshold (PCK@threshold)
@@ -199,18 +209,21 @@ def compute_pck(preds, gts, visibility=None, threshold=0.5):
         # Indices: 8:RShoulder, 9:LShoulder, 2:RHip, 3:LHip
         shoulder_mid = (gts[:, 8, :] + gts[:, 9, :]) / 2.0
         hip_mid = (gts[:, 2, :] + gts[:, 3, :]) / 2.0
-        torso_dist = np.sqrt(np.sum((shoulder_mid - hip_mid) ** 2, axis=-1))  # (B,)
+        torso_dist = torch.sqrt(torch.sum((shoulder_mid - hip_mid) ** 2, dim=-1))  # (B,)
         # Ensure minimum torso distance to avoid division by zero
-        torso_dist = np.maximum(torso_dist, 1e-6)
+        torso_dist = torch.clamp(torso_dist, min=1e-6)
 
         # Reshape torso_dist to (B, 1) for broadcasting
-        effective_threshold = torso_dist[:, np.newaxis] * threshold
+        effective_threshold = torso_dist.unsqueeze(-1) * threshold
     else:
         effective_threshold = threshold
 
-    correct = (dist <= effective_threshold).astype(float) * visibility
+    correct = (dist <= effective_threshold).float() * visibility
 
-    per_joint_pck = np.sum(correct, axis=0) / np.maximum(np.sum(visibility, axis=0), 1)
-    mean_pck = np.sum(correct) / np.maximum(np.sum(visibility), 1)
+    sum_vis = torch.sum(visibility, dim=0)
+    per_joint_pck = torch.sum(correct, dim=0) / torch.clamp(sum_vis, min=1e-6)
+    
+    total_vis = torch.sum(visibility)
+    mean_pck = torch.sum(correct) / torch.clamp(total_vis, min=1e-6)
 
     return mean_pck, per_joint_pck

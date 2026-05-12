@@ -417,13 +417,14 @@ class GPUSession:
                 "scripts",
                 "configs",
                 "data",
+                "results",
                 "requirements.txt",
                 "README.md",
                 "gpu_connection.json",
                 ".env",
             ]
 
-            print("Preparing project tarball (excluding large data)...")
+            print("Preparing project tarball (excluding large data and checkpoints)...")
             for item in include:
                 src_path = os.path.join(local_dir, item)
                 if not os.path.exists(src_path):
@@ -432,15 +433,19 @@ class GPUSession:
                 dst_path = os.path.join(target, item)
                 if os.path.isdir(src_path):
                     # For data, we strictly exclude 'raw'
+                    # For results, we exclude '.pth' checkpoints to keep the payload small
+                    ignore_patterns = ["processed_cache"]
                     if item == "data":
-                        shutil.copytree(
-                            src_path,
-                            dst_path,
-                            ignore=shutil.ignore_patterns("raw", "processed_cache"),
-                            dirs_exist_ok=True,
-                        )
-                    else:
-                        shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                        ignore_patterns.append("raw")
+                    elif item == "results":
+                        ignore_patterns.extend(["*.pth", "*.pt", "*.ckpt"])
+                    
+                    shutil.copytree(
+                        src_path,
+                        dst_path,
+                        ignore=shutil.ignore_patterns(*ignore_patterns),
+                        dirs_exist_ok=True,
+                    )
                 else:
                     shutil.copy2(src_path, dst_path)
 
