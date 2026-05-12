@@ -177,7 +177,7 @@ class BaseTrainer(ABC):
     @torch.no_grad()
     def compute_val_pck(self, dataloader, decode_method: str = None) -> float:
         """
-        Compute PCK@0.5 (torso-relative, covered validation images only).
+        Compute PCK@0.2 (torso-relative, covered validation images only).
         Used as the primary criterion for saving best_model.pth.
 
         Args:
@@ -245,7 +245,7 @@ class BaseTrainer(ABC):
         torso = np.maximum(torso, 1e-6)  # (N, 1)
 
         dist = np.linalg.norm(P - G, axis=-1)  # (N, 14)
-        correct = (dist < 0.5 * torso) * V
+        correct = (dist < 0.2 * torso) * V
 
         mean_pck = float(correct.sum() / np.maximum(V.sum(), 1))
         return mean_pck

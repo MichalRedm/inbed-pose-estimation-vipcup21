@@ -14,17 +14,17 @@ All previously reported PCK values in this tracker were computed by `scripts/eva
 
 Fresh local re-evaluation established the following **corrected baselines** (cover1+cover2 val set, correct decoder per model):
 
-| Run | Decoder | PCK@0.5 (corrected) | MPJPE (corrected) | Status |
+| Run | Decoder | PCK@0.2 (strict) | MPJPE | Status |
 |-----|---------|--------------------|--------------------|--------|
-| loop17_uncertainty | soft-argmax | **75.1%** | 25.8 px | **SUCCESS** |
-| loop18_gcn_final_v5 | soft-argmax | **75.1%** | 26.6 px | SUCCESS |
-| loop9_anatomical_hinge | soft-argmax | 73.0% | 27.4 px | RELIABLE |
-| loop3_improved_thermal | argmax | 72.9% | 27.4 px | SUCCESS |
-| loop2_fixed_aug | argmax | 71.3% | 29.6 px | SUCCESS |
-| loop7_anatomical_v2 | argmax | 70.1% | 36.0 px | STABLE |
-| loop4_uda_alignment | argmax | 62.6% | 40.3 px | UDA BASE |
-| loop5_uda_refined | argmax | 61.6% | 40.5 px | UDA REF |
-| loop19 | soft-argmax | 36.6% | 67.8 px | **SKELETON COLLAPSE** |
+| loop2_fixed_aug | argmax | **46.6%** | 29.6 px | **TOP PRECISION** |
+| loop9_anatomical_hinge | soft-argmax | **45.1%** | 25.3 px | RELIABLE |
+| loop3_improved_thermal | argmax | 44.7% | 27.4 px | SUCCESS |
+| loop7_anatomical_v2 | argmax | 44.1% | 36.0 px | STABLE |
+| loop17_uncertainty | soft-argmax | **43.1%** | 24.5 px | **TOP ACCURACY** |
+| loop5_uda_refined | argmax | 36.2% | 31.4 px | UDA REF |
+| loop4_uda_alignment | argmax | 35.6% | 40.3 px | UDA BASE |
+| loop18_gcn_final_v5 | soft-argmax | 33.4% | 26.6 px | SUCCESS |
+| loop19 | soft-argmax | 12.7% | 66.7 px | **SKELETON COLLAPSE** |
 
 The loop16 `best_model.pth` was saved based on **combined val loss** (heatmap MSE + coord L1 + anatomical), NOT on PCK. Combined loss is dominated by the anatomical term (lambda=0.5) and does not align with PCK. The actual best PCK epoch for loop16 is unknown because only epoch_1.pth (corrupted) and best_model.pth were downloaded.
 
@@ -57,8 +57,8 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | Loop ID | Hypothesis | Result | Corrected PCK | Action |
 |---------|-----------|--------|--------------|--------|
 | 1-8 | Initial Explorations | VARIOUS | N/A | **PURGED**: Legacy/Corrupted. |
-| 9 | Foreshortening Hinge Loss | SUCCESS | 73.0% | Best clean model to date |
-| 10-16 | Auxiliary Loss Experiments | FAILURE | <35% | Loss imbalance (aux term dominated) |
-| 17 | Multi-Task Uncertainty Weighting | SUCCESS | **75.1%** | Kendall et al. weighting; PCK-aligned |
-| 18 | GCN-based Pose Refinement | SUCCESS | 75.1% | High accuracy, but GCN adds latency |
-| 19 | Normalized Anatomical Constraints | FAILURE | 36.6% | **SKELETON COLLAPSE**: Joints coalesced |
+| 9 | Foreshortening Hinge Loss | SUCCESS | 45.1% | Best clean model to date |
+| 10-16 | Auxiliary Loss Experiments | FAILURE | <20% | Loss imbalance (aux term dominated) |
+| 17 | Multi-Task Uncertainty Weighting | SUCCESS | **43.1%** | Kendall et al. weighting; PCK-aligned |
+| 18 | GCN-based Pose Refinement | SUCCESS | 33.4% | High accuracy, but GCN adds latency |
+| 19 | Normalized Anatomical Constraints | FAILURE | 12.7% | **SKELETON COLLAPSE**: Joints coalesced |
