@@ -831,6 +831,8 @@ async def predict(
             "predictions": results,
         }
 
+    except (Image.UnidentifiedImageError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"File must be an image: {str(e)}")
     except Exception as e:
         with open("api.log", "a") as log:
             log.write(f"  ERROR in predict: {str(e)}\n")

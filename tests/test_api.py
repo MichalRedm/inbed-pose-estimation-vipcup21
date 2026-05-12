@@ -4,6 +4,13 @@ from src.api.main import app
 import io
 from PIL import Image
 
+from src.api.inference import inference_service
+import torch
+
+# Mock InferenceService for tests
+inference_service._model = "MockedModel"  # Bypass the None check
+inference_service.predict = lambda *args, **kwargs: torch.zeros((1, 14, 2))
+
 client = TestClient(app)
 
 
