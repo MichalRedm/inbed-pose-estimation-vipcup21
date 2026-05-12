@@ -1,14 +1,15 @@
 import sqlite3
 import json
 import os
-import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
+
 
 class LocalTracker:
     """
     Local SQLite-based telemetry tracker for MLOps.
     Provides persistent storage for run configurations and metrics.
     """
+
     def __init__(self, db_path: str = "results/telemetry.db"):
         self.db_path = db_path
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
@@ -34,27 +35,29 @@ class LocalTracker:
                     FOREIGN KEY(run_id) REFERENCES runs(run_id)
                 )
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_metrics_run ON metrics(run_id)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_metrics_run ON metrics(run_id)"
+            )
 
     def init_run(self, run_id: str, name: str, config: Dict[str, Any]):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO runs (run_id, name, config) VALUES (?, ?, ?)",
-                (run_id, name, json.dumps(config))
+                (run_id, name, json.dumps(config)),
             )
 
     def log_metric(self, run_id: str, epoch: int, name: str, value: float):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "INSERT INTO metrics (run_id, epoch, name, value) VALUES (?, ?, ?, ?)",
-                (run_id, epoch, name, value)
+                (run_id, epoch, name, value),
             )
 
     def get_run_history(self, run_id: str) -> List[Dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 "SELECT epoch, name, value FROM metrics WHERE run_id = ? ORDER BY epoch ASC",
-                (run_id,)
+                (run_id,),
             )
             history = {}
             for epoch, name, value in cursor.fetchall():
@@ -63,10 +66,12 @@ class LocalTracker:
                 history[epoch][name] = value
             return sorted(list(history.values()), key=lambda x: x["epoch"])
 
+
 class JSONLStream:
     """
     Helper to emit structured logs for real-time dashboard updates.
     """
+
     def __init__(self, stream_path: str):
         self.stream_path = stream_path
         os.makedirs(os.path.dirname(self.stream_path), exist_ok=True)

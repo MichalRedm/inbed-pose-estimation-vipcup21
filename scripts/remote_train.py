@@ -264,11 +264,11 @@ def main():
                         cmd = (
                             f"python -c '\n"
                             f"import time, os\n"
-                            f"open(\"{remote_stream_path}\", \"a\").close()\n"
-                            f"f = open(\"{remote_stream_path}\", \"r\")\n"
+                            f'open("{remote_stream_path}", "a").close()\n'
+                            f'f = open("{remote_stream_path}", "r")\n'
                             f"while True:\n"
                             f"    line = f.readline()\n"
-                            f"    if line: print(line, end=\"\", flush=True)\n"
+                            f'    if line: print(line, end="", flush=True)\n'
                             f"    else: time.sleep(0.5)\n"
                             f"'"
                         )

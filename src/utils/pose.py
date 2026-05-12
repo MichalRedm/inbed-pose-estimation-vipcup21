@@ -171,7 +171,7 @@ def compute_mpjpe(preds, gts, visibility=None):
 
     sum_vis = torch.sum(visibility, dim=0)
     per_joint_error = torch.sum(dist, dim=0) / torch.clamp(sum_vis, min=1e-6)
-    
+
     total_vis = torch.sum(visibility)
     mean_error = torch.sum(dist) / torch.clamp(total_vis, min=1e-6)
 
@@ -209,7 +209,9 @@ def compute_pck(preds, gts, visibility=None, threshold=0.5):
         # Indices: 8:RShoulder, 9:LShoulder, 2:RHip, 3:LHip
         shoulder_mid = (gts[:, 8, :] + gts[:, 9, :]) / 2.0
         hip_mid = (gts[:, 2, :] + gts[:, 3, :]) / 2.0
-        torso_dist = torch.sqrt(torch.sum((shoulder_mid - hip_mid) ** 2, dim=-1))  # (B,)
+        torso_dist = torch.sqrt(
+            torch.sum((shoulder_mid - hip_mid) ** 2, dim=-1)
+        )  # (B,)
         # Ensure minimum torso distance to avoid division by zero
         torso_dist = torch.clamp(torso_dist, min=1e-6)
 
@@ -222,7 +224,7 @@ def compute_pck(preds, gts, visibility=None, threshold=0.5):
 
     sum_vis = torch.sum(visibility, dim=0)
     per_joint_pck = torch.sum(correct, dim=0) / torch.clamp(sum_vis, min=1e-6)
-    
+
     total_vis = torch.sum(visibility)
     mean_pck = torch.sum(correct) / torch.clamp(total_vis, min=1e-6)
 

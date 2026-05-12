@@ -86,19 +86,19 @@ class StandardTrainer(BaseTrainer):
 
     def train_epoch(self, dataloader, epoch: int) -> Dict[str, float]:
         self.current_epoch = epoch  # Store current epoch for steps
-        
+
         # Dynamic Sigma Scheduling (moved to Dataset)
         if hasattr(dataloader.dataset, "set_sigma"):
             sigma = self._get_current_sigma(epoch)
             dataloader.dataset.set_sigma(sigma)
-            
+
         return super().train_epoch(dataloader, epoch)
 
     def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
         images = batch["image"].to(self.device)
         joints = batch["joints"].to(self.device)  # (B, 3, 14)
         targets = batch["target"].to(self.device)
-        
+
         # Track current sigma for metrics
         sigma = self._get_current_sigma(self.current_epoch)
 
@@ -184,7 +184,7 @@ class StandardTrainer(BaseTrainer):
         images = batch["image"].to(self.device)
         joints = batch["joints"].to(self.device)
         targets = batch["target"].to(self.device)
-        
+
         sigma = self._get_current_sigma(self.current_epoch)
 
         # Forward pass

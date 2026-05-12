@@ -65,7 +65,7 @@ class BaseTrainer(ABC):
             os.path.join(self.save_dir, "stream.jsonl") if self.save_dir else None
         )
         self.streamer = JSONLStream(self.stream_path) if self.stream_path else None
-        
+
         # Local SQLite Tracker
         self.tracker = LocalTracker()
         if self.is_main:

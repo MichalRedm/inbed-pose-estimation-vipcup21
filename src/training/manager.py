@@ -1,7 +1,6 @@
 import threading
 import subprocess
 import sys
-import re
 import time
 import json
 from pathlib import Path
@@ -100,15 +99,15 @@ class TrainingManager:
             or f"run_{time.strftime('%Y%m%d_%H%M%S')}"
         )
         self.last_run_id = self.current_run_id
-        
+
         # 4. Freeze configuration for reproducibility
         run_dir = project_root / "results" / "runs" / self.current_run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         frozen_config_path = run_dir / "frozen_config.json"
-        
+
         with open(frozen_config_path, "w", encoding="utf-8") as f:
             json.dump(final_config, f, indent=4)
-        
+
         self.frozen_config_path = frozen_config_path
         self._stop_event.clear()
         self.log_history = []
@@ -135,7 +134,12 @@ class TrainingManager:
             self.adv_loss_history = []
             self.current_epoch = 0
             # Wipe local logs to prevent dashboard from loading old data
-            for file_name in ["history.json", "stream.jsonl", "training.log", "evaluation.json"]:
+            for file_name in [
+                "history.json",
+                "stream.jsonl",
+                "training.log",
+                "evaluation.json",
+            ]:
                 file_path = run_dir / file_name
                 if file_path.exists():
                     try:
@@ -161,11 +165,11 @@ class TrainingManager:
             # Expected format: [METRICS] {"epoch": 1, "loss": 0.5, ...}
             if "[METRICS]" not in line:
                 return
-            json_start = line.find('{')
+            json_start = line.find("{")
             if json_start == -1:
                 return
             json_str = line[json_start:]
-            
+
             # Robust parsing: Sometimes lines are incomplete due to PTY line wrapping.
             # If so, json.loads will raise JSONDecodeError and the catch block will ignore it,
             # but the secondary clean stream (stream.jsonl) will provide the valid line a split-second later.
@@ -191,7 +195,7 @@ class TrainingManager:
                         self.loss_history[idx] = float(loss_val)
                     if "adv_loss" in metrics:
                         self.adv_loss_history[idx] = float(metrics["adv_loss"])
-                        
+
             # Update status message from metrics if available
             if "status" in metrics:
                 self.status_message = metrics["status"]
@@ -364,7 +368,9 @@ class TrainingManager:
                 cmd.extend(["--run_id", self.current_run_id])
 
             # Use the frozen config for the run
-            relative_config_path = self.frozen_config_path.relative_to(project_root).as_posix()
+            relative_config_path = self.frozen_config_path.relative_to(
+                project_root
+            ).as_posix()
             cmd.extend(["--config", relative_config_path])
             print(f"[TrainingManager] Using frozen config: {relative_config_path}")
 

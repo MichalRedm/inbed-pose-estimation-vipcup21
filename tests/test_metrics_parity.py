@@ -1,7 +1,11 @@
 import torch
 import numpy as np
 import pytest
-from src.utils.pose import compute_pck as new_compute_pck, compute_mpjpe as new_compute_mpjpe
+from src.utils.pose import (
+    compute_pck as new_compute_pck,
+    compute_mpjpe as new_compute_mpjpe,
+)
+
 
 # --- LEGACY IMPLEMENTATION (Numpy-based) ---
 def legacy_compute_mpjpe(preds, gts, visibility=None):
@@ -23,6 +27,7 @@ def legacy_compute_mpjpe(preds, gts, visibility=None):
     per_joint_error = np.sum(dist, axis=0) / np.maximum(np.sum(visibility, axis=0), 1)
     mean_error = np.sum(dist) / np.maximum(np.sum(visibility), 1)
     return mean_error, per_joint_error
+
 
 def legacy_compute_pck(preds, gts, visibility=None, threshold=0.5):
     if torch.is_tensor(preds):
@@ -54,6 +59,7 @@ def legacy_compute_pck(preds, gts, visibility=None, threshold=0.5):
     mean_pck = np.sum(correct) / np.maximum(np.sum(visibility), 1)
     return mean_pck, per_joint_pck
 
+
 # --- PARITY TESTS ---
 @pytest.mark.parametrize("batch_size", [1, 4])
 def test_mpjpe_parity(batch_size):
@@ -65,8 +71,19 @@ def test_mpjpe_parity(batch_size):
     legacy_mean, legacy_per_joint = legacy_compute_mpjpe(preds, gts, visibility)
     new_mean, new_per_joint = new_compute_mpjpe(preds, gts, visibility)
 
-    assert np.allclose(legacy_mean, new_mean.cpu().numpy() if torch.is_tensor(new_mean) else new_mean, atol=1e-5)
-    assert np.allclose(legacy_per_joint, new_per_joint.cpu().numpy() if torch.is_tensor(new_per_joint) else new_per_joint, atol=1e-5)
+    assert np.allclose(
+        legacy_mean,
+        new_mean.cpu().numpy() if torch.is_tensor(new_mean) else new_mean,
+        atol=1e-5,
+    )
+    assert np.allclose(
+        legacy_per_joint,
+        new_per_joint.cpu().numpy()
+        if torch.is_tensor(new_per_joint)
+        else new_per_joint,
+        atol=1e-5,
+    )
+
 
 @pytest.mark.parametrize("threshold", [0.2, 0.5, 2.0])
 def test_pck_parity(threshold):
@@ -75,11 +92,26 @@ def test_pck_parity(threshold):
     preds = torch.randn(batch_size, 14, 2) * 100
     gts = torch.randn(batch_size, 14, 2) * 100
     # Ensure some torso distance
-    gts[:, 8, :] = 0; gts[:, 9, :] = 10; gts[:, 2, :] = 0; gts[:, 3, :] = 50
+    gts[:, 8, :] = 0
+    gts[:, 9, :] = 10
+    gts[:, 2, :] = 0
+    gts[:, 3, :] = 50
     visibility = torch.randint(0, 3, (batch_size, 3, 14)).float()
 
-    legacy_mean, legacy_per_joint = legacy_compute_pck(preds, gts, visibility, threshold)
+    legacy_mean, legacy_per_joint = legacy_compute_pck(
+        preds, gts, visibility, threshold
+    )
     new_mean, new_per_joint = new_compute_pck(preds, gts, visibility, threshold)
 
-    assert np.allclose(legacy_mean, new_mean.cpu().numpy() if torch.is_tensor(new_mean) else new_mean, atol=1e-5)
-    assert np.allclose(legacy_per_joint, new_per_joint.cpu().numpy() if torch.is_tensor(new_per_joint) else new_per_joint, atol=1e-5)
+    assert np.allclose(
+        legacy_mean,
+        new_mean.cpu().numpy() if torch.is_tensor(new_mean) else new_mean,
+        atol=1e-5,
+    )
+    assert np.allclose(
+        legacy_per_joint,
+        new_per_joint.cpu().numpy()
+        if torch.is_tensor(new_per_joint)
+        else new_per_joint,
+        atol=1e-5,
+    )

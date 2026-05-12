@@ -23,12 +23,10 @@ if str(project_root) not in sys.path:
 
 from src.training.manager import training_manager  # noqa: E402
 from src.utils import (  # noqa: E402
-    load_config,
     get_training_config,
     save_training_config,
     LSP_JOINT_NAMES,
 )
-from src.models import build_model, load_model_for_inference  # noqa: E402
 from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
 from src.training.trainer import PoseTrainer  # noqa: E402
@@ -419,8 +417,30 @@ async def evaluate_model(
     cache = load_evaluation_cache()
 
     # Determine checkpoint path and config
+    checkpoint_path = None
+    eval_config = {}
+    checkpoint_key = "default"
+
+    if checkpoint:
+        checkpoint_path = project_root / "models" / "checkpoints" / checkpoint
+        checkpoint_key = checkpoint
+    elif run_id:
+        checkpoint_path = (
+            project_root
+            / "results"
+            / "runs"
+            / run_id
+            / "checkpoints"
+            / "best_model.pth"
+        )
+        checkpoint_key = f"{run_id}_best"
+        config_path = project_root / "results" / "runs" / run_id / "config.json"
+        if config_path.exists():
+            with open(config_path, "r") as f:
+                eval_config = json.load(f)
+
     # Load model with specific checkpoint if provided
-    if checkpoint or run_id:
+    if checkpoint_path:
         if not checkpoint_path.exists():
             raise HTTPException(
                 status_code=404, detail=f"Checkpoint not found at {checkpoint_path}"
@@ -468,7 +488,7 @@ async def evaluate_model(
         # Use InferenceService model for evaluation
         model = inference_service._model
         device = inference_service._device
-        
+
         trainer = PoseTrainer(model, device=device, config=eval_config)
         metrics = trainer.evaluate(loader)
 
@@ -658,8 +678,10 @@ async def get_dataset_image(
     joints = sample["joints"].get(modality)
 
     # Use the global training config for augmentation settings
-    config = model_container.get("config", {})
-    aug_cfg = config.get("training", {}).get("augmentation", {})
+    train_config = (
+        training_manager.config if hasattr(training_manager, "config") else {}
+    )
+    aug_cfg = train_config.get("training", {}).get("augmentation", {})
 
     from src.data.augmentations import DataAugmenter
 
@@ -682,7 +704,6 @@ async def get_dataset_image(
 
     return StreamingResponse(img_byte_arr, media_type="image/png")
 
-
     # Initialize InferenceService with latest checkpoint
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
     checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
@@ -691,10 +712,14 @@ async def get_dataset_image(
         latest_checkpoint = checkpoints[-1]
         inference_service.load_model(str(latest_checkpoint))
     else:
-        print(f"WARNING: No checkpoints found in {checkpoint_dir}. Model will not be initialized.")
+        print(
+            f"WARNING: No checkpoints found in {checkpoint_dir}. Model will not be initialized."
+        )
 
     # Initialize datasets
     try:
+        # Fallback to default if no manager config
+        dataset_cfg = train_config.get("dataset", {})
         root_path = project_root / dataset_cfg.get("root", "data/raw")
         print(f"Initializing datasets from root: {root_path}")
         dataset_container["train"] = VIPCupDataset(
@@ -707,7 +732,7 @@ async def get_dataset_image(
             covers=["uncover", "cover1", "cover2"],
             split="train",
         )
-        val_ds = VIPCupDataset(
+        dataset_container["val"] = VIPCupDataset(
             root=root_path,
             subjects=range(
                 dataset_cfg.get("subjects_val", [81, 90])[0],
@@ -717,10 +742,8 @@ async def get_dataset_image(
             covers=["uncover", "cover1", "cover2"],
             split="valid",
         )
-        dataset_container["val"] = val_ds
-        dataset_container["valid"] = val_ds
         print(
-            f"Datasets initialized. Train: {len(dataset_container['train'])} samples, Val: {len(val_ds)} samples"
+            f"Datasets initialized. Train: {len(dataset_container['train'])} samples, Val: {len(dataset_container['val'])} samples"
         )
     except Exception as e:
         print(f"Error initializing datasets: {e}")
@@ -742,7 +765,14 @@ async def predict(
         # Determine checkpoint path
         checkpoint_path = None
         if run_id:
-            checkpoint_path = project_root / "results" / "runs" / run_id / "checkpoints" / (checkpoint or "best_model.pth")
+            checkpoint_path = (
+                project_root
+                / "results"
+                / "runs"
+                / run_id
+                / "checkpoints"
+                / (checkpoint or "best_model.pth")
+            )
         elif model_name:
             checkpoint_path = project_root / "models" / "checkpoints" / model_name
         else:
@@ -752,7 +782,9 @@ async def predict(
                 checkpoint_path = checkpoints[-1]
 
         if checkpoint_path and not os.path.exists(checkpoint_path):
-            raise HTTPException(status_code=404, detail=f"Checkpoint not found: {checkpoint_path}")
+            raise HTTPException(
+                status_code=404, detail=f"Checkpoint not found: {checkpoint_path}"
+            )
 
         # Load/Switch model in InferenceService
         if checkpoint_path:
@@ -761,10 +793,17 @@ async def predict(
         # Preprocess
         model_image_size = (256, 256)
         if inference_service._config:
-            model_image_size = tuple(inference_service._config.get("dataset", {}).get("image_size", [256, 256]))
+            model_image_size = tuple(
+                inference_service._config.get("dataset", {}).get(
+                    "image_size", [256, 256]
+                )
+            )
 
         image_resized = image.resize(model_image_size)
-        img_tensor = torch.from_numpy(np.array(image_resized)).unsqueeze(0).unsqueeze(0).float() / 255.0
+        img_tensor = (
+            torch.from_numpy(np.array(image_resized)).unsqueeze(0).unsqueeze(0).float()
+            / 255.0
+        )
 
         # Perform inference using singleton service
         preds = inference_service.predict(img_tensor)
@@ -776,11 +815,15 @@ async def predict(
 
         results = []
         for i, (x, y) in enumerate(scaled_preds):
-            results.append({
-                "joint": LSP_JOINT_NAMES[i] if i < len(LSP_JOINT_NAMES) else f"Joint_{i}",
-                "x": float(x) * scale_x,
-                "y": float(y) * scale_y,
-            })
+            results.append(
+                {
+                    "joint": LSP_JOINT_NAMES[i]
+                    if i < len(LSP_JOINT_NAMES)
+                    else f"Joint_{i}",
+                    "x": float(x) * scale_x,
+                    "y": float(y) * scale_y,
+                }
+            )
 
         return {
             "filename": file.filename,

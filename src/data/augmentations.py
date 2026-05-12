@@ -1,10 +1,11 @@
-from typing import Any, Optional, Tuple, Union, List
+from typing import Any, Optional, Union
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 import torch
 import random
 import torchvision.transforms.v2 as v2
 from torchvision import tv_tensors
+
 
 class ThermalDiffusionAugmenter:
     """
@@ -18,7 +19,10 @@ class ThermalDiffusionAugmenter:
         self.is_training = is_training
 
     def __call__(
-        self, image: Union[Image.Image, torch.Tensor], joints: Optional[torch.Tensor], is_ir: bool
+        self,
+        image: Union[Image.Image, torch.Tensor],
+        joints: Optional[torch.Tensor],
+        is_ir: bool,
     ) -> Union[Image.Image, torch.Tensor]:
         # Skip if not training, if it's NOT an IR image, or if the random check fails
         if not self.is_training or not is_ir or random.random() > self.probability:
@@ -33,7 +37,7 @@ class ThermalDiffusionAugmenter:
             img_pil = image
 
         w, h = img_pil.size
-        
+
         # Determine coverage level
         coverage_options = []
         if joints is not None:
@@ -43,7 +47,7 @@ class ThermalDiffusionAugmenter:
                 for pair in [(0, 5), (1, 4), (2, 3), (8, 9)]:
                     if j_np[2, pair[0]] < 2 and j_np[2, pair[1]] < 2:
                         coverage_options.append(min(j_np[1, pair[0]], j_np[1, pair[1]]))
-            elif len(joints.shape) == 3: # (1, 14, 2)
+            elif len(joints.shape) == 3:  # (1, 14, 2)
                 j_np = joints[0].cpu().numpy()
                 for pair in [(0, 5), (1, 4), (2, 3), (8, 9)]:
                     coverage_options.append(min(j_np[pair[0], 1], j_np[pair[1], 1]))
@@ -105,15 +109,17 @@ class ThermalDiffusionAugmenter:
             return v2.functional.to_image(final_image).to(device)
         return final_image
 
+
 class DataAugmenter:
     """
     Optimized Data Augmentation using torchvision.transforms.v2.
     """
+
     def __init__(self, config: Optional[dict] = None, is_training: bool = True):
         self.config = config or {}
         self.enabled = self.config.get("enabled", False)
         self.is_training = is_training
-        
+
         # Thermal augmenter
         self.thermal_augmenter = ThermalDiffusionAugmenter(
             probability=self.config.get("occlusion_prob", 0.5),
@@ -124,11 +130,11 @@ class DataAugmenter:
         if self.enabled and self.is_training:
             rot_range = self.config.get("rotation_range", [-30, 30])
             scale_range = self.config.get("scaling_range", [0.8, 1.2])
-            
+
             self.affine_transform = v2.RandomAffine(
                 degrees=rot_range,
                 scale=scale_range,
-                interpolation=v2.InterpolationMode.BILINEAR
+                interpolation=v2.InterpolationMode.BILINEAR,
             )
         else:
             self.affine_transform = None
@@ -149,7 +155,11 @@ class DataAugmenter:
         if joints is not None:
             coords = torch.from_numpy(joints[:2, :].T).float().unsqueeze(0)
             vis = torch.from_numpy(joints[2, :]).float()
-            w, h = (image.width, image.height) if hasattr(image, 'width') else (image.shape[-1], image.shape[-2])
+            w, h = (
+                (image.width, image.height)
+                if hasattr(image, "width")
+                else (image.shape[-1], image.shape[-2])
+            )
             kpts = tv_tensors.KeyPoints(coords, canvas_size=(h, w))
         else:
             kpts = None
@@ -172,7 +182,7 @@ class DataAugmenter:
                 image, kpts = self.affine_transform(image, kpts)
             else:
                 image = self.affine_transform(image)
-        
+
         # 4. Thermal diffusion
         source_image = image
         if return_pair:
@@ -183,7 +193,7 @@ class DataAugmenter:
 
         # 5. Final Assembly
         if kpts is not None:
-            final_coords = kpts.view(14, 2).T # (2, 14)
+            final_coords = kpts.view(14, 2).T  # (2, 14)
             final_joints = torch.cat([final_coords, vis.unsqueeze(0)], dim=0).numpy()
         else:
             final_joints = None
@@ -191,6 +201,7 @@ class DataAugmenter:
         if return_pair:
             return image, source_image, final_joints
         return image, final_joints
+
 
 # Legacy alias
 DataAugmenterV2 = DataAugmenter

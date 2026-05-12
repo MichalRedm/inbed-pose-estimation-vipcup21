@@ -439,7 +439,7 @@ class GPUSession:
                         ignore_patterns.append("raw")
                     elif item == "results":
                         ignore_patterns.extend(["*.pth", "*.pt", "*.ckpt"])
-                    
+
                     shutil.copytree(
                         src_path,
                         dst_path,
