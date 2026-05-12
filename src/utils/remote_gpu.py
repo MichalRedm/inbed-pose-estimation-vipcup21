@@ -318,18 +318,28 @@ class GPUSession:
         if stream:
 
             def _stream(channel_file, storage, prefix=""):
-                for line in channel_file:
-                    storage.append(line)
+                while True:
+                    # Read what's available (blocks until at least 1 byte is available or EOF)
+                    # Note: channel_file is a paramiko.ChannelFile
                     try:
-                        safe_line = line.encode(
-                            sys.stdout.encoding, errors="replace"
-                        ).decode(sys.stdout.encoding)
+                        chunk = channel_file.read(8192)
+                        if not chunk:
+                            break
+                        
+                        data = chunk.decode(sys.stdout.encoding, errors="replace")
+                        storage.append(data)
+                        
                         if prefix:
-                            print(f"{prefix}{safe_line}", end="", flush=True)
+                            # For stderr, prefix each line
+                            for line in data.splitlines(keepends=True):
+                                print(f"{prefix}{line}", end="", flush=True)
                         else:
-                            print(safe_line, end="", flush=True)
+                            # For stdout, print raw (to preserve tqdm/ \r)
+                            print(data, end="", flush=True)
                     except Exception:
-                        pass
+                        break
+
+
 
             t_out = threading.Thread(target=_stream, args=(stdout_f, stdout_lines, ""))
             t_err = threading.Thread(

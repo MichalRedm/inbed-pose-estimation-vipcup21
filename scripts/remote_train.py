@@ -226,7 +226,7 @@ def main():
                 except Exception:
                     pass  # might not exist yet
 
-        # Run training in background thread; poll checkpoints from main thread
+        # Run training in background thread; poll checkpoints and stream metrics from main thread
         import threading
         import time
 
@@ -239,29 +239,67 @@ def main():
         training_thread.start()
 
         def run_polling():
-            # Open a second session for background polling to avoid thread safety issues
-            # with the primary training session.
+            # Open a separate session for background polling
             try:
                 with mgr.use(backend_name) as poll_session:
-                    # Sync initial history if it exists
                     poll_and_download(poll_session)
-
-                    poll_interval = 30  # seconds between remote checkpoint checks
+                    poll_interval = 30
                     while training_thread.is_alive():
                         time.sleep(poll_interval)
                         try:
                             poll_and_download(poll_session)
                         except Exception as exc:
                             print(f"[sync] Warning: checkpoint poll failed: {exc}")
-
-                    # Final sync to catch any checkpoint saved in the last polling window
                     poll_and_download(poll_session)
             except Exception as e:
                 print(f"[sync] Background poller crashed: {e}")
 
-        # Start background poller thread
+        def run_streaming():
+            # Open a dedicated session for real-time metric streaming
+            remote_stream_path = f"/root/project/results/runs/{args_cli.run_id}/stream.jsonl"
+            print(f"[sync] Starting metrics streamer for {remote_stream_path}")
+            
+            while training_thread.is_alive():
+                try:
+                    with mgr.use(backend_name) as stream_session:
+                        ssh = stream_session._ssh
+                        # Use 'tail -f' to stream new lines. 
+                        # -n +1 starts from the beginning of the file if it exists.
+                        cmd = f"tail -F -n +1 {remote_stream_path}"
+                        _, stdout, _ = ssh.exec_command(cmd, get_pty=True)
+                        
+                        # Set a timeout for reading to allow heartbeat/alive checks
+                        stdout.channel.settimeout(10.0)
+                        
+                        while training_thread.is_alive():
+                            try:
+                                line = stdout.readline()
+                                if line:
+                                    # Print with prefix for TrainingManager to intercept
+                                    print(f"[METRICS] {line.strip()}", flush=True)
+                                else:
+                                    # Might be EOF if tail -F was interrupted
+                                    break
+                            except TimeoutError:
+                                # Heartbeat to keep connection alive and show we are still polling
+                                # TrainingManager ignores unknown [METRICS] JSON or non-JSON
+                                # but the presence of output keeps the pipe fresh.
+                                print(f"[sync] Streamer heartbeat (training_alive={training_thread.is_alive()})", flush=True)
+                                continue
+                except Exception as e:
+                    if training_thread.is_alive():
+                        print(f"[sync] Streamer thread encountered error: {e}. Retrying in 5s...")
+                        time.sleep(5)
+                    else:
+                        break
+
+
+        # Start background helper threads
         poller_thread = threading.Thread(target=run_polling, daemon=True)
+        streamer_thread = threading.Thread(target=run_streaming, daemon=True)
+        
         poller_thread.start()
+        streamer_thread.start()
 
         training_thread.join()
         poller_thread.join(timeout=60)

@@ -5,7 +5,7 @@ import re
 import time
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 
 from src.utils import get_training_config
@@ -46,6 +46,7 @@ class TrainingManager:
             return None
 
     def start_training(self, config_overrides: Optional[Dict] = None):
+        config_overrides = config_overrides or {}
         if self.is_running:
             return False, "Training already in progress"
 
@@ -70,7 +71,7 @@ class TrainingManager:
         # 3. Apply passed overrides (highest priority)
         if config_overrides:
             # If the payload has a 'config_path', load it first
-            if "config_path" in config_overrides:
+            if config_overrides.get("config_path"):
                 special_cfg = load_config(config_overrides["config_path"])
                 final_config.update(special_cfg)
 
@@ -134,7 +135,48 @@ class TrainingManager:
         self.status_message = "Stopping..."
         return True, "Stop signal sent"
 
-    def get_status(self):
+    def _handle_metrics_line(self, line: str):
+        """Parse a dedicated metrics JSON line and update internal state."""
+        try:
+            import json
+            import re
+            
+            # Find the JSON part within the line (anything between { and })
+            match = re.search(r"(\{.*\})", line)
+            if not match:
+                return
+            
+            json_str = match.group(1)
+            metrics = json.loads(json_str)
+
+            
+            # Safely update current metrics (excluding internal keys)
+            for k, v in metrics.items():
+                if k not in ["epoch", "progress", "is_summary"]:
+                    self.current_metrics[k] = v
+            
+            self.current_epoch = metrics.get("epoch", self.current_epoch)
+            self.progress = metrics.get("progress", self.progress)
+            
+            # If it's a final epoch summary, safely append to history arrays
+            if metrics.get("is_summary"):
+                idx = self.current_epoch - 1
+                if idx >= 0:
+                    while len(self.loss_history) <= idx:
+                        self.loss_history.append(None)
+                        self.adv_loss_history.append(None)
+                    
+                    # Fallback keys for different trainers
+                    loss_val = metrics.get("loss", metrics.get("train_loss", metrics.get("loss_pose")))
+                    if loss_val is not None:
+                        self.loss_history[idx] = float(loss_val)
+                    if "adv_loss" in metrics:
+                        self.adv_loss_history[idx] = float(metrics["adv_loss"])
+                        
+        except Exception as e:
+            print(f"[TrainingManager] Error parsing metrics stream: {e}")
+
+    def get_status(self) -> Dict[str, Any]:
         # Refresh loss history from file using explicit epoch indices to avoid desyncs
         # (Especially useful for remote training where history.json is synced periodically)
         file_history_dict = self._load_history_dict()
@@ -172,8 +214,9 @@ class TrainingManager:
             "adv_loss_history": self.adv_loss_history,
             "history_dict": file_history_dict,
             "log_history": self.log_history,
-            "status_message": self.status_message if self.is_running else "Finished",
+            "status_message": self.status_message,
             "current_metrics": self.current_metrics,
+
         }
 
     def _load_history_dict(self) -> Dict[int, Dict[str, float]]:
@@ -326,6 +369,11 @@ class TrainingManager:
 
                 line = line.strip()
                 if line:
+                    # Robust JSON Metrics Stream (skip log history)
+                    if "[METRICS]" in line:
+                        self._handle_metrics_line(line)
+                        continue
+
                     # Add to log history with timestamp
                     timestamp = time.strftime("%H:%M:%S")
                     log_line = f"[{timestamp}] {line}"
@@ -387,6 +435,8 @@ class TrainingManager:
                             None  # Signal that it's no longer "active"
                         )
                         continue
+
+
 
                     # 2. Parse initial message: "Starting training for 10 epochs (from epoch 31)..."
                     start_match = re.search(
@@ -457,9 +507,11 @@ class TrainingManager:
                                 # Finalized metric from summary line - update main dict
                                 self.current_metrics[k] = val
 
-                        # 5. Update loss history ONLY if it's an epoch summary line
-                        if "Epoch" in line and ":" in line and not is_tqdm:
-                            epoch_summary_match = re.search(r"Epoch (\d+):", line)
+                        # 5. Update loss history if it's an epoch summary line
+                        # We also catch the 100% tqdm line as a summary
+                        is_summary = ("Epoch" in line and ":" in line and (not is_tqdm or "100%" in line))
+                        if is_summary:
+                            epoch_summary_match = re.search(r"Epoch (\d+)", line)
                             if epoch_summary_match:
                                 target_epoch = int(epoch_summary_match.group(1))
                                 self.current_epoch = (
@@ -478,10 +530,16 @@ class TrainingManager:
 
                                             if val is not None:
                                                 if len(self.loss_history) <= idx:
-                                                    self.loss_history.append(float(val))
+                                                    self.loss_history.append(val)
+                                                    self.adv_loss_history.append(current_batch_metrics.get("adv_loss"))
                                                 else:
-                                                    self.loss_history[idx] = float(val)
-                                        break
+                                                    self.loss_history[idx] = val
+                                                    self.adv_loss_history[idx] = current_batch_metrics.get("adv_loss")
+
+                                # Also update val_pck if found in summary
+                                if "val_pck" in current_batch_metrics:
+                                    self.current_metrics["val_pck"] = current_batch_metrics["val_pck"]
+                                break
                         continue
 
                     # 4. Parse Epoch progress: "--- Epoch 31/40 ---"
