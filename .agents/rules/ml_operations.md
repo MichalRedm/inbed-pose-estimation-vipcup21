@@ -30,6 +30,12 @@ To ensure real-time visibility and centralized monitoring, all machine learning 
   cd dashboard; npm run dev
   ```
 
+### Telemetry Streaming Standards
+- **Real-time Streaming**: Remote sessions must use the sidecar `stream.jsonl` file via a Python-native line-buffered streamer to avoid pipe block-buffering.
+- **Prefix Rule**: All metrics intended for the dashboard must be prefixed with `[METRICS] ` followed by a valid JSON object.
+- **Flushing**: Scripts must use `print(..., flush=True)` to ensure immediate delivery over SSH pipes.
+- **Robustness**: The `TrainingManager` uses greedy JSON extraction (`find('{')`) to remain resilient to PTY line-wrapping or nested prefixes.
+
 ### Integration Verification
 - **Smoke Tests**: After making changes to the trainer or dashboard, perform a 1-epoch smoke test training run via the dashboard to verify:
   - Real-time loss curve updates.

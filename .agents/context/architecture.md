@@ -21,7 +21,8 @@ The project uses the High-Resolution Net (HRNet) backbone, which is specifically
 - **Self-Contained Decoding**: Models are wrapped in a `PoseDecodingWrapper` during inference. This wrapper encapsulates the heatmap-to-coordinate transformation (decoding), ensuring consistent behavior across different architectures and environments.
 - **Decoding Configuration**: Every checkpoint (`.pth`) stores its optimal `decoding_config` (method, temperature, image size).
 - **Loading**: The `src.models.load_model_for_inference` helper automatically detects the configuration and applies the wrapper.
-- **Workflow**: Image Upload -> Preprocess -> Wrapped Model Forward (direct coordinates) -> Coordinate Rescaling -> JSON Response.
+- **Workflow**: Image Upload -> Preprocess -> `InferenceService` -> Wrapped Model Forward (direct coordinates) -> Coordinate Rescaling -> JSON Response.
+- **Security Constraints**: `InferenceService` handles PyTorch 2.6+ `weights_only=True` restrictions by utilizing the unified `load_model_for_inference` helper with appropriate trust flags.
 
 ## Training Pipeline
 - **Unified Entry Point**: `scripts/train.py` handles all training setups via a polymorphic factory.

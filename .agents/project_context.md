@@ -3,7 +3,7 @@
 This folder contains the consolidated project state, implementation plans, and task tracking. This information is stored in the `.agents` directory and is tracked by Git to ensure persistent alignment between agent and repository state.
 
 ## Current Goal
-Stabilize the multi-task pose estimation pipeline by reconciling previous evaluation errors and implementing uncertainty-based loss weighting to ensure training objectives correlate with actual pose accuracy.
+Finalize and validate the production-grade architectural refactoring of the pose estimation pipeline, ensuring 100% reliable telemetry streaming and robust remote infrastructure communication.
 
 ## Repository Status
 - [x] Refactored package structure (`src/`, `scripts/`, `configs/`).
@@ -25,6 +25,9 @@ Stabilize the multi-task pose estimation pipeline by reconciling previous evalua
 - [x] Implemented Self-Contained Decoding Wrappers (`PoseDecodingWrapper`).
 - [x] Standardized model loading for inference via `load_model_for_inference`.
 - [x] Retroactively optimized decoding parameters for all existing checkpoints.
+- [x] Resolved PyTorch 2.6 security constraints in inference service (`weights_only=False`).
+- [x] Implemented robust JSON metrics parsing in `TrainingManager` for multi-prefix logs.
+- [x] Stabilized remote telemetry with Python-native line-buffered streaming (replacing `tail -F`).
 - [ ] Surpass Loop 9 (73.0% PCK) with stabilized Loop 17 training.
 
 ## Dashboard-Driven ML
