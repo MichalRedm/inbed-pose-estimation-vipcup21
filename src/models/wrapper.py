@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 from src.utils.pose import decode_heatmaps
 

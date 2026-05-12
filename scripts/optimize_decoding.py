@@ -1,15 +1,12 @@
 import torch
-import os
-import json
 from pathlib import Path
-from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 from src.utils import load_config, decode_heatmaps
 from src.utils.pose import compute_pck, draw_pose
-from src.models import build_model, PoseDecodingWrapper
+from src.models import build_model
 from src.data.dataset import VIPCupDataset, collate_skip_none
 
 
