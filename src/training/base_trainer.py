@@ -8,6 +8,7 @@ from typing import Dict, Any
 import numpy as np
 
 from src.utils.pose import decode_heatmaps
+from src.utils.telemetry import LocalTracker, JSONLStream
 
 
 class BaseTrainer(ABC):
@@ -63,23 +64,19 @@ class BaseTrainer(ABC):
         self.stream_path = (
             os.path.join(self.save_dir, "stream.jsonl") if self.save_dir else None
         )
+        self.streamer = JSONLStream(self.stream_path) if self.stream_path else None
+        
+        # Local SQLite Tracker
+        self.tracker = LocalTracker()
         if self.is_main:
-            # Clear previous stream file on start/resume to keep the pipe fresh
-            try:
-                with open(self.stream_path, "w") as f:
-                    pass
-            except Exception:
-                pass
+            run_name = config.get("run_id", "unnamed_run")
+            self.tracker.init_run(run_name, run_name, config)
 
     def _stream_metric(self, data: Dict[str, Any]):
         """Append a JSON line to the stream file for real-time telemetry."""
-        if not self.is_main:
+        if not self.is_main or not self.streamer:
             return
-        try:
-            with open(self.stream_path, "a") as f:
-                f.write(json.dumps(data) + "\n")
-        except Exception:
-            pass
+        self.streamer.emit(data)
 
     @abstractmethod
     def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
@@ -132,7 +129,13 @@ class BaseTrainer(ABC):
         # Average metrics
         avg_metrics = {k: v / max(count, 1) for k, v in metrics_sum.items()}
 
-        # Stream final epoch summary to sidecar file
+        if self.is_main:
+            # Persistent SQLite logging
+            run_name = self.config.get("run_id", "unnamed_run")
+            for k, v in avg_metrics.items():
+                self.tracker.log_metric(run_name, epoch + 1, k, v)
+
+        # Stream final epoch summary
         summary_payload = {"epoch": epoch + 1, "progress": 1.0, "is_summary": True}
         summary_payload.update(avg_metrics)
         self._stream_metric(summary_payload)
