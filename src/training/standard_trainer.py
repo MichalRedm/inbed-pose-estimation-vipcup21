@@ -322,10 +322,16 @@ class StandardTrainer(BaseTrainer):
                         [f"val_{k}={v:.4f}" for k, v in val_metrics.items()]
                     )
                 # Stream comprehensive JSON summary to sidecar file
-                summary_payload = {"epoch": epoch + 1, "progress": 1.0, "is_summary": True}
+                summary_payload = {
+                    "epoch": epoch + 1,
+                    "progress": 1.0,
+                    "is_summary": True,
+                }
                 summary_payload.update(train_metrics)
                 if val_metrics:
-                    summary_payload.update({f"val_{k}": v for k, v in val_metrics.items()})
+                    summary_payload.update(
+                        {f"val_{k}": v for k, v in val_metrics.items()}
+                    )
                 if val_pck is not None:
                     summary_payload["val_pck"] = val_pck
                 self._stream_metric(summary_payload)

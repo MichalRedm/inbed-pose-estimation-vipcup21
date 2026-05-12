@@ -325,10 +325,10 @@ class GPUSession:
                         chunk = channel_file.read(8192)
                         if not chunk:
                             break
-                        
+
                         data = chunk.decode(sys.stdout.encoding, errors="replace")
                         storage.append(data)
-                        
+
                         if prefix:
                             # For stderr, prefix each line
                             for line in data.splitlines(keepends=True):
@@ -338,8 +338,6 @@ class GPUSession:
                             print(data, end="", flush=True)
                     except Exception:
                         break
-
-
 
             t_out = threading.Thread(target=_stream, args=(stdout_f, stdout_lines, ""))
             t_err = threading.Thread(

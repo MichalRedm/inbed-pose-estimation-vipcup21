@@ -256,21 +256,23 @@ def main():
 
         def run_streaming():
             # Open a dedicated session for real-time metric streaming
-            remote_stream_path = f"/root/project/results/runs/{args_cli.run_id}/stream.jsonl"
+            remote_stream_path = (
+                f"/root/project/results/runs/{args_cli.run_id}/stream.jsonl"
+            )
             print(f"[sync] Starting metrics streamer for {remote_stream_path}")
-            
+
             while training_thread.is_alive():
                 try:
                     with mgr.use(backend_name) as stream_session:
                         ssh = stream_session._ssh
-                        # Use 'tail -f' to stream new lines. 
+                        # Use 'tail -f' to stream new lines.
                         # -n +1 starts from the beginning of the file if it exists.
                         cmd = f"tail -F -n +1 {remote_stream_path}"
                         _, stdout, _ = ssh.exec_command(cmd, get_pty=True)
-                        
+
                         # Set a timeout for reading to allow heartbeat/alive checks
                         stdout.channel.settimeout(10.0)
-                        
+
                         while training_thread.is_alive():
                             try:
                                 line = stdout.readline()
@@ -284,20 +286,24 @@ def main():
                                 # Heartbeat to keep connection alive and show we are still polling
                                 # TrainingManager ignores unknown [METRICS] JSON or non-JSON
                                 # but the presence of output keeps the pipe fresh.
-                                print(f"[sync] Streamer heartbeat (training_alive={training_thread.is_alive()})", flush=True)
+                                print(
+                                    f"[sync] Streamer heartbeat (training_alive={training_thread.is_alive()})",
+                                    flush=True,
+                                )
                                 continue
                 except Exception as e:
                     if training_thread.is_alive():
-                        print(f"[sync] Streamer thread encountered error: {e}. Retrying in 5s...")
+                        print(
+                            f"[sync] Streamer thread encountered error: {e}. Retrying in 5s..."
+                        )
                         time.sleep(5)
                     else:
                         break
 
-
         # Start background helper threads
         poller_thread = threading.Thread(target=run_polling, daemon=True)
         streamer_thread = threading.Thread(target=run_streaming, daemon=True)
-        
+
         poller_thread.start()
         streamer_thread.start()
 

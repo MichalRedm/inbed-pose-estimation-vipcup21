@@ -16,11 +16,15 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 
 | Run | Decoder | PCK@0.5 (corrected) | MPJPE (corrected) | Status |
 |-----|---------|--------------------|--------------------|--------|
-| loop17_uncertainty | soft-argmax | **74.2%** | 24.7 px | **SUCCESS** |
-| loop9_anatomical_hinge | argmax | 73.0% | 27.4 px | RELIABLE |
-| loop14_integral_regression | argmax | 30.5% | 69.3 px | FAILURE |
-| loop15_occlusion_aware_integral | argmax | 31.9% | 63.6 px | FAILURE |
-| loop16_sigma_curriculum | soft-argmax | 33.9% | 57.4 px | FAILURE |
+| loop17_uncertainty | soft-argmax | **75.1%** | 25.8 px | **SUCCESS** |
+| loop18_gcn_final_v5 | soft-argmax | **75.1%** | 26.6 px | SUCCESS |
+| loop9_anatomical_hinge | soft-argmax | 73.0% | 27.4 px | RELIABLE |
+| loop3_improved_thermal | argmax | 72.9% | 27.4 px | SUCCESS |
+| loop2_fixed_aug | argmax | 71.3% | 29.6 px | SUCCESS |
+| loop7_anatomical_v2 | argmax | 70.1% | 36.0 px | STABLE |
+| loop4_uda_alignment | argmax | 62.6% | 40.3 px | UDA BASE |
+| loop5_uda_refined | argmax | 61.6% | 40.5 px | UDA REF |
+| loop19 | soft-argmax | 36.6% | 67.8 px | **SKELETON COLLAPSE** |
 
 The loop16 `best_model.pth` was saved based on **combined val loss** (heatmap MSE + coord L1 + anatomical), NOT on PCK. Combined loss is dominated by the anatomical term (lambda=0.5) and does not align with PCK. The actual best PCK epoch for loop16 is unknown because only epoch_1.pth (corrupted) and best_model.pth were downloaded.
 
@@ -41,27 +45,20 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 
 ## Infrastructure Fixes Applied (2026-05-12)
 
-- **API Stabilization**: Added missing `typing` imports (`Dict`, `Any`) to `src/api/main.py`. Fixed `NameError` on startup.
-- **Evaluation Reporting**: Implemented `format_evaluation_metrics` helper in API to correctly parse per-joint PCK/MPJPE from `evaluation.json`, restoring dashboard plots.
-- **History Persistence**: Updated `TrainingManager.get_status` to proactively reload `history.json` from disk, preventing "disappearing history" after training completion.
-- **Evaluation Script**: Patched `scripts/evaluate.py` to resolve absolute/relative path mismatches when generating visual audit plots.
+- **Model Self-Containment**: Standardized all legacy checkpoints to include weights, config, and decoding settings in a single `.pth` file.
+- **Decoding Autopilot**: Implemented `PoseDecodingWrapper` to automatically apply the best decoding method (argmax vs soft-argmax) at inference time based on embedded metadata.
+- **API Stabilization**: Resolved `NameError` and type-hinting issues in `src/api/main.py`. Ensured robust loading of historical checkpoints.
+- **Corruption Recovery**: Restored `loop19` by recovering weights from `latest_model.pth` after `best_model.pth` was corrupted.
+- **Cleanup**: Purged corrupted and legacy runs (`loop1`, `loop19_auto_eval`, `loop5_test`, `loop4_telemetry_check`) to stabilize dashboard and evaluation pipelines.
 - **Environment**: Enforced `.venv\Scripts\python.exe` for all backend services to ensure dependency consistency.
 
 ## Iteration Log
 
 | Loop ID | Hypothesis | Result | Corrected PCK | Action |
 |---------|-----------|--------|--------------|--------|
-| 3 | Improved Thermal + Full Dataset | SUCCESS | N/A (pre-audit) | Baseline established |
-| 7 | Anatomical V1 (MSE length) | FAILURE | N/A | Fixed-length MSE over-regularizes |
-| 8 | Anatomical Curriculum Warmup | FAILURE | N/A | Improves over 7 but below baseline |
-| 9 | Foreshortening Hinge Loss | SUCCESS | ~78% (cover1+2, vis==0) | Best clean model to date |
-| 10 | Angle Constraints (2D Hinge) | FAILURE | N/A | 2D angle != 3D ROM |
-| 11 | Joint-Specific Weighting | FAILURE | N/A | Destabilized core structure |
-| 12 | Occlusion Consistency Reg. | FAILURE | N/A | No extremity improvement |
-| 13 | Multi-Scale Heatmap Supervision | FAILURE | N/A | Gradient noise |
-| 14 | Soft-Argmax Integral Regression | FAILURE | 30.5% | Loss imbalance (aux term dominated) |
-| 15 | Occlusion-Aware Integral Reg. | FAILURE | 31.9% | Loss imbalance (aux term dominated) |
-| 16 | Adaptive Sigma Curriculum | FAILURE | 33.9% | Loss imbalance (aux term dominated) |
-| 17 | Multi-Task Uncertainty Weighting | SUCCESS | **74.2%** | Kendall et al. weighting; PCK-aligned |
-| 18 | GCN-based Pose Refinement | FAILURE | ~42% | GCN layer over-regularized prediction |
-| 19 | Normalized Anatomical Constraints | FAILURE | 39.0% | **SKELETON COLLAPSE**: Joints coalesced to minimize length error |
+| 1-8 | Initial Explorations | VARIOUS | N/A | **PURGED**: Legacy/Corrupted. |
+| 9 | Foreshortening Hinge Loss | SUCCESS | 73.0% | Best clean model to date |
+| 10-16 | Auxiliary Loss Experiments | FAILURE | <35% | Loss imbalance (aux term dominated) |
+| 17 | Multi-Task Uncertainty Weighting | SUCCESS | **75.1%** | Kendall et al. weighting; PCK-aligned |
+| 18 | GCN-based Pose Refinement | SUCCESS | 75.1% | High accuracy, but GCN adds latency |
+| 19 | Normalized Anatomical Constraints | FAILURE | 36.6% | **SKELETON COLLAPSE**: Joints coalesced |

@@ -97,7 +97,7 @@ def load_run_config(checkpoint_path: Path):
     to the run's config.json, then the global default.
     """
     if checkpoint_path.exists():
-        state = torch.load(checkpoint_path, map_location="cpu")
+        state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         if isinstance(state, dict) and "config" in state:
             return state["config"], state
     # Fallback: run-level config.json
@@ -106,7 +106,9 @@ def load_run_config(checkpoint_path: Path):
         with open(run_config) as f:
             cfg = json.load(f)
         return cfg, None
-    # Last resort: global default
+    from src.utils import load_config
+
+    return load_config(), None
 
 
 def calculate_skeleton_spread(joints):
@@ -216,7 +218,7 @@ def evaluate(
         print(f"Loading: {checkpoint_path}")
 
     if state is None:
-        state = torch.load(checkpoint_path, map_location=device)
+        state = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     if isinstance(state, dict) and "model_state_dict" in state:
         state_dict = state["model_state_dict"]
@@ -227,7 +229,7 @@ def evaluate(
     if any(k.startswith("module.") for k in state_dict.keys()):
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
 
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict, strict=False)
 
     if is_distributed:
         model = torch.nn.parallel.DistributedDataParallel(
@@ -304,6 +306,14 @@ def evaluate(
                 using_refined = True
             else:
                 outputs = model(images)
+                import matplotlib.pyplot as plt
+
+                plt.imsave(
+                    "debug_heatmap_raw.png", outputs[0, 0].cpu().numpy(), cmap="hot"
+                )
+                print(
+                    f"DEBUG: Saved debug_heatmap_raw.png. Max={outputs.max().item():.4f}"
+                )
                 using_refined = False
 
             if targets is not None:
@@ -402,7 +412,9 @@ def evaluate(
             "per_joint_pck": per_joint_pck.tolist(),
             "per_joint_mpjpe": per_joint_error.tolist(),
             "joint_names": JOINT_NAMES,
-            "visual_audit": str(audit_path.resolve().relative_to(project_root.resolve())),
+            "visual_audit": str(
+                audit_path.resolve().relative_to(project_root.resolve())
+            ),
         }
 
         if save_json:

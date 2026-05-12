@@ -29,7 +29,7 @@ from src.utils import (  # noqa: E402
     decode_heatmaps,
     LSP_JOINT_NAMES,
 )
-from src.models import build_model  # noqa: E402
+from src.models import build_model, load_model_for_inference  # noqa: E402
 from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
 from src.training.trainer import PoseTrainer  # noqa: E402
@@ -88,6 +88,7 @@ def format_evaluation_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
             metrics[key] = float(metrics[key])
 
     return metrics
+
 
 # Serve static files from runs directory
 runs_static_dir = project_root / "results" / "runs"
@@ -451,11 +452,7 @@ async def evaluate_model(
             raise HTTPException(
                 status_code=404, detail=f"Checkpoint not found at {checkpoint_path}"
             )
-        state = torch.load(checkpoint_path, map_location=device)
-        if isinstance(state, dict) and "model_state_dict" in state:
-            model.load_state_dict(state["model_state_dict"])
-        else:
-            model.load_state_dict(state)
+        model = load_model_for_inference(str(checkpoint_path), device, eval_config)
 
     if remote:
         if not run_id:
@@ -718,25 +715,20 @@ async def startup_event():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Initialize model using factory
-    model = build_model(config).to(device)
-
     # Find latest checkpoint
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
     checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
 
     if not checkpoints:
+        # Initialize model using factory if no checkpoints
+        model = build_model(config).to(device)
         print(
             f"WARNING: No checkpoints found in {checkpoint_dir}. Model will use random weights."
         )
     else:
         latest_checkpoint = checkpoints[-1]
         print(f"Loading checkpoint: {latest_checkpoint}")
-        state = torch.load(latest_checkpoint, map_location=device)
-        if isinstance(state, dict) and "model_state_dict" in state:
-            model.load_state_dict(state["model_state_dict"])
-        else:
-            model.load_state_dict(state)
+        model = load_model_for_inference(str(latest_checkpoint), device, config)
 
     model.eval()
 
@@ -890,15 +882,10 @@ async def predict(
                             f"[API] Warning: Failed to load run config, using global: {e}"
                         )
 
-            # Build new model
-            model = build_model(current_config).to(device)
-            # Load state dict
-            state = torch.load(checkpoint_path, map_location=device)
-            if isinstance(state, dict) and "model_state_dict" in state:
-                model.load_state_dict(state["model_state_dict"])
-            else:
-                model.load_state_dict(state)
-            model.eval()
+            # Load model for inference (automatically applies wrapper)
+            model = load_model_for_inference(
+                str(checkpoint_path), device, current_config
+            )
 
             # Update container
             model_container[model_key] = {"model": model, "mtime": file_mtime}
@@ -920,14 +907,8 @@ async def predict(
             )
 
         with torch.no_grad():
-            outputs = model(img_tensor)
-            if model.output_type == "heatmap":
-                preds = decode_heatmaps(
-                    outputs.cpu(), model_image_size, method=decode_method
-                )
-            else:
-                # Direct coordinates (1, 14, 2)
-                preds = outputs.cpu()
+            # PoseDecodingWrapper returns joints (B, J, 2)
+            preds = model(img_tensor).cpu()
 
         # Rescale predictions to original image size
         # preds is (1, 14, 2) in model_image_size space

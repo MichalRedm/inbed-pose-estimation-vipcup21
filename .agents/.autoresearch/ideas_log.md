@@ -28,7 +28,7 @@
 
 ## Graveyard
 - **Adversarial UDA (Global)**: Loop 5. Caused feature washout.
-- **Fixed-Length MSE Anatomical Loss**: Loops 6-8. Over-regularized foreshortened poses, leading to -3.0% PCK regression.
+- **Fixed-Length MSE Anatomical Loss**: Loops 6-8. Over-regularized foreshortened poses, leading to -3.0% PCK regression. **PURGED** (2026-05-12).
 - **Anatomical Angle Constraints (2D Hinge)**: Loop 10. Penalized sharp 2D projections of valid 3D poses, causing -9.4% PCK regression. 2D inner angle is not a reliable proxy for 3D ROM.
 - **Joint-Specific Loss Weighting**: Loop 11. Over-focus on extremities (2.0x weight) led to structural instability and a -3.3% PCK regression compared to the baseline.
 - **Occlusion Consistency Regularization**: Loop 12. Enforcing $pred_{occluded} \approx pred_{clean}$ improved hip stability but didn't beat the baseline on extremities.
@@ -37,6 +37,7 @@
 - **Thermal Diffusion (Initial)**: Sign error in rotation augmentations.
 
 ## Current Iteration
+- **Loop 6/8**: Fixed-Length MSE & Curriculum (FAILURE). **PURGED** due to regression and corrupted checkpoints.
 - **Loop 9**: Foreshortening-Aware Hinge Loss (SUCCESS). Reached 76.4% PCK.
 - **Loop 10**: Anatomical Angle Constraints (FAILURE). Regression to 67.0% PCK.
 - **Loop 11**: Joint-Specific Loss Weighting (FAILURE). Regression to 73.1% PCK.

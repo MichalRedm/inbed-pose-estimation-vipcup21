@@ -38,6 +38,7 @@ class BaseTrainer(ABC):
         train_cfg = config.get("training", {})
         self.epochs = train_cfg.get("epochs", 30)
         self.start_epoch = 0  # Default, can be set during resumption
+        self.current_epoch = 0
         self.save_dir = train_cfg.get("save_dir", "results/runs/default")
 
         if self.is_main:
@@ -55,7 +56,7 @@ class BaseTrainer(ABC):
                     self.history = json.load(f)
             except Exception:
                 pass
-        
+
         # Dedicated JSON stream for real-time dashboard updates
         self.stream_path = os.path.join(self.save_dir, "stream.jsonl")
         if self.is_main:
@@ -112,9 +113,12 @@ class BaseTrainer(ABC):
             if pbar:
                 pbar.set_postfix({k: f"{v:.4f}" for k, v in step_metrics.items()})
                 pbar.update(1)
-                
+
                 # Stream JSON metrics to sidecar file
-                stream_payload = {"epoch": epoch + 1, "progress": count / max(len(dataloader), 1)}
+                stream_payload = {
+                    "epoch": epoch + 1,
+                    "progress": count / max(len(dataloader), 1),
+                }
                 stream_payload.update(step_metrics)
                 self._stream_metric(stream_payload)
 
@@ -123,7 +127,7 @@ class BaseTrainer(ABC):
 
         # Average metrics
         avg_metrics = {k: v / max(count, 1) for k, v in metrics_sum.items()}
-        
+
         # Stream final epoch summary to sidecar file
         summary_payload = {"epoch": epoch + 1, "progress": 1.0, "is_summary": True}
         summary_payload.update(avg_metrics)
@@ -148,17 +152,18 @@ class BaseTrainer(ABC):
             for k, v in step_metrics.items():
                 metrics_sum[k] = metrics_sum.get(k, 0.0) + v
             count += 1
-            
+
             if pbar:
                 pbar.update(1)
                 # Optional: stream validation progress too
-                self._stream_metric({"phase": "val", "progress": count / max(len(dataloader), 1)})
+                self._stream_metric(
+                    {"phase": "val", "progress": count / max(len(dataloader), 1)}
+                )
 
         if pbar:
             pbar.close()
 
         avg_metrics = {k: v / max(count, 1) for k, v in metrics_sum.items()}
-
 
         # In DDP, we should average metrics across all processes
         if self.world_size > 1:
@@ -170,14 +175,15 @@ class BaseTrainer(ABC):
         return avg_metrics
 
     @torch.no_grad()
-    def compute_val_pck(self, dataloader, decode_method: str = "argmax") -> float:
+    def compute_val_pck(self, dataloader, decode_method: str = None) -> float:
         """
         Compute PCK@0.5 (torso-relative, covered validation images only).
         Used as the primary criterion for saving best_model.pth.
 
         Args:
             dataloader:    Validation DataLoader.
-            decode_method: 'argmax' or 'soft-argmax' — must match training decoder.
+            decode_method: 'argmax' or 'soft-argmax' (defaults to config).
+            temperature:   Soft-argmax temperature (defaults to config).
 
         Returns:
             mean_pck: float in [0, 1].
@@ -197,10 +203,9 @@ class BaseTrainer(ABC):
 
             images = batch["image"].to(self.device)
             joints = batch["joints"]  # (B, 3, 14)
-            
+
             if pbar:
                 pbar.update(1)
-
 
             raw_model = (
                 self.model.module if hasattr(self.model, "module") else self.model
@@ -208,7 +213,13 @@ class BaseTrainer(ABC):
             outputs = raw_model(images)
 
             if raw_model.output_type == "heatmap":
-                preds = decode_heatmaps(outputs.cpu(), image_size, method=decode_method)
+                method = decode_method or self.config.get("training", {}).get(
+                    "decode_method", "argmax"
+                )
+                temp = self.config.get("training", {}).get("decode_temperature", 10.0)
+                preds = decode_heatmaps(
+                    outputs.cpu(), image_size, method=method, temperature=temp
+                )
             else:
                 preds = outputs.cpu()
 
@@ -223,7 +234,6 @@ class BaseTrainer(ABC):
             pbar.close()
 
         if not all_preds:
-
             return 0.0
 
         P = np.concatenate(all_preds)  # (N, 14, 2)
@@ -252,6 +262,17 @@ class BaseTrainer(ABC):
             "epoch": self.current_epoch,
             "best_val_pck": self.best_val_pck,
             "best_val_loss": self.best_val_loss,
+            "decoding_config": {
+                "method": self.config.get("training", {}).get(
+                    "decode_method", "argmax"
+                ),
+                "temperature": self.config.get("training", {}).get(
+                    "decode_temperature", 10.0
+                ),
+                "image_size": self.config.get("dataset", {}).get(
+                    "image_size", [256, 256]
+                ),
+            },
         }
 
         # Let subclasses add their own state (optimizers, etc.)
@@ -262,6 +283,7 @@ class BaseTrainer(ABC):
             torch.save(obj, tmp_path)
             # Use os.replace for atomic rename on POSIX systems (Linux/Remote)
             import os
+
             os.replace(tmp_path, target_path)
 
         # Always save as latest for resumption
@@ -282,11 +304,11 @@ class BaseTrainer(ABC):
         if not self.is_main:
             return
         self.history.append(epoch_data)
-        
+
         tmp_history = str(self.history_path) + ".tmp"
         with open(tmp_history, "w") as f:
             json.dump(self.history, f, indent=4)
-        
-        import os
-        os.replace(tmp_history, self.history_path)
 
+        import os
+
+        os.replace(tmp_history, self.history_path)

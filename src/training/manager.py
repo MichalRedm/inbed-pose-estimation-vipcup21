@@ -140,24 +140,23 @@ class TrainingManager:
         try:
             import json
             import re
-            
+
             # Find the JSON part within the line (anything between { and })
             match = re.search(r"(\{.*\})", line)
             if not match:
                 return
-            
+
             json_str = match.group(1)
             metrics = json.loads(json_str)
 
-            
             # Safely update current metrics (excluding internal keys)
             for k, v in metrics.items():
                 if k not in ["epoch", "progress", "is_summary"]:
                     self.current_metrics[k] = v
-            
+
             self.current_epoch = metrics.get("epoch", self.current_epoch)
             self.progress = metrics.get("progress", self.progress)
-            
+
             # If it's a final epoch summary, safely append to history arrays
             if metrics.get("is_summary"):
                 idx = self.current_epoch - 1
@@ -165,14 +164,16 @@ class TrainingManager:
                     while len(self.loss_history) <= idx:
                         self.loss_history.append(None)
                         self.adv_loss_history.append(None)
-                    
+
                     # Fallback keys for different trainers
-                    loss_val = metrics.get("loss", metrics.get("train_loss", metrics.get("loss_pose")))
+                    loss_val = metrics.get(
+                        "loss", metrics.get("train_loss", metrics.get("loss_pose"))
+                    )
                     if loss_val is not None:
                         self.loss_history[idx] = float(loss_val)
                     if "adv_loss" in metrics:
                         self.adv_loss_history[idx] = float(metrics["adv_loss"])
-                        
+
         except Exception as e:
             print(f"[TrainingManager] Error parsing metrics stream: {e}")
 
@@ -180,7 +181,7 @@ class TrainingManager:
         # Always try to restore history from disk if in-memory lists are empty
         # but we have a valid run to look at.
         run_id = self.current_run_id or self.last_run_id
-        
+
         if not self.loss_history and run_id:
             file_history_dict = self._load_history_dict()
             if file_history_dict:
@@ -223,7 +224,9 @@ class TrainingManager:
         return {
             "is_running": self.is_running,
             "run_id": self.current_run_id or self.last_run_id,
-            "progress": 1.0 if (not self.is_running and self.total_epochs > 0) else overall_progress,
+            "progress": 1.0
+            if (not self.is_running and self.total_epochs > 0)
+            else overall_progress,
             "current_epoch": self.current_epoch,
             "total_epochs": self.total_epochs,
             "loss_history": self.loss_history,
@@ -232,7 +235,6 @@ class TrainingManager:
             "log_history": self.log_history,
             "status_message": self.status_message,
             "current_metrics": self.current_metrics,
-
         }
 
     def _load_history_dict(self) -> Dict[int, Dict[str, float]]:
@@ -452,8 +454,6 @@ class TrainingManager:
                         )
                         continue
 
-
-
                     # 2. Parse initial message: "Starting training for 10 epochs (from epoch 31)..."
                     start_match = re.search(
                         r"Starting training for (\d+) epochs \(from epoch (\d+)\)", line
@@ -525,7 +525,11 @@ class TrainingManager:
 
                         # 5. Update loss history if it's an epoch summary line
                         # We also catch the 100% tqdm line as a summary
-                        is_summary = ("Epoch" in line and ":" in line and (not is_tqdm or "100%" in line))
+                        is_summary = (
+                            "Epoch" in line
+                            and ":" in line
+                            and (not is_tqdm or "100%" in line)
+                        )
                         if is_summary:
                             epoch_summary_match = re.search(r"Epoch (\d+)", line)
                             if epoch_summary_match:
@@ -547,14 +551,24 @@ class TrainingManager:
                                             if val is not None:
                                                 if len(self.loss_history) <= idx:
                                                     self.loss_history.append(val)
-                                                    self.adv_loss_history.append(current_batch_metrics.get("adv_loss"))
+                                                    self.adv_loss_history.append(
+                                                        current_batch_metrics.get(
+                                                            "adv_loss"
+                                                        )
+                                                    )
                                                 else:
                                                     self.loss_history[idx] = val
-                                                    self.adv_loss_history[idx] = current_batch_metrics.get("adv_loss")
+                                                    self.adv_loss_history[idx] = (
+                                                        current_batch_metrics.get(
+                                                            "adv_loss"
+                                                        )
+                                                    )
 
                                 # Also update val_pck if found in summary
                                 if "val_pck" in current_batch_metrics:
-                                    self.current_metrics["val_pck"] = current_batch_metrics["val_pck"]
+                                    self.current_metrics["val_pck"] = (
+                                        current_batch_metrics["val_pck"]
+                                    )
                                 break
                         continue
 
