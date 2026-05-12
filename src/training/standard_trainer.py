@@ -321,9 +321,14 @@ class StandardTrainer(BaseTrainer):
                     log_str += " | " + " ".join(
                         [f"val_{k}={v:.4f}" for k, v in val_metrics.items()]
                     )
+                # Stream comprehensive JSON summary to sidecar file
+                summary_payload = {"epoch": epoch + 1, "progress": 1.0, "is_summary": True}
+                summary_payload.update(train_metrics)
+                if val_metrics:
+                    summary_payload.update({f"val_{k}": v for k, v in val_metrics.items()})
                 if val_pck is not None:
-                    log_str += f" | val_pck={val_pck * 100:.2f}%"
-                print(log_str)
+                    summary_payload["val_pck"] = val_pck
+                self._stream_metric(summary_payload)
 
                 # is_best: PCK improved (primary) or loss improved if no PCK yet
                 val_loss = val_metrics.get("loss", float("inf"))

@@ -55,6 +55,26 @@ class BaseTrainer(ABC):
                     self.history = json.load(f)
             except Exception:
                 pass
+        
+        # Dedicated JSON stream for real-time dashboard updates
+        self.stream_path = os.path.join(self.save_dir, "stream.jsonl")
+        if self.is_main:
+            # Clear previous stream file on start/resume to keep the pipe fresh
+            try:
+                with open(self.stream_path, "w") as f:
+                    pass
+            except Exception:
+                pass
+
+    def _stream_metric(self, data: Dict[str, Any]):
+        """Append a JSON line to the stream file for real-time telemetry."""
+        if not self.is_main:
+            return
+        try:
+            with open(self.stream_path, "a") as f:
+                f.write(json.dumps(data) + "\n")
+        except Exception:
+            pass
 
     @abstractmethod
     def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
@@ -92,12 +112,23 @@ class BaseTrainer(ABC):
             if pbar:
                 pbar.set_postfix({k: f"{v:.4f}" for k, v in step_metrics.items()})
                 pbar.update(1)
+                
+                # Stream JSON metrics to sidecar file
+                stream_payload = {"epoch": epoch + 1, "progress": count / max(len(dataloader), 1)}
+                stream_payload.update(step_metrics)
+                self._stream_metric(stream_payload)
 
         if pbar:
             pbar.close()
 
         # Average metrics
         avg_metrics = {k: v / max(count, 1) for k, v in metrics_sum.items()}
+        
+        # Stream final epoch summary to sidecar file
+        summary_payload = {"epoch": epoch + 1, "progress": 1.0, "is_summary": True}
+        summary_payload.update(avg_metrics)
+        self._stream_metric(summary_payload)
+
         return avg_metrics
 
     @torch.no_grad()
@@ -106,6 +137,10 @@ class BaseTrainer(ABC):
         metrics_sum = {}
         count = 0
 
+        pbar = None
+        if self.is_main:
+            pbar = tqdm(dataloader, desc="Validation", leave=False)
+
         for batch in dataloader:
             if batch is None:
                 continue
@@ -113,8 +148,17 @@ class BaseTrainer(ABC):
             for k, v in step_metrics.items():
                 metrics_sum[k] = metrics_sum.get(k, 0.0) + v
             count += 1
+            
+            if pbar:
+                pbar.update(1)
+                # Optional: stream validation progress too
+                self._stream_metric({"phase": "val", "progress": count / max(len(dataloader), 1)})
+
+        if pbar:
+            pbar.close()
 
         avg_metrics = {k: v / max(count, 1) for k, v in metrics_sum.items()}
+
 
         # In DDP, we should average metrics across all processes
         if self.world_size > 1:
@@ -143,12 +187,20 @@ class BaseTrainer(ABC):
 
         all_preds, all_gts, all_vis = [], [], []
 
+        pbar = None
+        if self.is_main:
+            pbar = tqdm(dataloader, desc="PCK Eval", leave=False)
+
         for batch in dataloader:
             if batch is None:
                 continue
 
             images = batch["image"].to(self.device)
             joints = batch["joints"]  # (B, 3, 14)
+            
+            if pbar:
+                pbar.update(1)
+
 
             raw_model = (
                 self.model.module if hasattr(self.model, "module") else self.model
@@ -167,7 +219,11 @@ class BaseTrainer(ABC):
             all_gts.append(gt_xy)
             all_vis.append(vis)
 
+        if pbar:
+            pbar.close()
+
         if not all_preds:
+
             return 0.0
 
         P = np.concatenate(all_preds)  # (N, 14, 2)
@@ -201,13 +257,20 @@ class BaseTrainer(ABC):
         # Let subclasses add their own state (optimizers, etc.)
         checkpoint.update(self._get_extra_checkpoint_data())
 
+        def _atomic_torch_save(obj, target_path):
+            tmp_path = str(target_path) + ".tmp"
+            torch.save(obj, tmp_path)
+            # Use os.replace for atomic rename on POSIX systems (Linux/Remote)
+            import os
+            os.replace(tmp_path, target_path)
+
         # Always save as latest for resumption
         latest_path = os.path.join(self.save_dir, "checkpoints", "latest_model.pth")
-        torch.save(checkpoint, latest_path)
+        _atomic_torch_save(checkpoint, latest_path)
 
         if is_best:
             best_path = os.path.join(self.save_dir, "checkpoints", "best_model.pth")
-            torch.save(checkpoint, best_path)
+            _atomic_torch_save(checkpoint, best_path)
             if self.is_main:
                 print(f"[Trainer] Saved new best model to {best_path}")
 
@@ -219,5 +282,11 @@ class BaseTrainer(ABC):
         if not self.is_main:
             return
         self.history.append(epoch_data)
-        with open(self.history_path, "w") as f:
+        
+        tmp_history = str(self.history_path) + ".tmp"
+        with open(tmp_history, "w") as f:
             json.dump(self.history, f, indent=4)
+        
+        import os
+        os.replace(tmp_history, self.history_path)
+

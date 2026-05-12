@@ -146,7 +146,12 @@ class UDATrainer(BaseTrainer):
                     log_str += " | " + " ".join(
                         [f"val_{k}={v:.4f}" for k, v in val_metrics.items()]
                     )
-                print(log_str)
+                # Stream comprehensive JSON summary to sidecar file
+                summary_payload = {"epoch": epoch + 1, "progress": 1.0, "is_summary": True}
+                summary_payload.update(train_metrics)
+                if val_metrics:
+                    summary_payload.update({f"val_{k}": v for k, v in val_metrics.items()})
+                self._stream_metric(summary_payload)
 
                 # Checkpointing
                 val_loss = val_metrics.get("loss", float("inf"))
