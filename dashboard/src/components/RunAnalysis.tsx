@@ -62,18 +62,8 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
 
   // Build chart data - Unify active and historical logic
   const chartData = (() => {
-    // 1. Prefer historical data if available (most complete)
-    if (details.history && details.history.length > 0) {
-      return details.history.map((h: Record<string, number>, i) => ({
-        epoch: h.epoch ?? (i + 1),
-        loss: h.loss ?? h.loss_pose ?? h.train_loss ?? 0,
-        val_loss: h.val_loss ?? h.val_loss_pose ?? 0,
-        adv: h.adv_loss ?? 0,
-      }));
-    }
-
-    // 2. Fallback to active training status if history file isn't loaded yet
-    if (isActive && trainingStatus?.loss_history) {
+    // 1. Prefer active training status if it's currently running
+    if (isActive && trainingStatus?.loss_history && trainingStatus.loss_history.length > 0) {
       const history = trainingStatus.loss_history;
       const historyDict = trainingStatus.history_dict || {};
       const total = trainingStatus.total_epochs || 30;
@@ -81,7 +71,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
       return history.map((loss, i) => {
         const ep = i + 1;
         // API dict keys become strings in JSON
-        const metrics = historyDict[ep] || historyDict[String(ep)] || {};
+        const metrics = (historyDict[ep] || historyDict[String(ep)]) as HistoryMetrics | undefined || {};
         return {
           epoch: ep,
           loss: loss ?? 0,
@@ -89,6 +79,16 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
           adv: trainingStatus.adv_loss_history?.[i] ?? 0,
         };
       }).filter(d => d.epoch <= total);
+    }
+
+    // 2. Fallback to historical data (most complete for finished runs)
+    if (details.history && details.history.length > 0) {
+      return details.history.map((h: Record<string, number>, i) => ({
+        epoch: h.epoch ?? (i + 1),
+        loss: h.loss ?? h.loss_pose ?? h.train_loss ?? 0,
+        val_loss: h.val_loss ?? h.val_loss_pose ?? 0,
+        adv: h.adv_loss ?? 0,
+      }));
     }
     
     return [];
