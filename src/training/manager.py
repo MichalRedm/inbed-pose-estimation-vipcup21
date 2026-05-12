@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Any
 
 from src.utils import get_training_config
 
+project_root = Path(__file__).parent.parent.parent
+
 
 class TrainingManager:
     def __init__(self):
@@ -98,6 +100,16 @@ class TrainingManager:
             or f"run_{time.strftime('%Y%m%d_%H%M%S')}"
         )
         self.last_run_id = self.current_run_id
+        
+        # 4. Freeze configuration for reproducibility
+        run_dir = project_root / "results" / "runs" / self.current_run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        frozen_config_path = run_dir / "frozen_config.json"
+        
+        with open(frozen_config_path, "w", encoding="utf-8") as f:
+            json.dump(final_config, f, indent=4)
+        
+        self.frozen_config_path = frozen_config_path
         self._stop_event.clear()
         self.log_history = []
         self.progress = 0.0
@@ -122,6 +134,14 @@ class TrainingManager:
             self.loss_history = []
             self.adv_loss_history = []
             self.current_epoch = 0
+            # Wipe local logs to prevent dashboard from loading old data
+            for file_name in ["history.json", "stream.jsonl", "training.log", "evaluation.json"]:
+                file_path = run_dir / file_name
+                if file_path.exists():
+                    try:
+                        file_path.unlink()
+                    except Exception as e:
+                        print(f"Warning: could not delete {file_path}: {e}")
 
         self._thread = threading.Thread(target=self._run_training, args=(final_config,))
         self._thread.start()
@@ -138,18 +158,20 @@ class TrainingManager:
     def _handle_metrics_line(self, line: str):
         """Parse a dedicated metrics JSON line and update internal state."""
         try:
-            import json
-            import re
-
-            # Find the JSON part within the line (anything between { and })
-            match = re.search(r"(\{.*\})", line)
-            if not match:
+            # Expected format: [METRICS] {"epoch": 1, "loss": 0.5, ...}
+            if "[METRICS]" not in line:
                 return
-
-            json_str = match.group(1)
+            json_start = line.find('{')
+            if json_start == -1:
+                return
+            json_str = line[json_start:]
+            
+            # Robust parsing: Sometimes lines are incomplete due to PTY line wrapping.
+            # If so, json.loads will raise JSONDecodeError and the catch block will ignore it,
+            # but the secondary clean stream (stream.jsonl) will provide the valid line a split-second later.
             metrics = json.loads(json_str)
 
-            # Safely update current metrics (excluding internal keys)
+            # Update current metrics
             for k, v in metrics.items():
                 if k not in ["epoch", "progress", "is_summary"]:
                     self.current_metrics[k] = v
@@ -157,7 +179,6 @@ class TrainingManager:
             self.current_epoch = metrics.get("epoch", self.current_epoch)
             self.progress = metrics.get("progress", self.progress)
 
-            # If it's a final epoch summary, safely append to history arrays
             if metrics.get("is_summary"):
                 idx = self.current_epoch - 1
                 if idx >= 0:
@@ -165,15 +186,17 @@ class TrainingManager:
                         self.loss_history.append(None)
                         self.adv_loss_history.append(None)
 
-                    # Fallback keys for different trainers
-                    loss_val = metrics.get(
-                        "loss", metrics.get("train_loss", metrics.get("loss_pose"))
-                    )
+                    loss_val = metrics.get("loss", metrics.get("loss_pose"))
                     if loss_val is not None:
                         self.loss_history[idx] = float(loss_val)
                     if "adv_loss" in metrics:
                         self.adv_loss_history[idx] = float(metrics["adv_loss"])
-
+                        
+            # Update status message from metrics if available
+            if "status" in metrics:
+                self.status_message = metrics["status"]
+            elif metrics.get("is_summary"):
+                self.status_message = f"Epoch {self.current_epoch} complete"
         except Exception as e:
             print(f"[TrainingManager] Error parsing metrics stream: {e}")
 
@@ -340,29 +363,10 @@ class TrainingManager:
             if self.current_run_id:
                 cmd.extend(["--run_id", self.current_run_id])
 
-            # Propagate resume flag
-            is_resume = config_overrides.get("training", {}).get(
-                "resume"
-            ) or config_overrides.get("resume")
-            if is_resume:
-                cmd.append("--resume")
-
-            # If a full config was provided, save it to a temporary file and pass it
-            if config_overrides:
-                # We'll save it in the configs/runs/RUN_ID dir (which is NOT excluded from sync)
-                run_dir = project_root / "configs" / "runs" / self.current_run_id
-                run_dir.mkdir(parents=True, exist_ok=True)
-                config_path = run_dir / "config.yaml"
-
-                import yaml
-
-                with open(config_path, "w", encoding="utf-8") as f:
-                    yaml.dump(config_overrides, f)
-
-                # Use relative POSIX path so it works on both local and remote (after sync)
-                relative_config_path = config_path.relative_to(project_root).as_posix()
-                cmd.extend(["--config", str(relative_config_path)])
-                print(f"[TrainingManager] Using custom config: {relative_config_path}")
+            # Use the frozen config for the run
+            relative_config_path = self.frozen_config_path.relative_to(project_root).as_posix()
+            cmd.extend(["--config", relative_config_path])
+            print(f"[TrainingManager] Using frozen config: {relative_config_path}")
 
             self.log_history.append(
                 f"[{time.strftime('%H:%M:%S')}] [Manager] Executing: {' '.join(cmd)}"
@@ -409,243 +413,12 @@ class TrainingManager:
                         with open(log_dir / "training.log", "a", encoding="utf-8") as f:
                             f.write(log_line + "\n")
 
-                    # --- Meaningful Status Extraction ---
-
-                    # 1. Initialization Stages
-                    if "Using device:" in line:
-                        device_name = (
-                            line.split("Using device:")[1].split("(")[0].strip()
-                        )
-                        self.status_message = f"Initialized on {device_name}"
-                        continue
-
-                    if "Validation samples:" in line:
-                        count = line.split("Validation samples:")[1].strip()
-                        self.status_message = (
-                            f"Dataset loaded: {count} validation samples"
-                        )
-                        continue
-
-                    if "Loading checkpoint:" in line:
-                        ckpt = (
-                            line.split("Loading checkpoint:")[1].strip().split("/")[-1]
-                        )
-                        self.status_message = f"Resuming from {ckpt}"
-                        continue
-
-                    if "Resuming from global epoch" in line:
-                        try:
-                            ep_num = int(line.split("global epoch")[1].strip())
-                            self.current_epoch = ep_num
-                            self.status_message = f"Resuming from Epoch {ep_num}"
-                        except Exception:
-                            pass
-                        continue
-
-                    if (
-                        "Remote Training Session Complete" in line
-                        or "Training finished" in line
-                    ):
-                        self.status_message = "Finished"
-                        self.is_running = False
-                        self.progress = 1.0
-                        self.current_run_id = (
-                            None  # Signal that it's no longer "active"
-                        )
-                        continue
-
-                    # 2. Parse initial message: "Starting training for 10 epochs (from epoch 31)..."
-                    start_match = re.search(
-                        r"Starting training for (\d+) epochs \(from epoch (\d+)\)", line
-                    )
-                    if start_match:
-                        count = int(start_match.group(1))
-                        start = int(start_match.group(2))
-                        self.total_epochs = start + count - 1
-                        self.current_epoch = start - 1
-                        self.status_message = f"Session started: {count} epochs"
-                        continue
-
-                    # 3. Parse batch progress from tqdm (Flexible matching)
-                    is_tqdm = "%|" in line and "|" in line
-                    if is_tqdm:
-                        # Extract epoch if it's in the prefix (e.g., "Epoch 21/30: 10%|...")
-                        epoch_prefix_match = re.search(r"Epoch (\d+)/(\d+)", line)
-                        if epoch_prefix_match:
-                            self.current_epoch = int(epoch_prefix_match.group(1))
-                            self.total_epochs = int(epoch_prefix_match.group(2))
-
-                        # Extract percentage and steps
-                        prog_match = re.search(r"(\d+)%\|.*\| (\d+)/(\d+)", line)
-                        if prog_match:
-                            self.progress = float(prog_match.group(1)) / 100.0
-
-                        # Extract speed and ETA
-                        speed_match = re.search(r",\s*([\d\.]+)it/s", line)
-                        if speed_match:
-                            self.current_metrics["speed"] = speed_match.group(1)
-
-                        eta_match = re.search(r"<(\d+:\d+)", line)
-                        if eta_match:
-                            self.current_metrics["eta"] = eta_match.group(1)
-
-                    # 4. Extract ALL key=value pairs (supporting float, scientific, and percentage)
-                    # This now runs for EVERY line, including epoch summaries
-                    kv_matches = re.findall(
-                        r"([a-zA-Z_]\w*)=([\d\.]+(?:%|e-?\d+)?)", line
-                    )
-                    if kv_matches:
-                        import math
-
-                        current_batch_metrics = {}
-                        for k, v in kv_matches:
-                            try:
-                                # Strip % if present and convert to normalized float
-                                v_clean = v.rstrip("%")
-                                f_val = float(v_clean)
-                                if v.endswith("%"):
-                                    f_val /= 100.0
-
-                                if math.isnan(f_val) or math.isinf(f_val):
-                                    val = None
-                                else:
-                                    val = f_val
-                            except Exception:
-                                val = v
-
-                            # Store in temporary dict first
-                            current_batch_metrics[k] = val
-
-                            # If it's a progress bar (tqdm), store with prefix to avoid "double jump"
-                            if is_tqdm:
-                                self.current_metrics[f"batch_{k}"] = val
-                            else:
-                                # Finalized metric from summary line - update main dict
-                                self.current_metrics[k] = val
-
-                        # 5. Update loss history if it's an epoch summary line
-                        # We also catch the 100% tqdm line as a summary
-                        is_summary = (
-                            "Epoch" in line
-                            and ":" in line
-                            and (not is_tqdm or "100%" in line)
-                        )
-                        if is_summary:
-                            epoch_summary_match = re.search(r"Epoch (\d+)", line)
-                            if epoch_summary_match:
-                                target_epoch = int(epoch_summary_match.group(1))
-                                self.current_epoch = (
-                                    target_epoch  # Ensure synchronization
-                                )
-
-                                for k in ["loss", "loss_pose", "train_loss"]:
-                                    if k in current_batch_metrics:
-                                        val = current_batch_metrics[k]
-                                        idx = target_epoch - 1
-                                        if idx >= 0:
-                                            # Pad history if there's a gap
-                                            while len(self.loss_history) < idx:
-                                                self.loss_history.append(None)
-                                                self.adv_loss_history.append(None)
-
-                                            if val is not None:
-                                                if len(self.loss_history) <= idx:
-                                                    self.loss_history.append(val)
-                                                    self.adv_loss_history.append(
-                                                        current_batch_metrics.get(
-                                                            "adv_loss"
-                                                        )
-                                                    )
-                                                else:
-                                                    self.loss_history[idx] = val
-                                                    self.adv_loss_history[idx] = (
-                                                        current_batch_metrics.get(
-                                                            "adv_loss"
-                                                        )
-                                                    )
-
-                                # Also update val_pck if found in summary
-                                if "val_pck" in current_batch_metrics:
-                                    self.current_metrics["val_pck"] = (
-                                        current_batch_metrics["val_pck"]
-                                    )
-                                break
-                        continue
-
-                    # 4. Parse Epoch progress: "--- Epoch 31/40 ---"
-                    epoch_match = re.search(r"(?:--- )?Epoch (\d+)/(\d+)", line)
-                    if epoch_match:
-                        current = int(epoch_match.group(1))
-                        total = int(epoch_match.group(2))
-                        self.current_epoch = current
-                        self.total_epochs = total
-                        # Only set progress to 0 if it's the exact header (no tqdm)
-                        if ":" not in line:
-                            self.progress = current / total if total > 0 else 0
-                        self.status_message = f"Starting Epoch {current}..."  # "Epoch n / m" is in header, so just show start
-                        continue
-
-                    # 5. Parse loss: "train_loss=0.1234" or "Epoch 1: loss=0.1234  adv_loss=0.05 val_loss=0.5678"
-                    loss_match = re.search(
-                        r"(?:Epoch (\d+): )?(?:train_)?loss=([0-9.]+)(?:\s+adv_loss=([0-9.]+))?(?:\s+(?:val_)?loss=([0-9.]+))?",
-                        line,
-                    )
-                    if loss_match:
-                        epoch_num = loss_match.group(1)
-                        train_loss = float(loss_match.group(2))
-                        adv_loss_str = loss_match.group(3)
-                        val_loss = loss_match.group(4)
-
-                        msg = f"Last loss: {train_loss:.4f}"
-                        if adv_loss_str:
-                            msg += f" | Adv: {float(adv_loss_str):.4f}"
-                        if val_loss:
-                            msg += f" | Val: {float(val_loss):.4f}"
-                        self.status_message = msg
-
-                        if epoch_num:
-                            idx = int(epoch_num) - 1
-                            # Ensure lists are long enough
-                            for lst in [self.loss_history, self.adv_loss_history]:
-                                while len(lst) <= idx:
-                                    lst.append(0.0)
-                            self.loss_history[idx] = train_loss
-                            if adv_loss_str:
-                                self.adv_loss_history[idx] = float(adv_loss_str)
-                        else:
-                            # Fallback to appending if no epoch number
-                            if (
-                                not self.loss_history
-                                or self.loss_history[-1] != train_loss
-                            ):
-                                self.loss_history.append(train_loss)
-                                if adv_loss_str:
-                                    self.adv_loss_history.append(float(adv_loss_str))
-                                else:
-                                    self.adv_loss_history.append(0.0)
-                        continue
-
-                    # 6. Remote Sync & Prep
-                    if "[sync] Downloading" in line:
-                        fname = line.split("Downloading ")[1].split("...")[0]
-                        self.status_message = f"Syncing {fname}..."
-                        continue
-
-                    if "Verifying GPU" in line:
-                        self.status_message = "Verifying remote GPU..."
-                        continue
-
-                    if "Ensuring data" in line:
-                        self.status_message = "Preparing remote dataset..."
-                        continue
-
-                    # Default fallback for other interesting lines
-                    if not any(
-                        x in line for x in ["|", "it/s", "s/it"]
-                    ):  # Filter out noisy tqdm updates
-                        self.status_message = (
-                            line[:120] + "..." if len(line) > 123 else line
-                        )
+                    # --- Meaningful Status Extraction (Legacy Fallback) ---
+                    # We still keep some basic log parsing for scripts that don't use [METRICS] yet
+                    if "Epoch" in line and "/" in line and ":" not in line:
+                        self.status_message = line.strip()
+                    elif "Training complete" in line:
+                        self.status_message = "Training complete"
 
             process.wait()
             if not self._stop_event.is_set():

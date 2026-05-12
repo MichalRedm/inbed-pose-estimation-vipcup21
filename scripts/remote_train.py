@@ -61,10 +61,20 @@ def main():
 
     print("--- Starting Remote Training Session ---")
     with mgr.use(backend_name) as gpu:
-        # 1. Sync local code to remote
+        # 1. Fresh Run Cleanup (Move BEFORE sync to avoid deleting uploaded configs)
+        if not args_cli.resume and args_cli.run_id:
+            remote_run_dir = f"/root/project/results/runs/{args_cli.run_id}"
+            print(f"[clean] Wiping remote directory {remote_run_dir}...")
+            gpu.run(f"rm -rf {remote_run_dir} || true", stream=False)
+        elif not args_cli.resume:
+            remote_ckpt_dir = "/root/project/models/checkpoints"
+            print(f"[clean] Wiping remote checkpoints in {remote_ckpt_dir}...")
+            gpu.run(f"rm -rf {remote_ckpt_dir}/* || true", stream=False)
+
+        # 2. Sync local code and configs to remote
         gpu.sync_project(remote_dir="/root/project")
 
-        # 2. Only pass project-specific env vars; PATH/CUDA come from login shell
+        # 3. Only pass project-specific env vars; PATH/CUDA come from login shell
         k_user = os.getenv("KAGGLE_USERNAME", "")
         k_key = os.getenv("KAGGLE_API_TOKEN", os.getenv("KAGGLE_KEY", ""))
         env_setup = (
@@ -149,22 +159,6 @@ def main():
             remote_ckpt_dir = "/root/project/models/checkpoints"
             remote_history_path = "/root/project/models/checkpoints/history.json"
             remote_config_path = "/root/project/models/checkpoints/config.json"
-
-        if not args_cli.resume and args_cli.run_id:
-            remote_run_dir = f"/root/project/results/runs/{args_cli.run_id}"
-            print(
-                f"[clean] Starting fresh run, wiping remote directory in {remote_run_dir}..."
-            )
-            gpu.run(f"rm -rf {remote_run_dir} || true", stream=False)
-        elif not args_cli.resume:
-            print(
-                f"[clean] Starting fresh run, wiping remote checkpoints in {remote_ckpt_dir}..."
-            )
-            gpu.run(f"rm -rf {remote_ckpt_dir}/* || true", stream=False)
-        else:
-            print(
-                f"[resume] Resuming, preserving remote checkpoints in {remote_ckpt_dir}..."
-            )
 
         # Track which checkpoints have already been downloaded
         downloaded: set[str] = set()
@@ -265,10 +259,20 @@ def main():
                 try:
                     with mgr.use(backend_name) as stream_session:
                         ssh = stream_session._ssh
-                        # Use 'tail -f' to stream new lines.
-                        # -n +1 starts from the beginning of the file if it exists.
-                        cmd = f"tail -F -n +1 {remote_stream_path}"
-                        _, stdout, _ = ssh.exec_command(cmd, get_pty=True)
+                        # Run a python script on the remote to emulate tail -F but with explicit flushing.
+                        # This avoids all pipe block-buffering issues inherent to `tail` over SSH without a PTY.
+                        cmd = (
+                            f"python -c '\n"
+                            f"import time, os\n"
+                            f"open(\"{remote_stream_path}\", \"a\").close()\n"
+                            f"f = open(\"{remote_stream_path}\", \"r\")\n"
+                            f"while True:\n"
+                            f"    line = f.readline()\n"
+                            f"    if line: print(line, end=\"\", flush=True)\n"
+                            f"    else: time.sleep(0.5)\n"
+                            f"'"
+                        )
+                        _, stdout, _ = ssh.exec_command(cmd, get_pty=False)
 
                         # Set a timeout for reading to allow heartbeat/alive checks
                         stdout.channel.settimeout(10.0)
