@@ -1,0 +1,23 @@
+# Temporary config for verification
+dataset:
+  root: data/raw
+  image_size: [256, 256]
+  subjects_train: [1, 5]
+  subjects_val: [6, 7]
+  modalities: ["RGB", "IR"]
+
+model:
+  name: hrnet
+  hrnet:
+    num_joints: 14
+    in_channels: 1
+
+training:
+  epochs: 2
+  batch_size: 16
+  lr: 0.0005
+  save_dir: results/runs/refactor_verification
+  augmentation:
+    enabled: true
+    flip_prob: 0.5
+    rotation_range: [-30, 30]
