@@ -22,7 +22,7 @@ def test_manager_config_overrides(manager):
         assert success is True
         assert manager.is_running is True
         assert manager.current_run_id is not None
-        
+
         # Cleanup
         manager.is_running = False
 

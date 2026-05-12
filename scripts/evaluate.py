@@ -196,7 +196,7 @@ def evaluate(
         if decode_method is None:
             decode_method = d_cfg.get("method", "argmax")
         decode_temp = d_cfg.get("temperature", 10.0)
-    
+
     if decode_method is None:
         decode_method = "argmax"
 

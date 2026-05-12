@@ -49,7 +49,9 @@ class BaseTrainer(ABC):
         self.best_val_pck = -1.0
         self.best_val_loss = float("inf")
         self.history = []
-        self.history_path = os.path.join(self.save_dir, "history.json") if self.save_dir else None
+        self.history_path = (
+            os.path.join(self.save_dir, "history.json") if self.save_dir else None
+        )
         if self.history_path and os.path.exists(self.history_path):
             try:
                 with open(self.history_path, "r") as f:
@@ -58,7 +60,9 @@ class BaseTrainer(ABC):
                 pass
 
         # Dedicated JSON stream for real-time dashboard updates
-        self.stream_path = os.path.join(self.save_dir, "stream.jsonl") if self.save_dir else None
+        self.stream_path = (
+            os.path.join(self.save_dir, "stream.jsonl") if self.save_dir else None
+        )
         if self.is_main:
             # Clear previous stream file on start/resume to keep the pipe fresh
             try:
