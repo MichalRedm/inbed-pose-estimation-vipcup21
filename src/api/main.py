@@ -721,6 +721,12 @@ async def startup_event():
     if not checkpoints:
         # Initialize model using factory if no checkpoints
         model = build_model(config).to(device)
+        # Wrap to ensure consistent output format (joints instead of heatmaps)
+        from src.models import PoseDecodingWrapper
+
+        model = PoseDecodingWrapper(
+            model, config.get("model", {}).get("hrnet", {}).get("decoding_config", {})
+        )
         print(
             f"WARNING: No checkpoints found in {checkpoint_dir}. Model will use random weights."
         )
