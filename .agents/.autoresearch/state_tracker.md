@@ -1,8 +1,8 @@
 # State Tracker
 
 - **Current Loop**: 20
-- **Phase**: Brainstorming (Phase 1)
-- **Status**: LOOP 19 COMPLETED. Skeleton collapse observed in anatomical constraint run.
+- **Phase**: Implementation (Phase 3)
+- **Status**: Loop 20 (Pre-trained HRNet) in progress.
 - **Absolute Priority**: 
   1. **Fix Convergence**: Identify why normalized anatomical loss causes skeleton collapse (likely joint-coalescence local minima).
   2. **Baseline Recovery**: Recover 74%+ PCK by refining uncertainty weighting or increasing heatmap supervision.
@@ -62,3 +62,9 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 17 | Multi-Task Uncertainty Weighting | SUCCESS | **43.1%** | Kendall et al. weighting; PCK-aligned |
 | 18 | GCN-based Pose Refinement | SUCCESS | 33.4% | High accuracy, but GCN adds latency |
 | 19 | Normalized Anatomical Constraints | FAILURE | 12.7% | **SKELETON COLLAPSE**: Joints coalesced |
+| 20 | Pre-trained HRNet-W32 + Uncertainty Weighting | RUNNING | TBD | Initializing from ImageNet; uncertainty loss balancing |
+
+## Next Planned Steps
+1.  **Monitor Loop 20**: Track convergence of the pre-trained HRNet via `scripts/api_cli.py`.
+2.  **Visibility-Aware Attention**: Implement auxiliary visibility head if occlusion handling remains weak.
+3.  **Structured Regional Cutout**: Integrate grid-based cutouts into the augmentation pipeline for Loop 21.
