@@ -30,10 +30,16 @@ def download_dataset(dry_run=False):
 
     # Check if data is already present to skip download
     # We look for actual ground truth files which are required
+    # Total subjects is 90 (or 102), so we expect ~180-200 mat files
     existing_samples = list(target_dir.glob("**/joints_gt_*.mat"))
-    if existing_samples:
+    if len(existing_samples) >= 150:
         print(f"✅ Dataset already appears to be present in {target_dir} ({len(existing_samples)} joint files found). Skipping download.")
         return
+    elif existing_samples:
+        print(f"⚠️ Dataset appears incomplete ({len(existing_samples)} files found, expected ~180). Cleaning up and redownloading...")
+        import shutil
+        shutil.rmtree(target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
 
     import subprocess
     import os
