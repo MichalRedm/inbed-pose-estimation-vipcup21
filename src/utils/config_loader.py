@@ -3,7 +3,7 @@ import yaml
 from dotenv import load_dotenv
 
 
-def load_config(config_path="configs/default.yaml"):
+def load_config(config_path="configs/default.yaml", use_user_overrides=True):
     """
     Load configuration from YAML and merge with environment variables.
     """
@@ -16,7 +16,7 @@ def load_config(config_path="configs/default.yaml"):
     user_config_path = os.path.join(
         os.path.dirname(os.path.dirname(config_path)), "configs", "user_training.json"
     )
-    if os.path.exists(user_config_path):
+    if use_user_overrides and os.path.exists(user_config_path):
         import json
 
         try:

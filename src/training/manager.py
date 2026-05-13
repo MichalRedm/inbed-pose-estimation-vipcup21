@@ -73,7 +73,8 @@ class TrainingManager:
         if config_overrides:
             # If the payload has a 'config_path', load it first
             if config_overrides.get("config_path"):
-                special_cfg = load_config(config_overrides["config_path"])
+                # Load special config WITHOUT user overrides to preserve YAML values
+                special_cfg = load_config(config_overrides["config_path"], use_user_overrides=False)
                 final_config.update(special_cfg)
 
             # Then apply direct overrides
@@ -213,11 +214,12 @@ class TrainingManager:
             file_history_dict = self._load_history_dict()
             if file_history_dict:
                 max_ep = max(file_history_dict.keys())
+                # Initialize lists to correct size
                 self.loss_history = [None] * max_ep
                 self.adv_loss_history = [None] * max_ep
                 for ep, metrics in file_history_dict.items():
                     idx = ep - 1
-                    if idx < len(self.loss_history):
+                    if 0 <= idx < len(self.loss_history):
                         self.loss_history[idx] = metrics["loss"]
                         self.adv_loss_history[idx] = metrics["adv_loss"]
 
@@ -441,6 +443,20 @@ class TrainingManager:
                     else:
                         self.status_message = "Training finished, but evaluation failed"
                         self.progress = 1.0
+                    
+                    # FINAL SYNC: Ensure in-memory history is perfect before is_running=False
+                    # This prevents the dashboard from seeing an empty state on the last poll
+                    file_history_dict = self._load_history_dict()
+                    if file_history_dict:
+                        max_ep = max(file_history_dict.keys())
+                        while len(self.loss_history) < max_ep:
+                            self.loss_history.append(None)
+                            self.adv_loss_history.append(None)
+                        for ep, metrics in file_history_dict.items():
+                            idx = ep - 1
+                            if 0 <= idx < len(self.loss_history):
+                                self.loss_history[idx] = metrics["loss"]
+                                self.adv_loss_history[idx] = metrics["adv_loss"]
                 else:
                     # Find the last meaningful error in log history
                     error_msg = f"Failed (exit {process.returncode})"
