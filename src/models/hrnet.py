@@ -11,6 +11,7 @@ W32 configuration:
   - Output: (B, num_joints, H/4, W/4) heatmaps
 """
 
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -99,22 +100,19 @@ def make_layer(block, inplanes, planes, num_blocks, stride=1):
 class FusionLayer(nn.Module):
     """
     Fuses features from num_branches parallel streams.
-    Each branch receives contributions from all other branches via
-    upsampling (bilinear) or strided conv.
     """
 
     def __init__(self, num_branches, channels):
         super().__init__()
         self.num_branches = num_branches
-        # fuse_layers[i][j]: transforms output of branch j to target branch i
-        self.fuse_layers = nn.ModuleList()
+        # Use 'layers' to avoid conflict with the parent member name 'fuse_layers'
+        self.layers = nn.ModuleList()
         for i in range(num_branches):
             fuse_layer = nn.ModuleList()
             for j in range(num_branches):
                 if j == i:
                     fuse_layer.append(nn.Identity())
                 elif j < i:
-                    # j has higher resolution — downsample to match i
                     ops = []
                     for k in range(i - j):
                         if k == i - j - 1:
@@ -130,14 +128,13 @@ class FusionLayer(nn.Module):
                             ]
                     fuse_layer.append(nn.Sequential(*ops))
                 else:
-                    # j has lower resolution — upsample to match i
                     fuse_layer.append(
                         nn.Sequential(
                             conv1x1(channels[j], channels[i]),
                             nn.BatchNorm2d(channels[i]),
                         )
                     )
-            self.fuse_layers.append(fuse_layer)
+            self.layers.append(fuse_layer)
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
@@ -145,9 +142,8 @@ class FusionLayer(nn.Module):
         for i in range(self.num_branches):
             acc = None
             for j in range(self.num_branches):
-                feat = self.fuse_layers[i][j](x[j])
+                feat = self.layers[i][j](x[j])
                 if j > i:
-                    # Upsample lower-resolution feature to match branch i
                     feat = F.interpolate(
                         feat, size=x[i].shape[2:], mode="bilinear", align_corners=True
                     )
@@ -156,37 +152,27 @@ class FusionLayer(nn.Module):
         return y
 
 
-# ── HRNet Stage ───────────────────────────────────────────────────────────────
+# ── HRNet Module (Parallel Branches + Fusion) ────────────────────────────────
 
 
-class HRNetStage(nn.Module):
-    """
-    One HRNet stage: num_modules repetitions of (parallel branches + fusion).
-    """
-
-    def __init__(self, num_modules, num_branches, channels, num_blocks=4):
+class HRNetModule(nn.Module):
+    def __init__(self, num_branches, channels, num_blocks=4):
         super().__init__()
-        self.modules_list = nn.ModuleList()
-        for _ in range(num_modules):
-            branches = nn.ModuleList(
-                [
-                    make_layer(BasicBlock, channels[b], channels[b], num_blocks)
-                    for b in range(num_branches)
-                ]
-            )
-            fusion = FusionLayer(num_branches, channels)
-            self.modules_list.append(
-                nn.ModuleDict({"branches": branches, "fusion": fusion})
-            )
+        self.branches = nn.ModuleList(
+            [
+                make_layer(BasicBlock, channels[b], channels[b], num_blocks)
+                for b in range(num_branches)
+            ]
+        )
+        self.fuse_layers = FusionLayer(num_branches, channels)
 
     def forward(self, x):
-        for mod in self.modules_list:
-            x = [mod["branches"][b](x[b]) for b in range(len(x))]
-            x = mod["fusion"](x)
+        x = [self.branches[b](x[b]) for b in range(len(x))]
+        x = self.fuse_layers(x)
         return x
 
 
-# ── Transition Layer (adds a new lower-resolution branch) ────────────────────
+# ── Transition Layer ──────────────────────────────────────────────────────────
 
 
 def make_transition(in_channels, out_channels_list):
@@ -253,47 +239,52 @@ class HRNet(BaseModel):
         in_channels = config_model.get("in_channels", 1)
         C = self.W32  # shorthand
 
-        # ── Stem ─────────────────────────────────────────────────────────────
+        # --- Stem ---
         self.conv1 = nn.Conv2d(in_channels, 64, 3, stride=2, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.conv2 = nn.Conv2d(64, 64, 3, stride=2, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
 
-        # ── Stage 1 (bottleneck, single stream at 64 channels) ───────────────
+        # --- Stage 1 ---
         self.layer1 = make_layer(Bottleneck, 64, 64, num_blocks=4)
-        # After stage1: 64 * 4 = 256 channels
 
-        # ── Transition 1: 256 → [C[0], C[1]] ────────────────────────────────
+        # --- Transition 1 ---
         self.transition1 = make_transition([256], [C[0], C[1]])
 
-        # ── Stage 2: 2 branches ──────────────────────────────────────────────
-        self.stage2 = HRNetStage(
-            num_modules=1, num_branches=2, channels=[C[0], C[1]], num_blocks=4
+        # --- Stage 2: 2 branches ---
+        self.stage2 = nn.Sequential(
+            *[
+                HRNetModule(num_branches=2, channels=[C[0], C[1]], num_blocks=4)
+                for _ in range(1)
+            ]
         )
 
-        # ── Transition 2: [C[0], C[1]] → [C[0], C[1], C[2]] ─────────────────
+        # --- Transition 2: [C[0], C[1]] → [C[0], C[1], C[2]] ---
         self.transition2 = make_transition([C[0], C[1]], [C[0], C[1], C[2]])
 
-        # ── Stage 3: 3 branches ──────────────────────────────────────────────
-        self.stage3 = HRNetStage(
-            num_modules=4, num_branches=3, channels=[C[0], C[1], C[2]], num_blocks=4
+        # --- Stage 3: 3 branches ---
+        self.stage3 = nn.Sequential(
+            *[
+                HRNetModule(num_branches=3, channels=[C[0], C[1], C[2]], num_blocks=4)
+                for _ in range(4)
+            ]
         )
 
-        # ── Transition 3: [C[0..2]] → [C[0..3]] ─────────────────────────────
+        # --- Transition 3: [C[0..2]] → [C[0..3]] ---
         self.transition3 = make_transition([C[0], C[1], C[2]], [C[0], C[1], C[2], C[3]])
 
-        # ── Stage 4: 4 branches ──────────────────────────────────────────────
-        self.stage4 = HRNetStage(
-            num_modules=3,
-            num_branches=4,
-            channels=[C[0], C[1], C[2], C[3]],
-            num_blocks=4,
+        # --- Stage 4: 4 branches ---
+        self.stage4 = nn.Sequential(
+            *[
+                HRNetModule(
+                    num_branches=4, channels=[C[0], C[1], C[2], C[3]], num_blocks=4
+                )
+                for _ in range(3)
+            ]
         )
 
-        # ── Head: upsample + concatenate + predict ───────────────────────────
-        # All 4 streams are upsampled to the highest resolution (C[0] stream),
-        # then concatenated and reduced to num_joints heatmaps.
+        # --- Head ---
         total_channels = sum(C)  # 32+64+128+256 = 480
         self.head = nn.Sequential(
             conv1x1(total_channels, total_channels),
@@ -301,6 +292,66 @@ class HRNet(BaseModel):
             nn.ReLU(inplace=True),
             nn.Conv2d(total_channels, num_joints, kernel_size=1),
         )
+
+        # --- Pre-trained Initialization ---
+        pretrained = config_model.get("pretrained", False)
+        if pretrained:
+            self._load_pretrained_weights(pretrained)
+
+    def _load_pretrained_weights(self, pretrained_source):
+        """
+        Loads pre-trained weights from a URL or local path.
+        Default URL is HRNet-W32 (OpenMMLab mirror).
+        """
+        DEFAULT_URL = "https://download.openmmlab.com/mmpose/pretrain_models/hrnet_w32-36af842e.pth"
+        
+        if isinstance(pretrained_source, bool) and pretrained_source:
+            url = DEFAULT_URL
+        elif isinstance(pretrained_source, str) and pretrained_source.startswith("http"):
+            url = pretrained_source
+        elif isinstance(pretrained_source, str) and os.path.exists(pretrained_source):
+            print(f"[HRNet] Loading local pre-trained weights from {pretrained_source}")
+            state_dict = torch.load(pretrained_source, map_location="cpu")
+            self.load_state_dict(state_dict, strict=False)
+            return
+        else:
+            print(f"[HRNet] Pretrained source '{pretrained_source}' invalid or not found. Skipping.")
+            return
+
+        print(f"[HRNet] Downloading pre-trained weights from {url}")
+        try:
+            from torch.hub import load_state_dict_from_url
+            state_dict = load_state_dict_from_url(url, map_location="cpu", progress=True)
+            
+            # Handle possible key nesting in official weights
+            if "state_dict" in state_dict:
+                state_dict = state_dict["state_dict"]
+            
+            # Filter and remap keys
+            in_channels = self.conv1.in_channels
+            filtered_state = {}
+            for k, v in state_dict.items():
+                # Skip head as it won't match our num_joints/structure
+                if k.startswith("head") or k.startswith("fc"):
+                    continue
+                # Skip stem if in_channels != 3
+                if k.startswith("conv1") and in_channels != 3:
+                    continue
+                
+                # Remap fuse_layers to match our FusionLayer.layers nesting
+                # Official: stage2.0.fuse_layers.0.1.0.weight
+                # Ours:     stage2.0.fuse_layers.layers.0.1.0.weight
+                new_k = k.replace("fuse_layers.", "fuse_layers.layers.")
+                
+                filtered_state[new_k] = v
+                
+            msg = self.load_state_dict(filtered_state, strict=False)
+            print(f"[HRNet] Pre-trained weights loaded. Matched: {len(filtered_state) - len(msg.missing_keys)}, Missing: {len(msg.missing_keys)}, Unexpected: {len(msg.unexpected_keys)}")
+            if in_channels != 3:
+                print(f"[HRNet] Note: 'conv1' was skipped due to in_channels={in_channels} (expected 3 for ImageNet weights).")
+        except Exception as e:
+            print(f"[HRNet] Failed to load pre-trained weights: {e}")
+
 
     @property
     def output_type(self) -> str:
