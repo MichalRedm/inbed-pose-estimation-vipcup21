@@ -29,10 +29,10 @@ def download_dataset(dry_run=False):
     target_dir.mkdir(parents=True, exist_ok=True)
 
     # Check if data is already present to skip download
-    # The dataset uses Subject_XX or 000XX folders
-    existing_samples = list(target_dir.glob("**/Subject_*")) + list(target_dir.glob("**/000*"))
+    # We look for actual ground truth files which are required
+    existing_samples = list(target_dir.glob("**/joints_gt_*.mat"))
     if existing_samples:
-        print(f"✅ Dataset already appears to be present in {target_dir}. Skipping download.")
+        print(f"✅ Dataset already appears to be present in {target_dir} ({len(existing_samples)} joint files found). Skipping download.")
         return
 
     import subprocess
