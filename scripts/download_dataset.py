@@ -28,37 +28,30 @@ def download_dataset(dry_run=False):
     # Ensure target directory exists
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Import kaggle here to avoid auth errors at startup
+    import subprocess
+    import os
+
+    # Map user's custom KAGGLE_API_TOKEN to standard KAGGLE_KEY if provided
+    if os.getenv("KAGGLE_API_TOKEN") and not os.getenv("KAGGLE_KEY"):
+        os.environ["KAGGLE_KEY"] = os.getenv("KAGGLE_API_TOKEN")
+
+    print(f"Downloading {dataset_slug} to {target_dir} using Kaggle CLI...")
     try:
-        import os
-
-        # Map user's custom KAGGLE_API_TOKEN to standard KAGGLE_KEY if provided
-        if os.getenv("KAGGLE_API_TOKEN") and not os.getenv("KAGGLE_KEY"):
-            os.environ["KAGGLE_KEY"] = os.getenv("KAGGLE_API_TOKEN")
-
-        from kaggle.api.kaggle_api_extended import KaggleApi
-    except ImportError:
-        print("❌ Kaggle API not installed. Run 'pip install kaggle'.")
-        return
-
-    api = KaggleApi()
-    api.authenticate()
-
-    print(f"Downloading {dataset_slug} to {target_dir}...")
-    try:
-        api.dataset_download_files(dataset_slug, path=str(target_dir), unzip=True)
+        # We use the CLI directly as the Python API sometimes fails silently or downloads corrupted zips
+        cmd = ["kaggle", "datasets", "download", "-d", dataset_slug, "-p", str(target_dir), "--unzip", "--force"]
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         print("Download step finished.")
-    except ValueError as e:
-        if "does not match expected size" in str(e):
-            print(f"Size mismatch error (Kaggle bug): {e}. Will attempt manual extraction.")
-        else:
-            print(f"❌ Error downloading dataset: {e}")
-            raise
+        print(result.stdout)
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error downloading dataset via CLI:")
+        print(e.stdout)
+        print(e.stderr)
+        raise
     except Exception as e:
-        print(f"❌ Error downloading dataset: {e}")
+        print(f"❌ Error: {e}")
         raise
 
-    # Always manually extract any zip files that were left behind
+    # Always manually extract any zip files that were left behind if --unzip failed
     import zipfile
     for zip_path in target_dir.glob("*.zip"):
         print(f"Found {zip_path.name}, extracting...")
@@ -69,6 +62,9 @@ def download_dataset(dry_run=False):
             print(f"Extracted and removed {zip_path.name}")
         except Exception as e:
             print(f"❌ Failed to extract {zip_path.name}: {e}")
+            print(f"File size: {zip_path.stat().st_size} bytes")
+            # If it's corrupted, we should probably delete it so the next run tries again
+            zip_path.unlink(missing_ok=True)
             raise
 
     # Verify
