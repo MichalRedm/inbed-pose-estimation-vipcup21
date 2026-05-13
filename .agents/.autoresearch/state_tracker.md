@@ -62,9 +62,10 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 17 | Multi-Task Uncertainty Weighting | SUCCESS | **43.1%** | Kendall et al. weighting; PCK-aligned |
 | 18 | GCN-based Pose Refinement | SUCCESS | 33.4% | High accuracy, but GCN adds latency |
 | 19 | Normalized Anatomical Constraints | FAILURE | 12.7% | **SKELETON COLLAPSE**: Joints coalesced |
-| 20 | Pre-trained HRNet-W32 + Uncertainty Weighting | RUNNING | TBD | Initializing from ImageNet; uncertainty loss balancing |
+| 20 | Pre-trained HRNet-W32 + Uncertainty Weighting | SUCCESS | 35.1% | **UNDERFITTING**: Linear loss trend; needs more epochs. |
+| 21 | Enhanced HRNet (60 eps + Coord Loss + Conv1 Avg) | FINISHED | 32.0% | Model completed but PCK remained low. Stabilization fixes applied to infrastructure. |
 
 ## Next Planned Steps
-1.  **Monitor Loop 20**: Track convergence of the pre-trained HRNet via `scripts/api_cli.py`.
+1.  **Monitor Loop 21**: Track if auxiliary coordinate loss stabilizes the extremity predictions.
 2.  **Visibility-Aware Attention**: Implement auxiliary visibility head if occlusion handling remains weak.
 3.  **Structured Regional Cutout**: Integrate grid-based cutouts into the augmentation pipeline for Loop 21.

@@ -41,6 +41,7 @@
 - **Foreshortening Priors**: 2D bone lengths are upper-bounded by physical 3D length but lower-bounded by 0. Using a Hinge loss (ReLU) on length exceeding the max effectively models this projection constraint.
 - **Curriculum Learning for Priors**: Enforcing structural constraints too early can lead to poor local minima. A linear warmup allows the model to find the correct spatial basins first.
 - **SLP Dataset Specifics**: The insulating effect of blankets in IR means joint heat signatures are blurred and shifted. Structural priors are essential to "glue" the limbs together.
+- **Loop 20 Synthesis (HRNet Underperformance)**: ImageNet-pre-trained HRNet-W32 (35.1% PCK) failed to beat the lighter baseline (46.6%). Analysis shows linear loss decrease at epoch 30, indicating significant underfitting. Additionally, the 1-channel `conv1` was randomly initialized, breaking the low-level feature extraction chain. Doubling epochs and using averaged `conv1` weights is required.
 - **Preventing Skeleton Collapse**: Research indicates direct coordinate regression with structural penalties often leads to collapse. State-of-the-art methods decompose pose into root position + bone vectors (length/angle), applying length priors without compressing the skeleton.
 - **Occlusion Handling**: Multi-modal fusion is best, but when restricted to IR, explicitly modeling visibility (e.g., through an auxiliary attention branch) helps the network switch from texture-reliance to prior-reliance.
 
