@@ -47,28 +47,29 @@ def download_dataset(dry_run=False):
     print(f"Downloading {dataset_slug} to {target_dir}...")
     try:
         api.dataset_download_files(dataset_slug, path=str(target_dir), unzip=True)
-        print("Download and extraction complete.")
+        print("Download step finished.")
     except ValueError as e:
         if "does not match expected size" in str(e):
-            print(f"Size mismatch error: {e}. Attempting manual extraction of the zip file...")
-            zip_filename = dataset_slug.split('/')[-1] + ".zip"
-            zip_path = target_dir / zip_filename
-            if zip_path.exists():
-                import zipfile
-                print(f"Extracting {zip_path}...")
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(target_dir)
-                zip_path.unlink()
-                print("Manual extraction complete.")
-            else:
-                print(f"❌ Zip file {zip_path} not found for manual extraction.")
-                raise
+            print(f"Size mismatch error (Kaggle bug): {e}. Will attempt manual extraction.")
         else:
             print(f"❌ Error downloading dataset: {e}")
             raise
     except Exception as e:
         print(f"❌ Error downloading dataset: {e}")
         raise
+
+    # Always manually extract any zip files that were left behind
+    import zipfile
+    for zip_path in target_dir.glob("*.zip"):
+        print(f"Found {zip_path.name}, extracting...")
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(target_dir)
+            zip_path.unlink()
+            print(f"Extracted and removed {zip_path.name}")
+        except Exception as e:
+            print(f"❌ Failed to extract {zip_path.name}: {e}")
+            raise
 
     # Verify
     files = list(target_dir.glob("*"))
