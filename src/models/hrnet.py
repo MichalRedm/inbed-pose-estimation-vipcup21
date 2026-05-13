@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .base import BaseModel
-from . import register_model
+from .registry import register_model
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -334,8 +334,13 @@ class HRNet(BaseModel):
                 # Skip head as it won't match our num_joints/structure
                 if k.startswith("head") or k.startswith("fc"):
                     continue
-                # Skip stem if in_channels != 3
+                
+                # Special handling for stem if in_channels != 3
                 if k.startswith("conv1") and in_channels != 3:
+                    if in_channels == 1 and v.dim() == 4 and v.shape[1] == 3:
+                        # Average the 3 channels to get 1 channel (R+G+B)/3
+                        # This preserves intensity features from ImageNet
+                        filtered_state[k] = v.mean(dim=1, keepdim=True)
                     continue
                 
                 # Remap fuse_layers to match our FusionLayer.layers nesting
@@ -348,7 +353,10 @@ class HRNet(BaseModel):
             msg = self.load_state_dict(filtered_state, strict=False)
             print(f"[HRNet] Pre-trained weights loaded. Matched: {len(filtered_state) - len(msg.missing_keys)}, Missing: {len(msg.missing_keys)}, Unexpected: {len(msg.unexpected_keys)}")
             if in_channels != 3:
-                print(f"[HRNet] Note: 'conv1' was skipped due to in_channels={in_channels} (expected 3 for ImageNet weights).")
+                if "conv1.weight" in filtered_state:
+                    print(f"[HRNet] Note: 'conv1' adapted from 3 to {in_channels} channels.")
+                else:
+                    print(f"[HRNet] Note: 'conv1' was skipped due to in_channels={in_channels} (expected 3 for ImageNet weights).")
         except Exception as e:
             print(f"[HRNet] Failed to load pre-trained weights: {e}")
 
