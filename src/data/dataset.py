@@ -41,7 +41,10 @@ class VIPCupDataset(Dataset):
         self.split = split  # "train" or "valid"
         self.subjects = subjects
         self.modalities = modalities
-        self.covers = covers
+        if covers is None:
+            self.covers = ["uncover", "cover1", "cover2"]
+        else:
+            self.covers = covers
         self.transform = transform
         self.augmenter = augmenter
         self.image_size = image_size
