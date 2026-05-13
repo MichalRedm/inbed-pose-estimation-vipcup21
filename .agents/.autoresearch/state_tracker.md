@@ -1,8 +1,8 @@
 # State Tracker
 
-- **Current Loop**: 20
+- **Current Loop**: 22
 - **Phase**: Implementation (Phase 3)
-- **Status**: Loop 20 (Pre-trained HRNet) in progress.
+- **Status**: Loop 22 (Pre-trained HRNet + Pure MSE) in progress.
 - **Absolute Priority**: 
   1. **Fix Convergence**: Identify why normalized anatomical loss causes skeleton collapse (likely joint-coalescence local minima).
   2. **Baseline Recovery**: Recover 74%+ PCK by refining uncertainty weighting or increasing heatmap supervision.
@@ -64,6 +64,7 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 19 | Normalized Anatomical Constraints | FAILURE | 12.7% | **SKELETON COLLAPSE**: Joints coalesced |
 | 20 | Pre-trained HRNet-W32 + Uncertainty Weighting | SUCCESS | 35.1% | **UNDERFITTING**: Linear loss trend; needs more epochs. |
 | 21 | Enhanced HRNet (60 eps + Coord Loss + Conv1 Avg) | FINISHED | 32.0% | Model completed but PCK remained low. Stabilization fixes applied to infrastructure. |
+| 22 | Pre-trained HRNet-W32 + Pure Heatmap MSE + Argmax | RUNNING | TBD | Isolating pre-training benefits from soft-argmax interference. |
 
 ## Next Planned Steps
 1.  **Monitor Loop 21**: Track if auxiliary coordinate loss stabilizes the extremity predictions.
