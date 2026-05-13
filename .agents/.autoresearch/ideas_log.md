@@ -8,23 +8,41 @@
    - **Status**: Implementation complete (2026-05-11). `UncertaintyWeighting` added to `StandardTrainer`. `best_model.pth` now saved based on `val_pck`.
    - **Next**: Verify in Loop 17 training run.
 
-2. **Feature-Level Multimodal Fusion (IR + PM)**:
-   - **Hypothesis**: Pressure Maps (PM) provide absolute contact priors that are invariant to blanket thickness, while IR provides high-resolution texture. Fusing them will improve localization of occluded joints (ankles, knees) under thick blankets.
-   - **Implementation**: Modify `VIPCupDataset` to load PM; update `HRNet` to support multi-channel input (2 channels: IR + PM); retrain.
-   - **Status**: [BLOCKED] PM data not found in local dataset.
+2. **Pre-trained Backbone Weights Initialization (Transfer Learning)**:
+   - **Hypothesis**: The VIPCup dataset is relatively small (~100 subjects). Training HRNet-W32 from scratch makes it prone to local minima and skeleton collapse (Loop 19). Initializing the backbone with pre-trained weights (e.g., from ImageNet or a model trained on COCO RGB pose data) will provide robust generic feature extractors (edge detectors, structural priors) that stabilize convergence, even across the RGB-to-IR domain gap.
+   - **Implementation**: Load pre-trained ImageNet/COCO weights into the HRNet backbone before training. Freeze the earliest layers if necessary.
+   - **Priority**: High (Very easy to implement, historically provides massive stability/performance boosts on small datasets).
 
-3. **Spatial Dependency Refinement (GCN)**:
-   - **Hypothesis**: Joints are anatomically constrained. A GCN refinement layer taking soft-argmax coordinates can correct "impossible" poses (e.g., disconnected limbs) that occur under heavy occlusion.
-   - **Result**: [FAILURE] (Loop 18). GCN layer caused excessive smoothing/regularization, dropping PCK to ~42%.
+3. **Visibility-Aware Attention Masking (Auxiliary Visibility Branch)**:
+   - **Hypothesis**: The model struggles with thick blanket occlusions because it processes visible and occluded joints identically. Adding an auxiliary branch to predict the `vis` flag (visible vs. occluded) and using its output to modulate spatial features (via an attention mask) will force the network to explicitly differentiate between reliable thermal signatures and areas where it must rely on structural priors.
+   - **Implementation**: Add a small classification head to HRNet to predict visibility per joint. Use this prediction to scale or attend to the feature maps before heatmap generation.
+   - **Priority**: High (Data is already annotated with `vis` flags, minimal architectural change, directly addresses occlusion).
 
-4. **Joint-Specific Adaptive Loss Scaling (Focal Heatmap Loss)**:
-   - **Hypothesis**: Hard joints (ankles, wrists) are neglected during training as the model minimizes global MSE on easier joints (head, torso). Dynamic weighting based on per-joint error will force convergence on extremities.
-   - **Implementation**: Track per-joint PCK during training; scale heatmap MSE weights inversely to PCK.
+4. **Structured Regional Cutout (Simulated Extreme Occlusion)**:
+   - **Hypothesis**: The current `ThermalDiffusionAugmenter` only applies a wavy blur to simulate a blanket. The model relies too much on residual thermal leakage. Applying "GridMask" or large contiguous "Cutout" blocks that zero out entire limbs will force the network to learn holistic structural dependencies rather than local textures, preparing it for the extreme occlusion of `cover2`.
+   - **Implementation**: Add a simple structured cutout augmentation that completely masks 25-50% of the image during training.
+   - **Priority**: Medium-High (Very simple to implement in `DataAugmenter`, specifically targets the domain gap).
+
+5. **Kinematic Bone-Vector Decomposition (Decoupled Length and Direction)**:
+   - **Hypothesis**: Direct regression of absolute (x,y) coordinates under anatomical constraints often leads to "skeleton collapse" (Loop 19) because minimizing bone length to 0 perfectly satisfies the Hinge loss. Decoupling the prediction into a root joint (pelvis) plus bone vectors (length and angle) prevents this. The length can be strongly regularized while angles vary freely.
+   - **Implementation**: Modify the `SoftArgmax2D` layer or the prediction head to regress root (x,y) and relative vectors for limbs, reconstructing the final pose via forward kinematics.
+   - **Priority**: Medium (Strong theoretical guarantee against collapse, but requires non-trivial architectural and loss restructuring).
+
+6. **Feature-Level Multimodal Fusion (IR + PM)**:
+   - **Status**: [BLOCKED] Pressure Maps (PM) data not found in local dataset.
+
+7. **Spatial Dependency Refinement (GCN)**:
+   - **Result**: [FAILURE] (Loop 18). GCN layer caused excessive smoothing.
+
+8. **Joint-Specific Adaptive Loss Scaling (Focal Heatmap Loss)**:
+   - **Result**: [FAILURE] (Loop 11). Over-focus on extremities led to structural instability.
 
 ## Web Research Syntheses
 - **Foreshortening Priors**: 2D bone lengths are upper-bounded by physical 3D length but lower-bounded by 0. Using a Hinge loss (ReLU) on length exceeding the max effectively models this projection constraint.
 - **Curriculum Learning for Priors**: Enforcing structural constraints too early can lead to poor local minima. A linear warmup allows the model to find the correct spatial basins first.
 - **SLP Dataset Specifics**: The insulating effect of blankets in IR means joint heat signatures are blurred and shifted. Structural priors are essential to "glue" the limbs together.
+- **Preventing Skeleton Collapse**: Research indicates direct coordinate regression with structural penalties often leads to collapse. State-of-the-art methods decompose pose into root position + bone vectors (length/angle), applying length priors without compressing the skeleton.
+- **Occlusion Handling**: Multi-modal fusion is best, but when restricted to IR, explicitly modeling visibility (e.g., through an auxiliary attention branch) helps the network switch from texture-reliance to prior-reliance.
 
 ## Graveyard
 - **Adversarial UDA (Global)**: Loop 5. Caused feature washout.
