@@ -55,9 +55,11 @@
 - **Normalized Skeleton Collapse**: Loop 19. Using anatomical hinge loss on 0-1 normalized coordinates without strong heatmap anchoring caused all joints to collapse into a single point to minimize bone length error (loss reached 0.00009).
 - **Thermal Diffusion (Initial)**: Sign error in rotation augmentations.
 
+- **Loop 21 Enhanced HRNet (Pre-trained + Soft-Argmax + 60 Epochs)**: Loop 21. Achieved only 32.0% PCK. Despite longer training and stable loss, the performance is significantly below the baseline (46.6%). This strongly suggests that Soft-Argmax and direct coordinate regression (even weighted) are smearing the heatmaps and hindering peak precision in this specific dataset.
+
 ## Current Iteration
-- **Loop 6/8**: Fixed-Length MSE & Curriculum (FAILURE). **PURGED** due to regression and corrupted checkpoints.
 - **Loop 9**: Foreshortening-Aware Hinge Loss (SUCCESS). Reached 45.1% PCK@0.2.
 - **Loop 17**: Multi-Task Uncertainty Weighting (SUCCESS). 43.1% PCK@0.2.
 - **Loop 18**: GCN Refinement (FAILURE). 33.4% PCK@0.2.
 - **Loop 19**: Normalized Anatomical Hinge (FAILURE). 12.7% PCK@0.2. Skeleton collapse.
+- **Loop 20/21**: Pre-trained HRNet + Soft-Argmax (FAILURE). 32.0% PCK@0.2. Coordinate regression is hindering precision.
