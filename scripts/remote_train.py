@@ -95,8 +95,7 @@ def main():
         # --- Step 2: Ensure data is present ---
         print("\nEnsuring data is available on remote...")
         download_cmd = (
-            "test -d data/raw/train || "
-            "(pip install kaggle -q && python3 scripts/download_dataset.py)"
+            "pip install kaggle -q && python3 scripts/download_dataset.py"
         )
         gpu.run(f"cd /root/project && {env_setup} && {download_cmd}")
 

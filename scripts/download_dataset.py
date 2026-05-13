@@ -28,6 +28,13 @@ def download_dataset(dry_run=False):
     # Ensure target directory exists
     target_dir.mkdir(parents=True, exist_ok=True)
 
+    # Check if data is already present to skip download
+    # The dataset uses Subject_XX or 000XX folders
+    existing_samples = list(target_dir.glob("**/Subject_*")) + list(target_dir.glob("**/000*"))
+    if existing_samples:
+        print(f"✅ Dataset already appears to be present in {target_dir}. Skipping download.")
+        return
+
     import subprocess
     import os
 
@@ -39,13 +46,11 @@ def download_dataset(dry_run=False):
     try:
         # We use the CLI directly as the Python API sometimes fails silently or downloads corrupted zips
         cmd = ["kaggle", "datasets", "download", "-d", dataset_slug, "-p", str(target_dir), "--unzip", "--force"]
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        # Use subprocess.run with default stdout/stderr to stream output to parent process logs
+        subprocess.run(cmd, check=True)
         print("Download step finished.")
-        print(result.stdout)
     except subprocess.CalledProcessError as e:
-        print(f"❌ Error downloading dataset via CLI:")
-        print(e.stdout)
-        print(e.stderr)
+        print(f"❌ Error downloading dataset via CLI (exit code {e.returncode})")
         raise
     except Exception as e:
         print(f"❌ Error: {e}")
