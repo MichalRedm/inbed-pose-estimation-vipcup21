@@ -48,12 +48,31 @@ def download_dataset(dry_run=False):
     try:
         api.dataset_download_files(dataset_slug, path=str(target_dir), unzip=True)
         print("Download and extraction complete.")
-        # Verify
-        files = list(target_dir.glob("*"))
-        print(f"Files in target directory: {[f.name for f in files]}")
+    except ValueError as e:
+        if "does not match expected size" in str(e):
+            print(f"Size mismatch error: {e}. Attempting manual extraction of the zip file...")
+            zip_filename = dataset_slug.split('/')[-1] + ".zip"
+            zip_path = target_dir / zip_filename
+            if zip_path.exists():
+                import zipfile
+                print(f"Extracting {zip_path}...")
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(target_dir)
+                zip_path.unlink()
+                print("Manual extraction complete.")
+            else:
+                print(f"❌ Zip file {zip_path} not found for manual extraction.")
+                raise
+        else:
+            print(f"❌ Error downloading dataset: {e}")
+            raise
     except Exception as e:
         print(f"❌ Error downloading dataset: {e}")
         raise
+
+    # Verify
+    files = list(target_dir.glob("*"))
+    print(f"Files in target directory: {[f.name for f in files]}")
 
 
 if __name__ == "__main__":
