@@ -325,21 +325,36 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                <div className="glass" style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span className="micro-label text-secondary">Mean PCK@0.2</span>
-                  <HelpCircle size={12} className="text-secondary" style={{ cursor: 'help' }} title="Percentage of Correct Keypoints: A prediction is correct if it falls within 0.2 * Torso Diameter of the ground truth." />
+                  <div className="tooltip-container">
+                    <HelpCircle size={12} className="info-icon" />
+                    <div className="tooltip-content">
+                      Percentage of Correct Keypoints: A prediction is correct if it falls within 0.2 * Torso Diameter of the ground truth.
+                    </div>
+                  </div>
                 </div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--accent-lime)' }}>{(evalResults.pck * 100).toFixed(1)}%</div>
               </div>
               <div className="glass" style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span className="micro-label text-secondary">Mean MPJPE</span>
-                  <HelpCircle size={12} className="text-secondary" style={{ cursor: 'help' }} title="Mean Per Joint Position Error: The average Euclidean distance (in pixels) between predicted and ground truth joint coordinates." />
+                  <div className="tooltip-container">
+                    <HelpCircle size={12} className="info-icon" />
+                    <div className="tooltip-content">
+                      Mean Per Joint Position Error: The average Euclidean distance (in pixels) between predicted and ground truth joint coordinates.
+                    </div>
+                  </div>
                 </div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--accent-pink)' }}>{evalResults.mpjpe.toFixed(1)}px</div>
               </div>
               <div className="glass" style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span className="micro-label text-secondary">Avg Val Loss</span>
-                  <HelpCircle size={12} className="text-secondary" style={{ cursor: 'help' }} title="The average Mean Squared Error (MSE) loss calculated over the validation set." />
+                  <div className="tooltip-container">
+                    <HelpCircle size={12} className="info-icon" />
+                    <div className="tooltip-content">
+                      The average Mean Squared Error (MSE) loss calculated over the validation set.
+                    </div>
+                  </div>
                 </div>
                 <div style={{ fontSize: '1.2rem', fontWeight: 600, marginTop: '8px' }}>{evalResults.loss?.toFixed(6) || 'N/A'}</div>
               </div>
