@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 22
-- **Phase**: Implementation (Phase 3)
-- **Status**: Loop 22 (Pre-trained HRNet + Pure MSE) in progress.
+- **Current Loop**: 23
+- **Phase**: Planning (Phase 2)
+- **Status**: Loop 23 (Stabilized Pre-training + Selective Freezing) planned.
 - **Absolute Priority**: 
-  1. **Fix Convergence**: Identify why normalized anatomical loss causes skeleton collapse (likely joint-coalescence local minima).
-  2. **Baseline Recovery**: Recover 74%+ PCK by refining uncertainty weighting or increasing heatmap supervision.
+  1. **Stabilize Pre-training**: Use layer freezing (Stem + Stage 1) to prevent feature washout.
+  2. **Baseline Recovery**: Recover 46.6%+ PCK@0.2 by using Argmax + Pre-trained weights.
 - **Baseline**: Loop 2 (46.6% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -48,9 +48,9 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 - **Model Self-Containment**: Standardized all legacy checkpoints to include weights, config, and decoding settings in a single `.pth` file.
 - **Decoding Autopilot**: Implemented `PoseDecodingWrapper` to automatically apply the best decoding method (argmax vs soft-argmax) at inference time based on embedded metadata.
 - **API Stabilization**: Resolved `NameError` and type-hinting issues in `src/api/main.py`. Ensured robust loading of historical checkpoints.
-- **Corruption Recovery**: Restored `loop19` by recovering weights from `latest_model.pth` after `best_model.pth` was corrupted.
-- **Cleanup**: Purged corrupted and legacy runs (`loop1`, `loop19_auto_eval`, `loop5_test`, `loop4_telemetry_check`) to stabilize dashboard and evaluation pipelines.
-- **Environment**: Enforced `.venv\Scripts\python.exe` for all backend services to ensure dependency consistency.
+- **Corruption Recovery**: Restored `loop19` and `loop20` by recovering weights from `latest_model.pth` after `best_model.pth` was corrupted during save.
+- **Remapping Fix**: Resolved a regression in `load_model_for_inference` where structural remapping (modules_list removal) failed for prefixed keys (e.g., `hrnet.`), which previously broke GCN-refined models like `loop18`.
+- **Environment**: Enforced `.venv\Scripts\python.exe` for all backend services.
 
 ## Iteration Log
 
@@ -64,9 +64,10 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 19 | Normalized Anatomical Constraints | FAILURE | 12.7% | **SKELETON COLLAPSE**: Joints coalesced |
 | 20 | Pre-trained HRNet-W32 + Uncertainty Weighting | SUCCESS | 35.1% | **UNDERFITTING**: Linear loss trend; needs more epochs. |
 | 21 | Enhanced HRNet (60 eps + Coord Loss + Conv1 Avg) | FINISHED | 32.0% | Model completed but PCK remained low. Stabilization fixes applied to infrastructure. |
-| 22 | Pre-trained HRNet-W32 + Pure Heatmap MSE + Argmax | RUNNING | TBD | Isolating pre-training benefits from soft-argmax interference. |
+| 22 | Pre-trained HRNet-W32 + Pure Heatmap MSE + Argmax | FINISHED | 32.5% | **STALLED**: Performance did not improve. Hypothesis: Feature washout from high-level gradients. |
+| 23 | Stabilized Pre-training (Freeze Stem + Stage 1) | PLANNED | TBD | Focused fine-tuning of high-level pose logic. |
 
 ## Next Planned Steps
-1.  **Monitor Loop 21**: Track if auxiliary coordinate loss stabilizes the extremity predictions.
-2.  **Visibility-Aware Attention**: Implement auxiliary visibility head if occlusion handling remains weak.
-3.  **Structured Regional Cutout**: Integrate grid-based cutouts into the augmentation pipeline for Loop 21.
+1.  **Implement Loop 23**: Update HRNet to support freezing and create config for 60-epoch run.
+2.  **Monitor Convergence**: Verify if freezing Stem leads to faster, more stable PCK growth.
+3.  **Visibility-Aware Attention**: Backlog.

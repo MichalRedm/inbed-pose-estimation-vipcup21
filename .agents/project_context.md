@@ -31,7 +31,7 @@ Finalize and validate the production-grade architectural refactoring of the pose
 - [x] Implemented Robust Backward Compatibility for legacy checkpoints.
 - [x] Centralized Model Registry (`src/models/registry.py`) to prevent isolation bugs.
 - [x] Implemented Regression Testing for model loading (`tests/test_legacy_compatibility.py`).
-- [ ] Surpass Loop 9 (73.0% PCK) with stabilized Loop 21 training.
+- [ ] Surpass Loop 2 (46.6% PCK@0.2) with stabilized Loop 22 training.
 
 ## Dashboard-Driven ML
 - **Real-time Monitoring**: All training and evaluation MUST be performed via the Dashboard API (see `ml_operations.md` rule).

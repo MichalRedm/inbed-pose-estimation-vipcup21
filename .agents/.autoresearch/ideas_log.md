@@ -8,10 +8,10 @@
    - **Status**: Implementation complete (2026-05-11). `UncertaintyWeighting` added to `StandardTrainer`. `best_model.pth` now saved based on `val_pck`.
    - **Next**: Verify in Loop 17 training run.
 
-2. **Pre-trained Backbone Weights Initialization (Transfer Learning)**:
-   - **Hypothesis**: The VIPCup dataset is relatively small (~100 subjects). Training HRNet-W32 from scratch makes it prone to local minima and skeleton collapse (Loop 19). Initializing the backbone with pre-trained weights (e.g., from ImageNet or a model trained on COCO RGB pose data) will provide robust generic feature extractors (edge detectors, structural priors) that stabilize convergence, even across the RGB-to-IR domain gap.
-   - **Implementation**: Load pre-trained ImageNet/COCO weights into the HRNet backbone before training. Freeze the earliest layers if necessary.
-   - **Priority**: High (Very easy to implement, historically provides massive stability/performance boosts on small datasets).
+2. **[ACTIVE] Stabilized Transfer Learning via Selective Freezing (Loop 23)**:
+   - **Hypothesis**: The underperformance of pre-trained HRNet in Loops 20/21 was caused by **feature washout** (gradients from the random head destroying backbone features) and **underfitting**. By **freezing the Stem and Stage 1** (generic edge/texture detectors) and using a **lower LR (5e-5)**, the model can quickly adapt the high-level pose logic to thermal data without losing the ImageNet structural priors. This should match the convergence speed of scratch models while surpassing the 46.6% PCK baseline.
+   - **Implementation**: Set `requires_grad=False` for `conv1`, `conv2`, and `layer1`. Use Argmax decoding.
+   - **Priority**: Absolute (Highest ROI - minimal change for likely high gain).
 
 3. **Visibility-Aware Attention Masking (Auxiliary Visibility Branch)**:
    - **Hypothesis**: The model struggles with thick blanket occlusions because it processes visible and occluded joints identically. Adding an auxiliary branch to predict the `vis` flag (visible vs. occluded) and using its output to modulate spatial features (via an attention mask) will force the network to explicitly differentiate between reliable thermal signatures and areas where it must rely on structural priors.
@@ -44,6 +44,7 @@
 - **Loop 20 Synthesis (HRNet Underperformance)**: ImageNet-pre-trained HRNet-W32 (35.1% PCK) failed to beat the lighter baseline (46.6%). Analysis shows linear loss decrease at epoch 30, indicating significant underfitting. Additionally, the 1-channel `conv1` was randomly initialized, breaking the low-level feature extraction chain. Doubling epochs and using averaged `conv1` weights is required.
 - **Preventing Skeleton Collapse**: Research indicates direct coordinate regression with structural penalties often leads to collapse. State-of-the-art methods decompose pose into root position + bone vectors (length/angle), applying length priors without compressing the skeleton.
 - **Occlusion Handling**: Multi-modal fusion is best, but when restricted to IR, explicitly modeling visibility (e.g., through an auxiliary attention branch) helps the network switch from texture-reliance to prior-reliance.
+- **Loop 22 Analysis**: Established that Soft-Argmax causes "Joint Coalescence" in thermal images due to the "center-of-mass" being pulled toward high-intensity heat (head). Returning to Argmax is essential for precision.
 
 ## Graveyard
 - **Adversarial UDA (Global)**: Loop 5. Caused feature washout.
