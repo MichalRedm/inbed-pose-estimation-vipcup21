@@ -105,8 +105,8 @@ class ThermalDiffusionAugmenter:
         final_image = Image.composite(blanket_layer, img_pil, mask)
 
         if is_tensor:
-            # Use to_dtype to ensure proper tensor format without extra copies if already tensor
-            return v2.functional.to_image(final_image).to(device)
+            # Convert back to float32 tensor normalized to [0, 1] to match standard pipeline
+            return v2.functional.to_image(final_image).float().to(device) / 255.0
         return final_image
 
 

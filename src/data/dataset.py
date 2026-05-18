@@ -204,12 +204,17 @@ class VIPCupDataset(Dataset):
             scaled_joints[1] *= scale_y
             joints = torch.from_numpy(scaled_joints).float()
 
-        # Convert to tensor if not already (augmenter might return tensors or PIL)
+        # Convert to tensor if not already, and always ensure float format normalized to [0, 1]
         if not torch.is_tensor(image):
             image = v2.functional.to_image(image).float() / 255.0
+        elif image.dtype == torch.uint8:
+            image = image.float() / 255.0
 
-        if image_source is not None and not torch.is_tensor(image_source):
-            image_source = v2.functional.to_image(image_source).float() / 255.0
+        if image_source is not None:
+            if not torch.is_tensor(image_source):
+                image_source = v2.functional.to_image(image_source).float() / 255.0
+            elif image_source.dtype == torch.uint8:
+                image_source = image_source.float() / 255.0
 
         if self.transform:
             image = self.transform(image)
