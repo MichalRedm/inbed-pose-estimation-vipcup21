@@ -1,0 +1,67 @@
+# Loop 26: Sigma Curriculum + Extended Robust Augmentations
+# Goal: Bridge the cover-type domain gap (cover1 validation vs uncover training)
+# by training from scratch with advanced spatial, photometric, and occlusion augmentations.
+
+project:
+  name: inbed-pose-estimation
+  seed: 42
+
+dataset:
+  root: "data/raw"
+  modalities: ["IR"]
+  subjects_train: [1, 80]
+  subjects_val: [81, 90]
+  image_size: [256, 256]
+
+model:
+  name: "hrnet"
+  hrnet:
+    num_joints: 14
+    in_channels: 1 
+    architecture: "w32"
+    heatmap_size: [64, 64]
+
+training:
+  batch_size: 16
+  epochs: 40
+  lr: 0.0001
+  weight_decay: 0.0001
+  
+  # Clean loss setup (pure Heatmap MSE)
+  use_uncertainty_weighting: false
+  lambda_anatomical: 0.0
+  lambda_coord: 0.0
+  lambda_coord_occluded: 0.0
+  
+  # Curriculum: Start with wide Gaussians, progressively narrow to force fine-grained precision
+  sigma_start: 3.0
+  sigma_end: 1.5
+  
+  save_dir: "results/runs/loop26_sigma_cutout"
+  
+  augmentation:
+    enabled: true
+    occlusion_prob: 0.7
+    flip_prob: 0.5
+    rotation_range: [-30, 30]
+    scaling_range: [0.8, 1.2]
+    
+    # 5-Component Extended Robust Augmentation Parameters:
+    # 1. Translation: up to 10% spatial shift to counter spatial center-biasing
+    translation: [0.10, 0.10]
+    
+    # 2. Cutout: zero-fill 35% of image area to force prior-based keypoint inference
+    cutout_prob: 0.5
+    cutout_size_ratio: 0.35
+    
+    # 3. Thermal Intensity Jitter: brightness & contrast adjustments for blanket attenuation
+    intensity_jitter_prob: 0.5
+    intensity_jitter_range: [0.55, 1.15]
+    contrast_jitter_range: [0.5, 1.15]
+    
+    # 4. Sensor Noise Injection: Gaussian readout noise & dead pixels for local contrast parity
+    sensor_noise_prob: 0.4
+    sensor_noise_sigma: [5, 12]
+
+remote:
+  use_remote: true
