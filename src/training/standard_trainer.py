@@ -28,6 +28,8 @@ class StandardTrainer(BaseTrainer):
 
         # Anatomical constraints setup
         training_cfg = config.get("training", {})
+        self.unfreeze_epoch = training_cfg.get("unfreeze_epoch", None)
+        self.backbone_lr_ratio = training_cfg.get("backbone_lr_ratio", 1.0)
         self.lambda_anatomical = training_cfg.get("lambda_anatomical", 0.0)
         self.warmup_epochs = training_cfg.get("warmup_epochs", 10)
         self.anatomical_mode = training_cfg.get("anatomical_mode", "hinge")
@@ -271,6 +273,18 @@ class StandardTrainer(BaseTrainer):
 
         for epoch in range(self.start_epoch, self.epochs):
             self.current_epoch = epoch
+
+            # Phase Transition for Progressive Unfreezing
+            if self.unfreeze_epoch is not None and epoch == self.unfreeze_epoch:
+                raw_model = self.model.module if hasattr(self.model, "module") else self.model
+                if hasattr(raw_model, "unfreeze_all"):
+                    raw_model.unfreeze_all()
+                # Rebuild optimizer with now-unfrozen backbone parameters
+                from src.training.factory import build_optimizer
+                self.optimizer = build_optimizer(self.model, self, self.config, self.rank)
+                if self.is_main:
+                    print(f"[Trainer] Phase 2 active at epoch {epoch+1}: backbone unfrozen, discriminative LR applied.")
+
             train_metrics = self.train_epoch(train_loader, epoch)
             val_metrics = {}
             val_pck = None

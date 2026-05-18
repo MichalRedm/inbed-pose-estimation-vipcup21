@@ -407,6 +407,11 @@ class HRNet(BaseModel):
         except Exception as e:
             print(f"[HRNet] Failed to load pre-trained weights: {e}")
 
+    def unfreeze_all(self):
+        """Re-enable gradient tracking on all parameters (for progressive unfreezing)."""
+        for param in self.parameters():
+            param.requires_grad = True
+        print("[HRNet] All parameters unfrozen (progressive unfreezing Phase 2).")
 
     @property
     def output_type(self) -> str:
