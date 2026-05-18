@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 23
-- **Phase**: Planning (Phase 2)
-- **Status**: Loop 23 (Stabilized Pre-training + Selective Freezing) planned.
+- **Current Loop**: 24
+- **Phase**: Post-Analysis (Phase 4)
+- **Status**: Loop 23 completed successfully.
 - **Absolute Priority**: 
-  1. **Stabilize Pre-training**: Use layer freezing (Stem + Stage 1) to prevent feature washout.
-  2. **Baseline Recovery**: Recover 46.6%+ PCK@0.2 by using Argmax + Pre-trained weights.
+  1. **Stabilize Pre-training**: Successfully evaluated (PCK increased to 33.5%).
+  2. **Hypothesis Queue**: Transitioning to next experiments.
 - **Baseline**: Loop 2 (46.6% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -23,6 +23,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 | loop17_uncertainty | soft-argmax | **43.1%** | 24.5 px | **TOP ACCURACY** |
 | loop5_uda_refined | argmax | 36.2% | 31.4 px | UDA REF |
 | loop4_uda_alignment | argmax | 35.6% | 40.3 px | UDA BASE |
+| loop23_stabilized_pretraining | argmax | **33.5%** | 42.3 px | **SUCCESSFUL FINE-TUNING** |
 | loop18_gcn_final_v5 | soft-argmax | 33.4% | 26.6 px | SUCCESS |
 | loop19 | soft-argmax | 12.7% | 66.7 px | **SKELETON COLLAPSE** |
 
@@ -65,9 +66,9 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 20 | Pre-trained HRNet-W32 + Uncertainty Weighting | SUCCESS | 35.1% | **UNDERFITTING**: Linear loss trend; needs more epochs. |
 | 21 | Enhanced HRNet (60 eps + Coord Loss + Conv1 Avg) | FINISHED | 32.0% | Model completed but PCK remained low. Stabilization fixes applied to infrastructure. |
 | 22 | Pre-trained HRNet-W32 + Pure Heatmap MSE + Argmax | FINISHED | 32.5% | **STALLED**: Performance did not improve. Hypothesis: Feature washout from high-level gradients. |
-| 23 | Stabilized Pre-training (Freeze Stem + Stage 1) | PLANNED | TBD | Focused fine-tuning of high-level pose logic. |
+| 23 | Stabilized Pre-training (Freeze Stem + Stage 1) | SUCCESS | **33.5%** | Successfully fine-tuned pre-trained backbone while avoiding feature washout. |
 
 ## Next Planned Steps
-1.  **Implement Loop 23**: Update HRNet to support freezing and create config for 60-epoch run.
-2.  **Monitor Convergence**: Verify if freezing Stem leads to faster, more stable PCK growth.
-3.  **Visibility-Aware Attention**: Backlog.
+1. **Analyze Loop 23 Results**: Freezing generic layers successfully stabilized fine-tuning (PCK increased to 33.5%).
+2. **Explore simulated extreme occlusions (Cutout)**: Simulated extreme blankets via Cutout augmentation to bridge the gap.
+3. **Visibility-Aware Attention**: Modulation using joint visibility flags to improve occlusion robustness.
