@@ -14,7 +14,20 @@
    - **Implementation**: Set `requires_grad=False` for `conv1`, `conv2`, and `layer1`. Use Argmax decoding.
    - **Priority**: Completed.
 
-3. **Visibility-Aware Attention Masking (Auxiliary Visibility Branch)**:
+3. **[UNDERPERFORMED] Discriminative Learning Rates — Fully Unfrozen (Loop 24)**:
+   - **Hypothesis**: Fully unfreeze the pre-trained backbone but protect it with a 0.1× backbone learning rate relative to the head. Gives the network maximum adaptational flexibility without gradient washout.
+   - **Result**: **36.7% PCK@0.2** (worse than frozen Loop 23's 41.0%). The discriminative LR of 1e-5 on the backbone is still too high: even with the ratio, the randomly-initialized head produces large loss gradients in epoch 1, corrupting pretrained backbone features before the head stabilizes. Evidence: Loop 24 Ep1 PCK = 3.03% vs. Loop 23 Ep1 PCK = 9.81%. The gap narrows over time (epoch 29-30 Loop 24 ≥ Loop 23), confirming the backbone is eventually recoverable, just slowly.
+   - **Priority**: Completed. Key lesson: discriminative LR alone is insufficient without first warming up the head.
+
+4. **[PLANNED — HIGH PRIORITY] Progressive Unfreezing with Warm-up then Unfreeze (Loop 25)**:
+   - **Hypothesis**: A two-phase training schedule will solve both the initial gradient washout AND the long-term domain ceiling:
+     - **Phase 1 (epochs 1–15)**: Freeze stem + stage1 (same as Loop 23). Train head at full LR (1e-4) until it stabilizes. PCK should rapidly reach ~38–40%.
+     - **Phase 2 (epochs 16–50)**: Automatically unfreeze the backbone. Switch to discriminative LR (backbone: 1e-5, head: 1e-4). Allow the backbone to slowly adapt to thermal IR features.
+   - **Implementation**: Add `unfreeze_epoch: 15` config key. In `StandardTrainer.fit()`, detect when `epoch == unfreeze_epoch`, call `model.unfreeze_all()`, and rebuild the optimizer with discriminative LR.
+   - **Priority**: **HIGHEST** — This is the most well-grounded scientific hypothesis, backed by ULMFiT, SlowFast fine-tuning, and visual evidence from Loop 23/24 trajectories. Total epochs: 50 (to allow proper convergence after unfreezing).
+   - **Expected PCK**: 42–47%+. If the Phase 1 plateau at ~41% is maintained and Phase 2 provides +5–10% improvement via backbone adaptation, this should beat the scratch baseline.
+
+5. **[PLANNED — MEDIUM-HIGH] Structured Regional Cutout (Simulated Extreme Occlusion)**:
    - **Hypothesis**: The model struggles with thick blanket occlusions because it processes visible and occluded joints identically. Adding an auxiliary branch to predict the `vis` flag (visible vs. occluded) and using its output to modulate spatial features (via an attention mask) will force the network to explicitly differentiate between reliable thermal signatures and areas where it must rely on structural priors.
    - **Implementation**: Add a small classification head to HRNet to predict visibility per joint. Use this prediction to scale or attend to the feature maps before heatmap generation.
    - **Priority**: High (Data is already annotated with `vis` flags, minimal architectural change, directly addresses occlusion).
@@ -46,6 +59,8 @@
 - **Preventing Skeleton Collapse**: Research indicates direct coordinate regression with structural penalties often leads to collapse. State-of-the-art methods decompose pose into root position + bone vectors (length/angle), applying length priors without compressing the skeleton.
 - **Occlusion Handling**: Multi-modal fusion is best, but when restricted to IR, explicitly modeling visibility (e.g., through an auxiliary attention branch) helps the network switch from texture-reliance to prior-reliance.
 - **Loop 22 Analysis**: Established that Soft-Argmax causes "Joint Coalescence" in thermal images due to the "center-of-mass" being pulled toward high-intensity heat (head). Returning to Argmax is essential for precision.
+- **Loop 23/24 Analysis — Progressive Unfreezing Evidence**: Epoch-by-epoch comparison reveals Loop 23 (frozen) starts 6.8% ahead at Ep1, peaks at ~41% (ep 13), then DECAYS and oscillates due to the frozen backbone's rigidity. Loop 24 (unfrozen, disc. LR) starts 6.8% behind but catches up monotonically, surpassing Loop 23 at epoch 29. This confirms: (1) frozen backbone gives fast initial convergence but hits a domain ceiling; (2) fully unfrozen backbone recovers slowly but eventually wins; (3) the OPTIMAL strategy is sequential: freeze first (borrow Loop 23's fast start), then unfreeze (borrow Loop 24's long-term adaptability). This is the **ULMFiT / Progressive Unfreezing** approach validated by Howard & Ruder (2018) on language models, and confirmed empirically in our own data.
+- **Convergence Rate Analysis**: Loop 24 shows +0.62% PCK/epoch in the last 5 epochs (still monotonically improving) vs. Loop 23 showing effectively 0 or negative improvement in the last 5. Loop 24 has not converged and WOULD beat Loop 23 given more epochs. This validates extending training to 50 epochs in Loop 25.
 
 ## Graveyard
 - **Adversarial UDA (Global)**: Loop 5. Caused feature washout.
@@ -65,3 +80,5 @@
 - **Loop 18**: GCN Refinement (FAILURE). 33.4% PCK@0.2.
 - **Loop 19**: Normalized Anatomical Hinge (FAILURE). 12.7% PCK@0.2. Skeleton collapse.
 - **Loop 20/21**: Pre-trained HRNet + Soft-Argmax (FAILURE). 32.0% PCK@0.2. Coordinate regression is hindering precision.
+- **Loop 23**: Stabilized Pre-training — Frozen Stem+Stage1 (SUCCESS). 41.0% PCK@0.2.
+- **Loop 24**: Discriminative LR — Fully Unfrozen (UNDERPERFORMED). 36.7% PCK@0.2. Gradient washout at epoch 1 despite 0.1× backbone LR. Still monotonically improving at epoch 30 — convergence not reached.
