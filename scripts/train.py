@@ -80,6 +80,22 @@ def train():
     parser.add_argument("--run_id", type=str, default=None)
     args, _ = parser.parse_known_args()
 
+    # Auto-load saved config if resuming a run
+    if args.resume and args.run_id:
+        run_root = Path(__file__).parent.parent / "results" / "runs" / args.run_id
+        saved_config_path = run_root / "config.json"
+        if saved_config_path.exists():
+            if int(os.environ.get("RANK", 0)) == 0:
+                print(f"[resume] Loading saved config from {saved_config_path}")
+            try:
+                with open(saved_config_path, "r") as f:
+                    config = json.load(f)
+                train_cfg = config.get("training", {})
+                dataset_cfg = config.get("dataset", {})
+            except Exception as e:
+                if int(os.environ.get("RANK", 0)) == 0:
+                    print(f"[resume] Warning: failed to load saved config: {e}")
+
     # 3. Apply Overrides to Config
     if args.epochs:
         config["training"]["epochs"] = args.epochs
