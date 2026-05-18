@@ -174,3 +174,8 @@ class UDATrainer(BaseTrainer):
                     **{f"val_{k}": v for k, v in val_metrics.items()},
                 }
                 self.update_history(epoch_data)
+
+            # Synchronize all DDP ranks at the end of every epoch.
+            import torch.distributed as dist
+            if self.world_size > 1 and dist.is_initialized():
+                dist.barrier()

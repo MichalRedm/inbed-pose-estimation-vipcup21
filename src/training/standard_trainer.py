@@ -271,6 +271,8 @@ class StandardTrainer(BaseTrainer):
                 f"[Trainer] Checkpoint saving criterion: best val PCK (decoder: {decode_method})"
             )
 
+        if self.is_main:
+            print(f"[Trainer DEBUG] self.start_epoch: {self.start_epoch}, self.epochs: {self.epochs}")
         for epoch in range(self.start_epoch, self.epochs):
             self.current_epoch = epoch
 
@@ -344,3 +346,10 @@ class StandardTrainer(BaseTrainer):
                 if val_pck is not None:
                     epoch_data["val_pck"] = val_pck
                 self.update_history(epoch_data)
+
+            # Synchronize all DDP ranks at the end of every epoch.
+            # Without this barrier, rank-1 races ahead into the next train_epoch
+            # while rank-0 is still inside save_checkpoint / update_history,
+            # causing a silent deadlock on the next all_reduce call.
+            if self.world_size > 1 and dist.is_initialized():
+                dist.barrier()
