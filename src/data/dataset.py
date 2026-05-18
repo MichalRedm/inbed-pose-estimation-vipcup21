@@ -173,6 +173,7 @@ class VIPCupDataset(Dataset):
                 image = v2.functional.to_image(img_pil.convert("L")).float() / 255.0
             else:
                 image = v2.functional.to_image(img_pil.convert("RGB")).float() / 255.0
+            image = image.as_subclass(torch.Tensor)
 
         joints = sample["joints"].get(target_mod)
 
@@ -214,6 +215,12 @@ class VIPCupDataset(Dataset):
             image = self.transform(image)
             if image_source is not None:
                 image_source = self.transform(image_source)
+
+        # Ensure we return plain standard PyTorch tensors to avoid DDP/DataLoader collate compatibility issues
+        if isinstance(image, torch.Tensor):
+            image = image.as_subclass(torch.Tensor)
+        if image_source is not None and isinstance(image_source, torch.Tensor):
+            image_source = image_source.as_subclass(torch.Tensor)
 
         target_heatmaps = None
         if joints is not None:
