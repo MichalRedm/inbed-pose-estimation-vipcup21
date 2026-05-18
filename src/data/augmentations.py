@@ -115,12 +115,20 @@ class ThermalIntensityJitter:
     Randomly scales brightness and compresses/stretches contrast of thermal images
     to simulate dynamic range attenuation (e.g., from blankets) and subject/ambient shifts.
     """
-    def __init__(self, probability: float = 0.5, intensity_range: tuple = (0.55, 1.15), contrast_range: tuple = (0.5, 1.15)):
+
+    def __init__(
+        self,
+        probability: float = 0.5,
+        intensity_range: tuple = (0.55, 1.15),
+        contrast_range: tuple = (0.5, 1.15),
+    ):
         self.probability = probability
         self.intensity_range = intensity_range
         self.contrast_range = contrast_range
 
-    def __call__(self, image: Union[Image.Image, torch.Tensor]) -> Union[Image.Image, torch.Tensor]:
+    def __call__(
+        self, image: Union[Image.Image, torch.Tensor]
+    ) -> Union[Image.Image, torch.Tensor]:
         if random.random() > self.probability:
             return image
 
@@ -155,12 +163,20 @@ class IRSensorNoise:
     Injects simulated Gaussian readout noise and random dead/hot pixels to represent
     IR sensor limitations and regularize the network.
     """
-    def __init__(self, probability: float = 0.4, noise_sigma: tuple = (5, 12), dead_pixel_ratio: float = 0.003):
+
+    def __init__(
+        self,
+        probability: float = 0.4,
+        noise_sigma: tuple = (5, 12),
+        dead_pixel_ratio: float = 0.003,
+    ):
         self.probability = probability
         self.noise_sigma = noise_sigma
         self.dead_pixel_ratio = dead_pixel_ratio
 
-    def __call__(self, image: Union[Image.Image, torch.Tensor]) -> Union[Image.Image, torch.Tensor]:
+    def __call__(
+        self, image: Union[Image.Image, torch.Tensor]
+    ) -> Union[Image.Image, torch.Tensor]:
         if random.random() > self.probability:
             return image
 
@@ -185,11 +201,11 @@ class IRSensorNoise:
             # Flatten indices
             flat_indices = np.random.choice(img_np.size, num_pixels, replace=False)
             unflatten_coords = np.unravel_index(flat_indices, img_np.shape)
-            
+
             # 50% dead (0), 50% hot (max)
             dead_mask = np.random.random(num_pixels) < 0.5
             max_val = 1.0 if is_tensor else 255.0
-            
+
             # We can index directly with coordinates
             img_np[unflatten_coords] = np.where(dead_mask, 0.0, max_val)
 
@@ -207,11 +223,14 @@ class CutoutAugmentation:
     """
     Zeroes out a randomly placed rectangular region in the image to simulate full occlusion.
     """
+
     def __init__(self, probability: float = 0.5, size_ratio: float = 0.35):
         self.probability = probability
         self.size_ratio = size_ratio
 
-    def __call__(self, image: Union[Image.Image, torch.Tensor]) -> Union[Image.Image, torch.Tensor]:
+    def __call__(
+        self, image: Union[Image.Image, torch.Tensor]
+    ) -> Union[Image.Image, torch.Tensor]:
         if random.random() > self.probability:
             return image
 
@@ -235,14 +254,14 @@ class CutoutAugmentation:
         # Apply zero fill value (blackout)
         if is_tensor:
             if len(img_np.shape) == 3:  # (C, H, W)
-                img_np[:, y0:y0+cutout_h, x0:x0+cutout_w] = 0.0
+                img_np[:, y0 : y0 + cutout_h, x0 : x0 + cutout_w] = 0.0
             else:
-                img_np[y0:y0+cutout_h, x0:x0+cutout_w] = 0.0
+                img_np[y0 : y0 + cutout_h, x0 : x0 + cutout_w] = 0.0
         else:
             if len(img_np.shape) == 3:
-                img_np[y0:y0+cutout_h, x0:x0+cutout_w, :] = 0
+                img_np[y0 : y0 + cutout_h, x0 : x0 + cutout_w, :] = 0
             else:
-                img_np[y0:y0+cutout_h, x0:x0+cutout_w] = 0
+                img_np[y0 : y0 + cutout_h, x0 : x0 + cutout_w] = 0
 
         if is_tensor:
             return torch.from_numpy(img_np).to(device)
@@ -286,30 +305,45 @@ class DataAugmenter:
         # Check for new robust augmentations in config
         self.cutout_prob = self.config.get("cutout_prob", 0.0)
         self.cutout_size_ratio = self.config.get("cutout_size_ratio", 0.35)
-        
+
         self.intensity_jitter_prob = self.config.get("intensity_jitter_prob", 0.0)
-        self.intensity_jitter_range = self.config.get("intensity_jitter_range", [0.55, 1.15])
-        self.contrast_jitter_range = self.config.get("contrast_jitter_range", [0.5, 1.15])
-        
+        self.intensity_jitter_range = self.config.get(
+            "intensity_jitter_range", [0.55, 1.15]
+        )
+        self.contrast_jitter_range = self.config.get(
+            "contrast_jitter_range", [0.5, 1.15]
+        )
+
         self.sensor_noise_prob = self.config.get("sensor_noise_prob", 0.0)
         self.sensor_noise_sigma = self.config.get("sensor_noise_sigma", [5, 12])
 
         # Instantiate new augmentations
-        self.cutout_augmenter = CutoutAugmentation(
-            probability=self.cutout_prob,
-            size_ratio=self.cutout_size_ratio
-        ) if self.cutout_prob > 0 else None
+        self.cutout_augmenter = (
+            CutoutAugmentation(
+                probability=self.cutout_prob, size_ratio=self.cutout_size_ratio
+            )
+            if self.cutout_prob > 0
+            else None
+        )
 
-        self.intensity_jitter = ThermalIntensityJitter(
-            probability=self.intensity_jitter_prob,
-            intensity_range=tuple(self.intensity_jitter_range),
-            contrast_range=tuple(self.contrast_jitter_range)
-        ) if self.intensity_jitter_prob > 0 else None
+        self.intensity_jitter = (
+            ThermalIntensityJitter(
+                probability=self.intensity_jitter_prob,
+                intensity_range=tuple(self.intensity_jitter_range),
+                contrast_range=tuple(self.contrast_jitter_range),
+            )
+            if self.intensity_jitter_prob > 0
+            else None
+        )
 
-        self.sensor_noise = IRSensorNoise(
-            probability=self.sensor_noise_prob,
-            noise_sigma=tuple(self.sensor_noise_sigma)
-        ) if self.sensor_noise_prob > 0 else None
+        self.sensor_noise = (
+            IRSensorNoise(
+                probability=self.sensor_noise_prob,
+                noise_sigma=tuple(self.sensor_noise_sigma),
+            )
+            if self.sensor_noise_prob > 0
+            else None
+        )
 
     def __call__(
         self,
@@ -386,4 +420,3 @@ class DataAugmenter:
 
 # Legacy alias
 DataAugmenterV2 = DataAugmenter
-

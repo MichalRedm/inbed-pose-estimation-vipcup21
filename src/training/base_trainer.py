@@ -98,7 +98,9 @@ class BaseTrainer(ABC):
 
         pbar = None
         if self.is_main:
-            pbar = tqdm(dataloader, desc=f"Epoch {epoch + 1}/{self.epochs}", mininterval=5.0)
+            pbar = tqdm(
+                dataloader, desc=f"Epoch {epoch + 1}/{self.epochs}", mininterval=5.0
+            )
 
         for batch in dataloader:
             if batch is None:

@@ -188,7 +188,11 @@ class VIPCupDataset(Dataset):
             image, joints = self.augmenter(image, joints, is_ir=(target_mod == "IR"))
 
         # Resize to standard size if not already handled by augmentation
-        current_size = (image.shape[-2], image.shape[-1]) if torch.is_tensor(image) else (image.height, image.width)
+        current_size = (
+            (image.shape[-2], image.shape[-1])
+            if torch.is_tensor(image)
+            else (image.height, image.width)
+        )
         if current_size != self.image_size:
             image = v2.functional.resize(image, self.image_size)
             if image_source is not None:
