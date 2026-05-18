@@ -74,7 +74,9 @@ class TrainingManager:
             # If the payload has a 'config_path', load it first
             if config_overrides.get("config_path"):
                 # Load special config WITHOUT user overrides to preserve YAML values
-                special_cfg = load_config(config_overrides["config_path"], use_user_overrides=False)
+                special_cfg = load_config(
+                    config_overrides["config_path"], use_user_overrides=False
+                )
                 final_config.update(special_cfg)
 
             # Then apply direct overrides
@@ -443,7 +445,7 @@ class TrainingManager:
                     else:
                         self.status_message = "Training finished, but evaluation failed"
                         self.progress = 1.0
-                    
+
                     # FINAL SYNC: Ensure in-memory history is perfect before is_running=False
                     # This prevents the dashboard from seeing an empty state on the last poll
                     file_history_dict = self._load_history_dict()

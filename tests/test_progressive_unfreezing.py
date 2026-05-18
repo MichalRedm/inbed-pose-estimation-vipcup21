@@ -1,6 +1,4 @@
-import pytest
 import torch
-import torch.nn as nn
 from src.models.hrnet import HRNet
 from src.training.factory import create_trainer, build_optimizer
 from src.training.standard_trainer import StandardTrainer

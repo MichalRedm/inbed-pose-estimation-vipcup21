@@ -287,23 +287,26 @@ class BaseTrainer(ABC):
 
         def _atomic_torch_save(obj, target_path):
             tmp_path = str(target_path) + ".tmp"
-            
+
             # 1. Save to temporary file
             torch.save(obj, tmp_path)
-            
+
             # 2. VERIFY the saved file before committing
             try:
                 # We only need to check if the zip archive is valid
                 # map_location='cpu' and weights_only=True for speed
                 torch.load(tmp_path, map_location="cpu", weights_only=True)
             except Exception as e:
-                print(f"[Trainer] CRITICAL: Verification of saved checkpoint failed: {e}")
+                print(
+                    f"[Trainer] CRITICAL: Verification of saved checkpoint failed: {e}"
+                )
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
-                return False # Indicate failure
+                return False  # Indicate failure
 
             # 3. Commit (with retry for Windows locking)
             import time
+
             for i in range(5):
                 try:
                     if os.path.exists(target_path):
@@ -312,8 +315,10 @@ class BaseTrainer(ABC):
                         os.rename(tmp_path, target_path)
                     return True
                 except PermissionError:
-                    if i == 4: 
-                        print(f"[Trainer] ERROR: Could not commit checkpoint to {target_path} (Locked)")
+                    if i == 4:
+                        print(
+                            f"[Trainer] ERROR: Could not commit checkpoint to {target_path} (Locked)"
+                        )
                         return False
                     time.sleep(0.5)
             return False

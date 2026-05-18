@@ -1,9 +1,9 @@
-from typing import Dict, Any, Type, Optional
+from typing import Dict, Any, Optional
 import torch
 import torch.nn as nn
 from .wrapper import PoseDecodingWrapper
 
-from .registry import MODEL_REGISTRY, register_model
+from .registry import MODEL_REGISTRY, register_model  # noqa: F401
 
 
 def build_model(config: Dict[str, Any]) -> nn.Module:
@@ -59,7 +59,7 @@ def load_model_for_inference(
             break
         except Exception as e:
             last_err = e
-            print(f"[load_model] Attempt {attempt+1} failed: {e}. Retrying...")
+            print(f"[load_model] Attempt {attempt + 1} failed: {e}. Retrying...")
             time.sleep(1.0)
 
     if state is None:
@@ -72,6 +72,7 @@ def load_model_for_inference(
         model_config = config
     else:
         from src.utils import load_config
+
         model_config = load_config()
 
     # --- FORCING PRETRAINED=FALSE FOR INFERENCE ---
@@ -89,27 +90,27 @@ def load_model_for_inference(
     # 3. Load weights with robust structural remapping for backward compatibility
     if isinstance(state, dict) and "model_state_dict" in state:
         state_dict = state["model_state_dict"]
-        
+
         # Metadata keys to strip (handled separately)
         metadata_keys = ["decoding_config", "config", "best_optimized_pck"]
         filtered_state = {k: v for k, v in state_dict.items() if k not in metadata_keys}
-        
+
         # --- Compatibility Remapping ---
-        # Some older models used nested 'modules_list' in stages. 
+        # Some older models used nested 'modules_list' in stages.
         # Newer models use flat nn.Sequential.
         remapped_state = {}
         model_keys = set(model.state_dict().keys())
-        
+
         for k, v in filtered_state.items():
             new_k = k
             # Rule 1: modules_list.Y -> Y (legacy nested lists)
             if "modules_list." in k:
                 new_k = new_k.replace("modules_list.", "")
-            
+
             # Rule 2: fusion.fuse_layers -> fuse_layers.layers (architecture refactor)
             if "fusion.fuse_layers" in new_k:
                 new_k = new_k.replace("fusion.fuse_layers", "fuse_layers.layers")
-            
+
             if new_k in model_keys:
                 remapped_state[new_k] = v
             elif k in model_keys:
@@ -124,19 +125,21 @@ def load_model_for_inference(
                 else:
                     # Keep original for strict=False to handle
                     remapped_state[k] = v
-                
+
         load_res = model.load_state_dict(remapped_state, strict=False)
-        
+
         # Verification: If many keys are missing, something is wrong
         missing = [k for k in load_res.missing_keys if "num_batches_tracked" not in k]
         total = len([k for k in model_keys if "num_batches_tracked" not in k])
-        if len(missing) > total * 0.1: # Allow 10% mismatch (e.g. some aux layers)
-             print(f"WARNING: Major structural mismatch! {len(missing)}/{total} critical keys missing.")
-             print(f"Sample missing: {missing[:5]}")
+        if len(missing) > total * 0.1:  # Allow 10% mismatch (e.g. some aux layers)
+            print(
+                f"WARNING: Major structural mismatch! {len(missing)}/{total} critical keys missing."
+            )
+            print(f"Sample missing: {missing[:5]}")
         elif len(missing) > 0:
-             print(f"Loaded with {len(missing)} missing keys (remapping applied).")
+            print(f"Loaded with {len(missing)} missing keys (remapping applied).")
         else:
-             print("Model loaded with 100% key parity (remapping applied).")
+            print("Model loaded with 100% key parity (remapping applied).")
 
     # Apply wrapper if it's a heatmap model
     if hasattr(model, "output_type") and model.output_type == "heatmap":

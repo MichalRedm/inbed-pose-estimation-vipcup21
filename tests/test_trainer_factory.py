@@ -68,9 +68,8 @@ def test_discriminative_lr(base_config):
 
     # Identify the learning rates in the parameter groups
     lrs = [group["lr"] for group in optimizer.param_groups]
-    
+
     # One learning rate should be the full head learning rate (0.0001)
     # The other should be the backbone learning rate (0.0001 * 0.1 = 0.00001)
     assert 0.0001 in lrs
     assert 0.00001 in lrs
-

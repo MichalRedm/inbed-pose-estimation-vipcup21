@@ -94,9 +94,7 @@ def main():
 
         # --- Step 2: Ensure data is present ---
         print("\nEnsuring data is available on remote...")
-        download_cmd = (
-            "pip install kaggle -q && python3 scripts/download_dataset.py"
-        )
+        download_cmd = "pip install kaggle -q && python3 scripts/download_dataset.py"
         gpu.run(f"cd /root/project && {env_setup} && {download_cmd}")
 
         # --- Step 3: Run training with incremental checkpoint sync ---
@@ -350,13 +348,13 @@ def main():
                     print(f"[sync] Evaluation results saved to {local_eval_path}")
                 except Exception as e:
                     print(f"[sync] Error downloading evaluation results: {e}")
-                
+
                 # Also download visual audit image
                 try:
                     remote_audit = f"/root/project/results/runs/{args_cli.run_id}/visual_audit_best_model.png"
                     gpu.download(remote_audit, str(local_run_dir), recursive=False)
                     print(f"[sync] Visual audit image downloaded to {local_run_dir}/")
-                except Exception as e:
+                except Exception:
                     pass
             else:
                 print("\nEvaluation failed. Check stderr above.")

@@ -25,7 +25,7 @@ class PoseDecodingWrapper(nn.Module):
         self._is_heatmap = (
             hasattr(model, "output_type") and model.output_type == "heatmap"
         )
-        
+
         # If the model already outputs coordinates, the wrapper just passes them through.
         # This prevents "double-decoding" issues.
 
@@ -47,7 +47,7 @@ class PoseDecodingWrapper(nn.Module):
             # Safety check: if heatmaps has only 3 dims (J, H, W), add batch dim
             if heatmaps.dim() == 3:
                 heatmaps = heatmaps.unsqueeze(0)
-            
+
             joints = decode_heatmaps(
                 heatmaps,
                 self.image_size,

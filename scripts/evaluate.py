@@ -240,19 +240,21 @@ def evaluate(
 
     # Handle both DDP and non-DDP checkpoints
     if any(k.startswith("module.") for k in filtered_state.keys()):
-        filtered_state = {k.replace("module.", ""): v for k, v in filtered_state.items()}
+        filtered_state = {
+            k.replace("module.", ""): v for k, v in filtered_state.items()
+        }
 
     # --- Compatibility Remapping ---
     remapped_state = {}
     model_keys = set(model.state_dict().keys())
-    
+
     for k, v in filtered_state.items():
         new_k = k
         if "modules_list." in k:
             new_k = new_k.replace("modules_list.", "")
         if "fusion.fuse_layers" in new_k:
             new_k = new_k.replace("fusion.fuse_layers", "fuse_layers.layers")
-        
+
         if new_k in model_keys:
             remapped_state[new_k] = v
         elif k in model_keys:
@@ -264,7 +266,7 @@ def evaluate(
                 remapped_state[f"hrnet.{k}"] = v
             else:
                 remapped_state[k] = v
-                
+
     load_res = model.load_state_dict(remapped_state, strict=False)
     missing = [k for k in load_res.missing_keys if "num_batches_tracked" not in k]
     if len(missing) > 0:

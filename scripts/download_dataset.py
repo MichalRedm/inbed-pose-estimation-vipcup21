@@ -33,11 +33,16 @@ def download_dataset(dry_run=False):
     # Total subjects is 90 (or 102), so we expect ~180-200 mat files
     existing_samples = list(target_dir.glob("**/joints_gt_*.mat"))
     if len(existing_samples) >= 150:
-        print(f"✅ Dataset already appears to be present in {target_dir} ({len(existing_samples)} joint files found). Skipping download.")
+        print(
+            f"✅ Dataset already appears to be present in {target_dir} ({len(existing_samples)} joint files found). Skipping download."
+        )
         return
     elif existing_samples:
-        print(f"⚠️ Dataset appears incomplete ({len(existing_samples)} files found, expected ~180). Cleaning up and redownloading...")
+        print(
+            f"⚠️ Dataset appears incomplete ({len(existing_samples)} files found, expected ~180). Cleaning up and redownloading..."
+        )
         import shutil
+
         shutil.rmtree(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -51,7 +56,17 @@ def download_dataset(dry_run=False):
     print(f"Downloading {dataset_slug} to {target_dir} using Kaggle CLI...")
     try:
         # We use the CLI directly as the Python API sometimes fails silently or downloads corrupted zips
-        cmd = ["kaggle", "datasets", "download", "-d", dataset_slug, "-p", str(target_dir), "--unzip", "--force"]
+        cmd = [
+            "kaggle",
+            "datasets",
+            "download",
+            "-d",
+            dataset_slug,
+            "-p",
+            str(target_dir),
+            "--unzip",
+            "--force",
+        ]
         # Use subprocess.run with default stdout/stderr to stream output to parent process logs
         subprocess.run(cmd, check=True)
         print("Download step finished.")
@@ -64,10 +79,11 @@ def download_dataset(dry_run=False):
 
     # Always manually extract any zip files that were left behind if --unzip failed
     import zipfile
+
     for zip_path in target_dir.glob("*.zip"):
         print(f"Found {zip_path.name}, extracting...")
         try:
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(target_dir)
             zip_path.unlink()
             print(f"Extracted and removed {zip_path.name}")

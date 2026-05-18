@@ -276,14 +276,21 @@ class StandardTrainer(BaseTrainer):
 
             # Phase Transition for Progressive Unfreezing
             if self.unfreeze_epoch is not None and epoch == self.unfreeze_epoch:
-                raw_model = self.model.module if hasattr(self.model, "module") else self.model
+                raw_model = (
+                    self.model.module if hasattr(self.model, "module") else self.model
+                )
                 if hasattr(raw_model, "unfreeze_all"):
                     raw_model.unfreeze_all()
                 # Rebuild optimizer with now-unfrozen backbone parameters
                 from src.training.factory import build_optimizer
-                self.optimizer = build_optimizer(self.model, self, self.config, self.rank)
+
+                self.optimizer = build_optimizer(
+                    self.model, self, self.config, self.rank
+                )
                 if self.is_main:
-                    print(f"[Trainer] Phase 2 active at epoch {epoch+1}: backbone unfrozen, discriminative LR applied.")
+                    print(
+                        f"[Trainer] Phase 2 active at epoch {epoch + 1}: backbone unfrozen, discriminative LR applied."
+                    )
 
             train_metrics = self.train_epoch(train_loader, epoch)
             val_metrics = {}

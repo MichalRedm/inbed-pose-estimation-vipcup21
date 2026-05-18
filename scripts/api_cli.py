@@ -69,7 +69,7 @@ def monitor(interval=2):
     import time
 
     try:
-        print(f"Monitoring training (Ctrl+C to stop)...")
+        print("Monitoring training (Ctrl+C to stop)...")
         while True:
             response = requests.get(f"{API_URL}/training/status")
             response.raise_for_status()

@@ -40,22 +40,29 @@ def build_optimizer(
                 backbone_params.append(param)
 
         # Also add any uncertainty loss parameters to head_params (learned from scratch)
-        if hasattr(trainer, "uncertainty_loss") and trainer.uncertainty_loss is not None:
+        if (
+            hasattr(trainer, "uncertainty_loss")
+            and trainer.uncertainty_loss is not None
+        ):
             for param in trainer.uncertainty_loss.parameters():
                 if param.requires_grad:
                     head_params.append(param)
 
         param_groups = [
             {"params": backbone_params, "lr": lr * backbone_lr_ratio},
-            {"params": head_params, "lr": lr}
+            {"params": head_params, "lr": lr},
         ]
 
         if rank == 0:
-            print(f"[Factory] Using Discriminative LR! Head parameters: {len(head_params)}, Backbone parameters: {len(backbone_params)}, Ratio: {backbone_lr_ratio}")
+            print(
+                f"[Factory] Using Discriminative LR! Head parameters: {len(head_params)}, Backbone parameters: {len(backbone_params)}, Ratio: {backbone_lr_ratio}"
+            )
         optimizer = optim.Adam(param_groups, weight_decay=weight_decay)
     else:
         if rank == 0:
-            print(f"[Factory] Using Uniform LR! Total trainable tensors: {len(trainable_params)}")
+            print(
+                f"[Factory] Using Uniform LR! Total trainable tensors: {len(trainable_params)}"
+            )
         optimizer = optim.Adam(trainable_params, lr=lr, weight_decay=weight_decay)
 
     return optimizer

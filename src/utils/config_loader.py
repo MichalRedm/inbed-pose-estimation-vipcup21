@@ -28,7 +28,7 @@ def _sanitize_config_types(config):
                     "occlusion_prob",
                     "flip_prob",
                     "lambda_adv",
-                    "lambda_anatomical"
+                    "lambda_anatomical",
                 ]:
                     try:
                         config[k] = float(v)
