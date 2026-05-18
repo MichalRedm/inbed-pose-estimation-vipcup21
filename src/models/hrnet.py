@@ -347,25 +347,55 @@ class HRNet(BaseModel):
             # Filter and remap keys
             in_channels = self.conv1.in_channels
             filtered_state = {}
+            model_keys = set(self.state_dict().keys())
+            
+            import re
             for k, v in state_dict.items():
                 # Skip head as it won't match our num_joints/structure
                 if k.startswith("head") or k.startswith("fc"):
                     continue
                 
+                new_k = k
+                
+                # 1. Handle transitions nesting
+                m = re.match(r"^transition(\d+)\.(\d+)\.0\.(\d+)\.(.+)$", new_k)
+                if m:
+                    trans_num, branch_num, op_idx, param_name = m.groups()
+                    new_k = f"transition{trans_num}.{branch_num}.{op_idx}.{param_name}"
+                
+                # 2. Handle stage multi-resolution fusions nesting (downsampling vs upsampling)
+                if "fuse_layers." in new_k:
+                    new_k = new_k.replace("fuse_layers.", "fuse_layers.layers.")
+                    
+                    parts = new_k.split(".")
+                    if len(parts) >= 9 and parts[2] == "fuse_layers" and parts[3] == "layers":
+                        try:
+                            i = int(parts[4])
+                            j = int(parts[5])
+                            if j < i:
+                                step_idx = int(parts[6])
+                                op_idx = int(parts[7])
+                                param_name = ".".join(parts[8:])
+                                
+                                flat_idx = 0
+                                for step in range(step_idx):
+                                    flat_idx += 3  # conv, BN, ReLU
+                                flat_idx += op_idx
+                                
+                                new_k = f"{parts[0]}.{parts[1]}.fuse_layers.layers.{i}.{j}.{flat_idx}.{param_name}"
+                        except ValueError:
+                            pass
+                
                 # Special handling for stem if in_channels != 3
                 if k.startswith("conv1") and in_channels != 3:
                     if in_channels == 1 and v.dim() == 4 and v.shape[1] == 3:
-                        # Average the 3 channels to get 1 channel (R+G+B)/3
-                        # This preserves intensity features from ImageNet
                         filtered_state[k] = v.mean(dim=1, keepdim=True)
                     continue
                 
-                # Remap fuse_layers to match our FusionLayer.layers nesting
-                # Official: stage2.0.fuse_layers.0.1.0.weight
-                # Ours:     stage2.0.fuse_layers.layers.0.1.0.weight
-                new_k = k.replace("fuse_layers.", "fuse_layers.layers.")
-                
-                filtered_state[new_k] = v
+                if new_k in model_keys:
+                    filtered_state[new_k] = v
+                elif k in model_keys:
+                    filtered_state[k] = v
                 
             msg = self.load_state_dict(filtered_state, strict=False)
             print(f"[HRNet] Pre-trained weights loaded. Matched: {len(filtered_state) - len(msg.missing_keys)}, Missing: {len(msg.missing_keys)}, Unexpected: {len(msg.unexpected_keys)}")
