@@ -1,8 +1,8 @@
 # State Tracker
 
 - **Current Loop**: 26
-- **Phase**: Planning (Phase 2) — Awaiting implementation approval
-- **Status**: Loop 25 completed. Progressive unfreezing (ULMFiT-style) achieved **41.87% PCK@0.2** (peak, epoch 33), final 40.33%. The pretrained approach is now **confirmed to have a structural ceiling** at ~42%, cannot beat the 46.6% scratch baseline. **VERDICT: Abandon pretrained fine-tuning route. Pivot to scratch-based improvements.** Next highest-ROI directions are (1) Sigma Curriculum (proven +3-5% in literature, already works in Loop 17 context) combined with (2) Structured Cutout Augmentation.
+- **Phase**: Phase 3: Implementation
+- **Status**: Implementing the 5-component robust curriculum scratch pipeline (`feat/curriculum-robust-aug` branch) combining Sigma Curriculum (3.0→1.5), Structured Cutout, Thermal Intensity Jitter, Sensor Noise Injection, and Random Translation to directly bridge the newly discovered cover-type domain gap.
 - **Absolute Priority**: 
   1. **PIVOT CONFIRMED**: Pretrained approach definitively abandoned. The HRNet RGB→IR domain gap, combined with the 80-subject training set scale and 1-channel conv1 limitation, creates a structural ceiling at ~42% that progressive unfreezing cannot breach.
   2. **Scratch Baselines remain superior**: loop2 (46.6%), loop9 (45.1%), loop17 (43.1%) are the targets.
@@ -82,6 +82,6 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 
 **FINAL VERDICT**: The pretrained HRNet-W32 approach is definitively abandoned as a primary strategy for this dataset. The ceiling is structurally imposed by domain gap, conv1 limitation, and insufficient data scale for backbone adaptation. All future loops will focus on scratch-based improvements.
 
-## Next Planned Steps (Approved in Loop 26)
-1. **Loop 26 — Sigma Curriculum + Cutout Augmentation (Scratch, Subjects 1-80)**: Combine the most impactful proven techniques: sigma annealing (3.0→1.5 over 30 epochs) from Loop 17 with structured Cutout augmentation (block up to 30% of the image) to improve occlusion robustness. This directly targets the two remaining performance gaps: localization precision (sigma) and cover-2 generalization (cutout). Run for 40 epochs on full 80-subject set. Expected peak: 47-50%.
+## Next Planned Steps
+1. **Loop 26 — Sigma Curriculum + Extended Robust Augmentations (Scratch, Subjects 1-80)**: Combine the 5-component stack (Sigma Curriculum, Structured Cutout, Thermal Intensity Jitter, Sensor Noise, Random Translation) to directly target the cover-type domain gap. Run for 40 epochs on full 80-subject set on the `feat/curriculum-robust-aug` branch. Expected peak: 47-52% PCK@0.2.
 2. **Loop 27 (Contingent)**: If Loop 26 beats 46.6%, stack the hinge loss from Loop 9 (foreshortening prior) on top of the Loop 26 recipe.

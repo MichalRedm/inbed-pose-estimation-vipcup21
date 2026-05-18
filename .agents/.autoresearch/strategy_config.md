@@ -46,6 +46,7 @@
 - Remote training (Kaggle): historically only downloads `best_model.pth`.
 
 ### Data
+- **Cover-Type Domain Gap**: Quantitative dataset analysis revealed that validation `cover1` has 53% less dynamic range and 50% less local contrast compared to training `uncover` images. This is the primary driver of generalization failure.
 - **Joint convention**: LSP 14-joint order. Index 0=R_Ankle ... 13=Head. Visibility: 0=visible, 1=occluded, 2=missing/OOB.
 - **Coordinate convention**: GT joints stored as (x, y, vis) in ORIGINAL image space. Dataset scales them to `image_size` (256×256) in `__getitem__`.
 - **Annotation offset**: Raw `.mat` files have 1-indexed coordinates; dataset subtracts 1 on load.

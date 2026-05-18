@@ -26,13 +26,15 @@
    - **Result**: **41.87% PCK@0.2 (peak, E33), 40.33% final**. Best pretrained result yet. Phase 2 transition was clean — no loss spike, correct parameter group setup confirmed. However, train-val loss gap grew by 1731% during Phase 2 (from 0.00005 to 0.00101), revealing that the 80-subject dataset is too small to fully adapt 915 backbone parameter groups without overfitting. **STRUCTURAL CEILING CONFIRMED at ~42%.** The fundamental RGB→IR domain gap and 1-channel conv1 weakness cannot be overcome by fine-tuning scheduling alone.
    - **Priority**: Completed. **VERDICT: Abandon pretrained route.**
 
-5. **[HIGHEST PRIORITY — Loop 26] Sigma Curriculum + Structured Cutout Augmentation (Scratch, Subjects 1-80)**:
-   - **Hypothesis**: Two independent and complementary improvements to the best scratch baseline (Loop 2, 46.6%):
-     - **Sigma Curriculum (3.0→1.5 over 30 epochs)**: Start with wide Gaussians (easy to localize broad region), progressively narrow to force fine-grained localization. Loop 17 already partially validated this (43.1% without full data), and literature confirms +3-5% gains. The curriculum prevents the model from getting stuck in coarse-grained local minima.
-     - **Structured Cutout (Large Block Masking, 30-50% area)**: Zero out contiguous rectangular blocks during training to force holistic structural reasoning. The model currently over-relies on local thermal texture; cutout forces it to predict occluded limbs from structural priors. Directly addresses cover2 performance gap.
-   - **Implementation**: Add `sigma_start/sigma_end` schedule to `base_trainer.py` (already exists from Loop 17). Add `CutoutAugmentation` class to augmentation pipeline with configurable block size and probability.
-   - **Priority**: **HIGHEST** (both components have low implementation cost, high ROI, and are orthogonal — they can be tested together or separately).
-   - **Expected PCK**: 47–51%. If sigma curriculum alone gives ~3pp improvement on top of Loop 2 (estimated 49.6%), and cutout provides +1-2% occlusion robustness, we could reach 50%+ for the first time.
+5. **[HIGHEST PRIORITY — Loop 26] Sigma Curriculum + Extended Robust Augmentations (Scratch, Subjects 1-80)**:
+   - **Hypothesis**: Five data-driven and literature-backed enhancements on top of the best scratch baseline (Loop 2, 46.6%) to directly target the cover-type domain gap:
+     - **Sigma Curriculum (3.0→1.5 over 40 epochs)**: Linear sigma decay over training provides wide basins of attraction early, progressively forcing fine-grained keypoint localization without falling into coarse-grained local minima.
+     - **Structured Cutout (35% area)**: Large block masking (zero fill value) during training forces the model to learn structural priors and infer keypoint locations under blanket occlusions instead of over-relying on local thermal textures.
+     - **Thermal Intensity Jitter (U(0.55, 1.15))**: Random brightness and contrast scaling to directly address the 53% dynamic range gap and inter-subject thermal differences measured during dataset analysis.
+     - **Sensor Noise Injection (U(5, 12))**: Gaussian readout noise and dead pixel simulation to bridge the 50% local contrast gap, regularizing the model against low-texture over-reliance.
+     - **Random Translation (shift up to 10%)**: Small spatial shifts to counter spatial center-biasing and improve generalization to off-center poses.
+   - **Implementation**: Create custom augmentations in `src/data/augmentations.py`, add support in configs and trainer, and implement unit tests.
+   - **Expected PCK**: **47–52%** (first time breaking 50% PCK@0.2 by bridging the cover-type domain gap).
 
 4. **Structured Regional Cutout (Simulated Extreme Occlusion)**:
    - **Hypothesis**: The current `ThermalDiffusionAugmenter` only applies a wavy blur to simulate a blanket. The model relies too much on residual thermal leakage. Applying "GridMask" or large contiguous "Cutout" blocks that zero out entire limbs will force the network to learn holistic structural dependencies rather than local textures, preparing it for the extreme occlusion of `cover2`.
