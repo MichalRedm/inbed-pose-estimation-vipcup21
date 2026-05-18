@@ -118,7 +118,9 @@ const Overview: React.FC = () => {
 
   useEffect(() => {
     if (!selectedRun) return;
-    fetchRunDetails(selectedRun);
+    Promise.resolve().then(() => {
+      fetchRunDetails(selectedRun);
+    });
   }, [selectedRun, fetchRunDetails]);
 
   const handleDeleteRun = async (e: React.MouseEvent, id: string) => {
