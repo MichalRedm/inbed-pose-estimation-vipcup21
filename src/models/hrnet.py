@@ -298,6 +298,23 @@ class HRNet(BaseModel):
         if pretrained:
             self._load_pretrained_weights(pretrained)
 
+        # --- Selective Freezing for Stabilized Transfer Learning ---
+        if config_model.get("freeze_stem", False):
+            print("Selective Freezing: Freezing HRNet Stem layers (conv1, bn1, conv2, bn2)...")
+            for p in self.conv1.parameters():
+                p.requires_grad = False
+            for p in self.bn1.parameters():
+                p.requires_grad = False
+            for p in self.conv2.parameters():
+                p.requires_grad = False
+            for p in self.bn2.parameters():
+                p.requires_grad = False
+
+        if config_model.get("freeze_stage1", False):
+            print("Selective Freezing: Freezing HRNet Stage 1 layers (layer1)...")
+            for p in self.layer1.parameters():
+                p.requires_grad = False
+
     def _load_pretrained_weights(self, pretrained_source):
         """
         Loads pre-trained weights from a URL or local path.

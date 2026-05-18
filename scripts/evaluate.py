@@ -234,11 +234,45 @@ def evaluate(
     else:
         state_dict = state
 
-    # Handle both DDP and non-DDP checkpoints
-    if any(k.startswith("module.") for k in state_dict.keys()):
-        state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+    # Strip metadata keys if present
+    metadata_keys = ["decoding_config", "config", "best_optimized_pck"]
+    filtered_state = {k: v for k, v in state_dict.items() if k not in metadata_keys}
 
-    model.load_state_dict(state_dict, strict=False)
+    # Handle both DDP and non-DDP checkpoints
+    if any(k.startswith("module.") for k in filtered_state.keys()):
+        filtered_state = {k.replace("module.", ""): v for k, v in filtered_state.items()}
+
+    # --- Compatibility Remapping ---
+    remapped_state = {}
+    model_keys = set(model.state_dict().keys())
+    
+    for k, v in filtered_state.items():
+        new_k = k
+        if "modules_list." in k:
+            new_k = new_k.replace("modules_list.", "")
+        if "fusion.fuse_layers" in new_k:
+            new_k = new_k.replace("fusion.fuse_layers", "fuse_layers.layers")
+        
+        if new_k in model_keys:
+            remapped_state[new_k] = v
+        elif k in model_keys:
+            remapped_state[k] = v
+        else:
+            if k.startswith("hrnet.") and k[6:] in model_keys:
+                remapped_state[k[6:]] = v
+            elif f"hrnet.{k}" in model_keys:
+                remapped_state[f"hrnet.{k}"] = v
+            else:
+                remapped_state[k] = v
+                
+    load_res = model.load_state_dict(remapped_state, strict=False)
+    missing = [k for k in load_res.missing_keys if "num_batches_tracked" not in k]
+    if len(missing) > 0:
+        if rank <= 0:
+            print(f"Loaded with {len(missing)} missing keys (remapping applied).")
+    else:
+        if rank <= 0:
+            print("Model loaded with 100% key parity.")
 
     if is_distributed:
         model = torch.nn.parallel.DistributedDataParallel(

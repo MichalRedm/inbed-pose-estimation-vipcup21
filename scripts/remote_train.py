@@ -350,6 +350,14 @@ def main():
                     print(f"[sync] Evaluation results saved to {local_eval_path}")
                 except Exception as e:
                     print(f"[sync] Error downloading evaluation results: {e}")
+                
+                # Also download visual audit image
+                try:
+                    remote_audit = f"/root/project/results/runs/{args_cli.run_id}/visual_audit_best_model.png"
+                    gpu.download(remote_audit, str(local_run_dir), recursive=False)
+                    print(f"[sync] Visual audit image downloaded to {local_run_dir}/")
+                except Exception as e:
+                    pass
             else:
                 print("\nEvaluation failed. Check stderr above.")
 

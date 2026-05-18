@@ -102,13 +102,9 @@ def load_model_for_inference(
         
         for k, v in filtered_state.items():
             new_k = k
-            # Rule 1: stageX.modules_list.Y -> stageX.Y
-            if "modules_list" in k:
-                for stage_num in [2, 3, 4]:
-                    prefix = f"stage{stage_num}.modules_list."
-                    if k.startswith(prefix):
-                        new_k = k.replace(prefix, f"stage{stage_num}.")
-                        break
+            # Rule 1: modules_list.Y -> Y (legacy nested lists)
+            if "modules_list." in k:
+                new_k = new_k.replace("modules_list.", "")
             
             # Rule 2: fusion.fuse_layers -> fuse_layers.layers (architecture refactor)
             if "fusion.fuse_layers" in new_k:
@@ -116,9 +112,18 @@ def load_model_for_inference(
             
             if new_k in model_keys:
                 remapped_state[new_k] = v
-            else:
-                # Keep original if it didn't match anything yet, maybe strict=False handles it
+            elif k in model_keys:
                 remapped_state[k] = v
+            else:
+                # If still no match, try stripping 'hrnet.' prefix if model is standalone
+                # or adding 'hrnet.' if model is refined
+                if k.startswith("hrnet.") and k[6:] in model_keys:
+                    remapped_state[k[6:]] = v
+                elif f"hrnet.{k}" in model_keys:
+                    remapped_state[f"hrnet.{k}"] = v
+                else:
+                    # Keep original for strict=False to handle
+                    remapped_state[k] = v
                 
         load_res = model.load_state_dict(remapped_state, strict=False)
         

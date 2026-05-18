@@ -67,8 +67,11 @@ def create_trainer(
             if rank == 0:
                 print("[Factory] Added uncertainty weighting parameters to optimizer")
 
-    # 5. Finalize Optimizer
-    optimizer = optim.Adam(params, lr=lr, weight_decay=weight_decay)
+    # 5. Finalize Optimizer — filter out frozen parameters
+    trainable_params = [p for p in params if p.requires_grad]
+    if rank == 0:
+        print(f"[Factory] Total parameter tensors: {len(params)}, Trainable parameter tensors: {len(trainable_params)}")
+    optimizer = optim.Adam(trainable_params, lr=lr, weight_decay=weight_decay)
     trainer.optimizer = optimizer
 
     if use_uda and rank == 0:
