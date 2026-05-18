@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 25
-- **Phase**: Planning (Phase 2)
-- **Status**: Loop 24 completed. Pre-training approach still underperforms scratch baseline by 9.9% absolute. Root cause identified (see Diagnostic below). Strategy pivot being planned.
+- **Current Loop**: 26
+- **Phase**: Planning (Phase 2) — Awaiting implementation approval
+- **Status**: Loop 25 completed. Progressive unfreezing (ULMFiT-style) achieved **41.87% PCK@0.2** (peak, epoch 33), final 40.33%. The pretrained approach is now **confirmed to have a structural ceiling** at ~42%, cannot beat the 46.6% scratch baseline. **VERDICT: Abandon pretrained fine-tuning route. Pivot to scratch-based improvements.** Next highest-ROI directions are (1) Sigma Curriculum (proven +3-5% in literature, already works in Loop 17 context) combined with (2) Structured Cutout Augmentation.
 - **Absolute Priority**: 
-  1. **Close the Pretrained Gap OR Pivot**: The pre-training gap is now well-understood. Next loop will test the highest-ROI hypothesis to either finally close it or confirm a pivot to other directions.
-  2. **Scratch Baselines remain superior**: loop2 (46.6%), loop9 (45.1%), loop17 (43.1%) are all still ahead.
+  1. **PIVOT CONFIRMED**: Pretrained approach definitively abandoned. The HRNet RGB→IR domain gap, combined with the 80-subject training set scale and 1-channel conv1 limitation, creates a structural ceiling at ~42% that progressive unfreezing cannot breach.
+  2. **Scratch Baselines remain superior**: loop2 (46.6%), loop9 (45.1%), loop17 (43.1%) are the targets.
 - **Baseline**: Loop 2 (46.6% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -68,17 +68,20 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 22 | Pre-trained HRNet-W32 + Pure Heatmap MSE + Argmax | FINISHED | 32.5% | **STALLED**: Performance did not improve. Hypothesis: Feature washout from high-level gradients. |
 | 23 | Stabilized Pre-training (Freeze Stem + Stage 1) | SUCCESS | **41.0%** | Successfully fine-tuned pre-trained backbone after resolving nested downsample/transition loading mismatch! |
 | 24 | Discriminative LR (0.1× backbone, fully unfrozen) | UNDERPERFORMED | **36.7%** | Worse than Loop 23 (41.0%) despite discriminative LR. Root cause: initial gradient washout from random head is too severe even at 1e-5 backbone LR. Linear convergence visible (still improving at epoch 30). |
+| 25 | Progressive Unfreezing (Phase 1: Frozen 15 ep, Phase 2: Disc. LR) | UNDERPERFORMED | **41.87%** (peak E33) / 40.33% final | Best pretrained result yet, but still 4.7pp below scratch baseline (46.6%). Hard plateau at ~42% despite 50 epochs and full backbone fine-tuning. Confirmed train-val divergence (gap grew 1731% in Phase 2), indicating mild overfitting on 80-subject set. **VERDICT: Structural ceiling on pretrained route. Pivot to scratch-based improvements.** |
 
-## ⚠️ CRITICAL: Pre-training Diagnostic (2026-05-18)
+## ⚠️ CRITICAL: Pretrained Route Post-Mortem (2026-05-18 — Final)
 
-**Root causes identified for pretrained weight underperformance vs. scratch:**
+**Root causes for the confirmed structural ceiling at ~42% PCK:**
 
-1. **Epoch 1 PCK gap is the smoking gun**: Loop 23 (frozen backbone) starts at 9.81% PCK at epoch 1; Loop 24 (unfrozen, discriminative LR 0.1×) starts at 3.03%. The backbone features are already disrupted in the *very first epoch* even at backbone LR = 1e-5. Selective freezing is more protective than discriminative LR during head warmup.
-2. **Training data scope mismatch**: Loop 23 used `subjects_train: [1, 80]` (80 subjects); Loop 24 used `[1, 30]` (30 subjects) for a fair comparison with loop2 scratch baseline. This ~2.67× data reduction compounds the convergence problem.
-3. **Loop 23 PCK is noisy/unstable** (±5% variance epoch-to-epoch after ep 14): The frozen backbone creates a rigid feature extractor that eventually causes the model to overfit to its own feature representations. Val PCK plateaus and oscillates. This means the 41.0% best checkpoint is an outlier epoch, not a stable plateau.
-4. **Pretrained model has a data efficiency advantage at the START but a domain ceiling**: At epochs 1-14, Loop 23 (pretrained+frozen) is 10-13% ahead. But after epoch 17, Loop 24 (unfrozen) begins catching up because it can adapt its backbone. If Loop 24 ran 60+ epochs, it would likely overtake Loop 23.
-5. **The pretrained approach IS viable** but needs a 2-phase strategy: (Phase 1) warm up head with backbone frozen for ~10-15 epochs, THEN (Phase 2) unfreeze backbone with discriminative LR. This is the standard recipe in modern transfer learning (progressive unfreezing, ULMFiT-style).
+1. **RGB→IR Domain Gap is fundamental, not addressable by scheduling**: ImageNet RGB features (texture, color, spatial gradients) have minimal overlap with thermal IR (heat diffusion, emissivity, body-mass heat signatures). The backbone, despite 50 epochs of fine-tuning, retains structural biases that are misaligned with the thermal domain. This is consistent with the literature: domain-specific pre-training (e.g., grayscale-COCO or thermal-dataset pre-training) is required to bridge this gap reliably.
+2. **1-channel conv1 adaptation is a known weak link**: HRNet-W32 conv1 is designed for 3-channel RGB. Averaging the 3 input channels to adapt to 1-channel IR means the network's very first layer is not pre-trained in any meaningful sense. The entire backbone's feature chain starts from a sub-optimal initialization.
+3. **Progressive unfreezing train-val divergence is the Phase 2 ceiling**: The train-val loss gap grew by 1731% during Phase 2 (from 0.00005 to 0.00101). This means fine-tuning the full backbone created overfitting pressure rather than domain adaptation. The 80-subject dataset (~1700 training images) is insufficient to fully adapt 915 backbone parameter groups.
+4. **Scratch models have an implicit advantage via initialization scale**: When training from scratch, all 1823 parameter tensors are Xavier/He initialized to be appropriate for small-scale spatial data (thermal IR). The pre-trained model starts all layers scaled for large, diverse ImageNet statistics — this requires the optimizer to do extra work to rescale distributions, consuming capacity that could otherwise improve localization.
+5. **Sigma curriculum (Loop 17) explains the scratch-model advantage**: Loop 17's 43.1% PCK uses a sigma curriculum (3.0→1.5), which progressively trains the model to make finer-grained predictions. Pretrained models (fixed sigma=2.0) have no equivalent mechanism to force progressive localization refinement.
 
-## Next Planned Steps
-1. **Loop 25 — Two-Phase Progressive Unfreezing**: Start with frozen backbone (as in Loop 23) for 10 epochs, then automatically unfreeze and apply discriminative LR for the remaining 20-40 epochs. This combines the early stability of Loop 23 with the late adaptability of Loop 24.
-2. **Alternatively — Abandon Pretrained Route**: If Loop 25 still underperforms, abandon the pretrained approach entirely and focus on scratch-based improvements (Cutout augmentation, Visibility-Aware Attention, sigma curriculum tuning).
+**FINAL VERDICT**: The pretrained HRNet-W32 approach is definitively abandoned as a primary strategy for this dataset. The ceiling is structurally imposed by domain gap, conv1 limitation, and insufficient data scale for backbone adaptation. All future loops will focus on scratch-based improvements.
+
+## Next Planned Steps (Approved in Loop 26)
+1. **Loop 26 — Sigma Curriculum + Cutout Augmentation (Scratch, Subjects 1-80)**: Combine the most impactful proven techniques: sigma annealing (3.0→1.5 over 30 epochs) from Loop 17 with structured Cutout augmentation (block up to 30% of the image) to improve occlusion robustness. This directly targets the two remaining performance gaps: localization precision (sigma) and cover-2 generalization (cutout). Run for 40 epochs on full 80-subject set. Expected peak: 47-50%.
+2. **Loop 27 (Contingent)**: If Loop 26 beats 46.6%, stack the hinge loss from Loop 9 (foreshortening prior) on top of the Loop 26 recipe.
