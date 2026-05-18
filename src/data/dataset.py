@@ -166,11 +166,13 @@ class VIPCupDataset(Dataset):
         )
         image_path = sample["image_paths"][target_mod]
 
-        # Load and convert to 1-channel (L) for IR, as requested for simplification
-        if target_mod == "IR":
-            image = Image.open(image_path).convert("L")
-        else:
-            image = Image.open(image_path).convert("RGB")
+        # Load and convert image to PyTorch tensor immediately inside a 'with' block to avoid I/O leaks
+        with Image.open(image_path) as img_pil:
+            orig_w, orig_h = img_pil.size
+            if target_mod == "IR":
+                image = v2.functional.to_image(img_pil.convert("L")).float() / 255.0
+            else:
+                image = v2.functional.to_image(img_pil.convert("RGB")).float() / 255.0
 
         joints = sample["joints"].get(target_mod)
 
@@ -185,14 +187,14 @@ class VIPCupDataset(Dataset):
             image, joints = self.augmenter(image, joints, is_ir=(target_mod == "IR"))
 
         # Resize to standard size if not already handled by augmentation
-        if image.size != self.image_size:
-            image = image.resize(self.image_size)
-            if image_source:
-                image_source = image_source.resize(self.image_size)
+        current_size = (image.shape[-2], image.shape[-1]) if torch.is_tensor(image) else (image.height, image.width)
+        if current_size != self.image_size:
+            image = v2.functional.resize(image, self.image_size)
+            if image_source is not None:
+                image_source = v2.functional.resize(image_source, self.image_size)
 
         if joints is not None:
             # Need to scale joints if image was resized
-            orig_w, orig_h = Image.open(image_path).size
             scale_x = self.image_size[0] / orig_w
             scale_y = self.image_size[1] / orig_h
 
@@ -203,17 +205,14 @@ class VIPCupDataset(Dataset):
 
         # Convert to tensor if not already (augmenter might return tensors or PIL)
         if not torch.is_tensor(image):
-            if target_mod == "IR":
-                image = v2.functional.to_image(image).float() / 255.0
-            else:
-                image = v2.functional.to_image(image).float() / 255.0
+            image = v2.functional.to_image(image).float() / 255.0
 
         if image_source is not None and not torch.is_tensor(image_source):
             image_source = v2.functional.to_image(image_source).float() / 255.0
 
         if self.transform:
             image = self.transform(image)
-            if image_source:
+            if image_source is not None:
                 image_source = self.transform(image_source)
 
         target_heatmaps = None
