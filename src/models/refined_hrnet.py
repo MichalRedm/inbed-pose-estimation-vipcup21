@@ -2,7 +2,7 @@ import torch.nn as nn
 from .hrnet import HRNet
 from .refinement import PoseRefinementGCN
 from .layers import SoftArgmax2D
-from . import register_model
+from .registry import register_model
 
 
 @register_model("refined_hrnet")

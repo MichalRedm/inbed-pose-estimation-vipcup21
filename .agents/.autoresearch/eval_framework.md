@@ -41,10 +41,12 @@ All "Verified" metrics in this repository must meet the following criteria:
 | **loop2_fixed_aug** | **46.6%** | 29.6 px | **TOP PRECISION** |
 | **loop9_anatomical** | **45.1%** | 25.3 px | RELIABLE |
 | **loop17_uncertainty** | **43.1%** | **24.5 px** | **TOP ACCURACY** |
+| loop23_stabilized_pretraining | 41.0% | 37.0 px | BEST PRETRAINED (unstable plateau) |
 | loop18_gcn_refinement| 33.4% | 26.6 px | FAILURE (Smoothing) |
+| loop24_unfrozen_pretraining | 36.7% | 41.3 px | UNDERPERFORMED (still converging at ep30) |
 | loop19_normalized_ana | 12.7% | 66.7 px | FAILURE (**Skeleton Collapse**) |
 
-> Previous figures (76.4%, 78.5%, 81.0%, 84.6% etc.) were computed by the flawed remote evaluate.py. They are directionally useful (comparing relative improvement) but not accurate absolute baselines.
+> Previous figures (76.4%, 78.5%, 81.0%, 84.6% etc.) were computed by the flawed remote evaluate.py and were based on the less strict **PCK@0.5** metric. They are directionally useful (comparing relative improvement) but not accurate absolute baselines for the current **PCK@0.2** standard.
 
 ## Advanced Diagnostics
 - **Loss-metric alignment check**: After each run, compare `val_loss` trajectory in `history.json` against `val_pck`. If the epoch with minimum `val_loss` differs significantly from the epoch with max `val_pck`, the loss function has an alignment problem. This is a known issue with the combined auxiliary loss.

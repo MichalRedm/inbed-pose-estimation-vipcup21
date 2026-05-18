@@ -28,7 +28,10 @@ Finalize and validate the production-grade architectural refactoring of the pose
 - [x] Resolved PyTorch 2.6 security constraints in inference service (`weights_only=False`).
 - [x] Implemented robust JSON metrics parsing in `TrainingManager` for multi-prefix logs.
 - [x] Stabilized remote telemetry with Python-native line-buffered streaming (replacing `tail -F`).
-- [ ] Surpass Loop 9 (73.0% PCK) with stabilized Loop 17 training.
+- [x] Implemented Robust Backward Compatibility for legacy checkpoints.
+- [x] Centralized Model Registry (`src/models/registry.py`) to prevent isolation bugs.
+- [x] Implemented Regression Testing for model loading (`tests/test_legacy_compatibility.py`).
+- [ ] Surpass Loop 2 (46.6% PCK@0.2) with stabilized Loop 22 training.
 
 ## Dashboard-Driven ML
 - **Real-time Monitoring**: All training and evaluation MUST be performed via the Dashboard API (see `ml_operations.md` rule).

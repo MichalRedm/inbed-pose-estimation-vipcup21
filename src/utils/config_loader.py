@@ -1,9 +1,50 @@
 import os
+import re
 import yaml
 from dotenv import load_dotenv
 
 
-def load_config(config_path="configs/default.yaml"):
+def _sanitize_config_types(config):
+    """
+    Recursively convert string values for known numeric config keys to float/int.
+    This protects against YAML 1.1 parsers loading scientific notation (like 5e-5) as strings.
+    """
+    if isinstance(config, dict):
+        for k, v in list(config.items()):
+            if isinstance(v, dict):
+                _sanitize_config_types(v)
+            elif isinstance(v, list):
+                for item in v:
+                    _sanitize_config_types(item)
+            elif isinstance(v, str):
+                if k in [
+                    "lr",
+                    "weight_decay",
+                    "lambda_coord",
+                    "lambda_coord_occluded",
+                    "sigma",
+                    "sigma_start",
+                    "sigma_end",
+                    "occlusion_prob",
+                    "flip_prob",
+                    "lambda_adv",
+                    "lambda_anatomical",
+                ]:
+                    try:
+                        config[k] = float(v)
+                    except ValueError:
+                        pass
+                elif re.match(r"^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$", v):
+                    try:
+                        if "." in v or "e" in v.lower():
+                            config[k] = float(v)
+                        else:
+                            config[k] = int(v)
+                    except ValueError:
+                        pass
+
+
+def load_config(config_path="configs/default.yaml", use_user_overrides=True):
     """
     Load configuration from YAML and merge with environment variables.
     """
@@ -12,11 +53,14 @@ def load_config(config_path="configs/default.yaml"):
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
+    # Sanitize scientific notation strings to numeric types
+    _sanitize_config_types(config)
+
     # Override with user training config if present
     user_config_path = os.path.join(
         os.path.dirname(os.path.dirname(config_path)), "configs", "user_training.json"
     )
-    if os.path.exists(user_config_path):
+    if use_user_overrides and os.path.exists(user_config_path):
         import json
 
         try:

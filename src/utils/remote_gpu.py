@@ -268,6 +268,9 @@ class GPUSession:
             timeout=30,
             banner_timeout=60,
         )
+        # Prevent session timeout during long data downloads
+        if self._ssh.get_transport():
+            self._ssh.get_transport().set_keepalive(30)
         print(f"Connected to [{self.config.name}]")
 
     def disconnect(self):

@@ -65,6 +65,39 @@ def get_logs(last_n=20):
         sys.exit(1)
 
 
+def monitor(interval=2):
+    import time
+
+    try:
+        print("Monitoring training (Ctrl+C to stop)...")
+        while True:
+            response = requests.get(f"{API_URL}/training/status")
+            response.raise_for_status()
+            data = response.json()
+
+            status = "Running" if data.get("is_running") else "Stopped"
+            msg = data.get("status_message", "N/A")
+            epoch = f"{data.get('current_epoch', 0)}/{data.get('total_epochs', 0)}"
+            prog = data.get("progress", 0.0) * 100
+
+            # Single line status update
+            sys.stdout.write(
+                f"\r[{status}] Epoch: {epoch} | Progress: {prog:5.1f}% | Msg: {msg[:50]:<50}"
+            )
+            sys.stdout.flush()
+
+            if not data.get("is_running") and status == "Stopped":
+                print("\nTraining stopped.")
+                break
+
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print("\nMonitoring stopped by user.")
+    except Exception as e:
+        print(f"\nError monitoring: {e}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="In-Bed Pose API CLI")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
@@ -91,6 +124,12 @@ def main():
     logs_parser = subparsers.add_parser("logs", help="Get training logs")
     logs_parser.add_argument("-n", type=int, default=20, help="Number of lines to show")
 
+    # Monitor
+    monitor_parser = subparsers.add_parser("monitor", help="Monitor training progress")
+    monitor_parser.add_argument(
+        "-i", "--interval", type=int, default=2, help="Refresh interval in seconds"
+    )
+
     args = parser.parse_args()
 
     if args.command == "start":
@@ -101,6 +140,8 @@ def main():
         get_status()
     elif args.command == "logs":
         get_logs(args.n)
+    elif args.command == "monitor":
+        monitor(args.interval)
     else:
         parser.print_help()
 

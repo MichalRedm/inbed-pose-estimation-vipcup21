@@ -55,3 +55,21 @@ def test_factory_invalid_config():
     config = {"model": {"name": "invalid"}}
     with pytest.raises(Exception):
         create_trainer(config, torch.device("cpu"))
+
+
+def test_discriminative_lr(base_config):
+    base_config["training"]["backbone_lr_ratio"] = 0.1
+    device = torch.device("cpu")
+    trainer, model = create_trainer(base_config, device)
+
+    # The optimizer should have exactly 2 parameter groups
+    optimizer = trainer.optimizer
+    assert len(optimizer.param_groups) == 2
+
+    # Identify the learning rates in the parameter groups
+    lrs = [group["lr"] for group in optimizer.param_groups]
+
+    # One learning rate should be the full head learning rate (0.0001)
+    # The other should be the backbone learning rate (0.0001 * 0.1 = 0.00001)
+    assert 0.0001 in lrs
+    assert 0.00001 in lrs

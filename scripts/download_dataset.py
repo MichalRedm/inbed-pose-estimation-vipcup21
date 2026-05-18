@@ -28,32 +28,75 @@ def download_dataset(dry_run=False):
     # Ensure target directory exists
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Import kaggle here to avoid auth errors at startup
-    try:
-        import os
-
-        # Map user's custom KAGGLE_API_TOKEN to standard KAGGLE_KEY if provided
-        if os.getenv("KAGGLE_API_TOKEN") and not os.getenv("KAGGLE_KEY"):
-            os.environ["KAGGLE_KEY"] = os.getenv("KAGGLE_API_TOKEN")
-
-        from kaggle.api.kaggle_api_extended import KaggleApi
-    except ImportError:
-        print("❌ Kaggle API not installed. Run 'pip install kaggle'.")
+    # Check if data is already present to skip download
+    # We look for actual ground truth files which are required
+    # Total subjects is 90 (or 102), so we expect ~180-200 mat files
+    existing_samples = list(target_dir.glob("**/joints_gt_*.mat"))
+    if len(existing_samples) >= 150:
+        print(
+            f"✅ Dataset already appears to be present in {target_dir} ({len(existing_samples)} joint files found). Skipping download."
+        )
         return
+    elif existing_samples:
+        print(
+            f"⚠️ Dataset appears incomplete ({len(existing_samples)} files found, expected ~180). Cleaning up and redownloading..."
+        )
+        import shutil
 
-    api = KaggleApi()
-    api.authenticate()
+        shutil.rmtree(target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Downloading {dataset_slug} to {target_dir}...")
+    import subprocess
+    import os
+
+    # Map user's custom KAGGLE_API_TOKEN to standard KAGGLE_KEY if provided
+    if os.getenv("KAGGLE_API_TOKEN") and not os.getenv("KAGGLE_KEY"):
+        os.environ["KAGGLE_KEY"] = os.getenv("KAGGLE_API_TOKEN")
+
+    print(f"Downloading {dataset_slug} to {target_dir} using Kaggle CLI...")
     try:
-        api.dataset_download_files(dataset_slug, path=str(target_dir), unzip=True)
-        print("Download and extraction complete.")
-        # Verify
-        files = list(target_dir.glob("*"))
-        print(f"Files in target directory: {[f.name for f in files]}")
-    except Exception as e:
-        print(f"❌ Error downloading dataset: {e}")
+        # We use the CLI directly as the Python API sometimes fails silently or downloads corrupted zips
+        cmd = [
+            "kaggle",
+            "datasets",
+            "download",
+            "-d",
+            dataset_slug,
+            "-p",
+            str(target_dir),
+            "--unzip",
+            "--force",
+        ]
+        # Use subprocess.run with default stdout/stderr to stream output to parent process logs
+        subprocess.run(cmd, check=True)
+        print("Download step finished.")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error downloading dataset via CLI (exit code {e.returncode})")
         raise
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise
+
+    # Always manually extract any zip files that were left behind if --unzip failed
+    import zipfile
+
+    for zip_path in target_dir.glob("*.zip"):
+        print(f"Found {zip_path.name}, extracting...")
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(target_dir)
+            zip_path.unlink()
+            print(f"Extracted and removed {zip_path.name}")
+        except Exception as e:
+            print(f"❌ Failed to extract {zip_path.name}: {e}")
+            print(f"File size: {zip_path.stat().st_size} bytes")
+            # If it's corrupted, we should probably delete it so the next run tries again
+            zip_path.unlink(missing_ok=True)
+            raise
+
+    # Verify
+    files = list(target_dir.glob("*"))
+    print(f"Files in target directory: {[f.name for f in files]}")
 
 
 if __name__ == "__main__":

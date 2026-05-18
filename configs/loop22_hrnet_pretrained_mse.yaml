@@ -1,0 +1,43 @@
+# Project Configuration for Loop 22: Pre-trained HRNet-W32 (Pure MSE)
+# Focus: Isolating pre-training benefits without Soft-Argmax interference.
+
+project:
+  name: inbed-pose-estimation-loop22
+  seed: 42
+
+dataset:
+  root: "data/raw"
+  modalities: ["IR"]
+  subjects_train: [1, 80]
+  subjects_val: [81, 90]
+  image_size: [256, 256]
+
+model:
+  name: "hrnet"
+  hrnet:
+    num_joints: 14
+    in_channels: 1 
+    architecture: "w32"
+    heatmap_size: [64, 64]
+    sigma: 2.0
+    pretrained: true  # Use pre-trained weights with conv1 averaging
+
+training:
+  batch_size: 16
+  epochs: 30  # Back to standard
+  lr: 0.0001
+  weight_decay: 0.0001
+  
+  # Standard Heatmap MSE only
+  use_uncertainty_weighting: false
+  lambda_coord: 0.0
+  lambda_coord_occluded: 0.0
+  decode_method: "argmax"  # Strict argmax decoding
+  
+  save_dir: "results/runs/loop22_hrnet_pretrained_mse"
+  augmentation:
+    enabled: true
+    occlusion_prob: 0.5
+    flip_prob: 0.5
+    rotation_range: [-30, 30]
+    scaling_range: [0.8, 1.2]

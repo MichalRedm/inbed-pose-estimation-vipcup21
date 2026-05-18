@@ -287,11 +287,41 @@ class BaseTrainer(ABC):
 
         def _atomic_torch_save(obj, target_path):
             tmp_path = str(target_path) + ".tmp"
-            torch.save(obj, tmp_path)
-            # Use os.replace for atomic rename on POSIX systems (Linux/Remote)
-            import os
 
-            os.replace(tmp_path, target_path)
+            # 1. Save to temporary file
+            torch.save(obj, tmp_path)
+
+            # 2. VERIFY the saved file before committing
+            try:
+                # We only need to check if the zip archive is valid
+                # map_location='cpu' and weights_only=True for speed
+                torch.load(tmp_path, map_location="cpu", weights_only=True)
+            except Exception as e:
+                print(
+                    f"[Trainer] CRITICAL: Verification of saved checkpoint failed: {e}"
+                )
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                return False  # Indicate failure
+
+            # 3. Commit (with retry for Windows locking)
+            import time
+
+            for i in range(5):
+                try:
+                    if os.path.exists(target_path):
+                        os.replace(tmp_path, target_path)
+                    else:
+                        os.rename(tmp_path, target_path)
+                    return True
+                except PermissionError:
+                    if i == 4:
+                        print(
+                            f"[Trainer] ERROR: Could not commit checkpoint to {target_path} (Locked)"
+                        )
+                        return False
+                    time.sleep(0.5)
+            return False
 
         # Always save as latest for resumption
         latest_path = os.path.join(self.save_dir, "checkpoints", "latest_model.pth")
@@ -299,9 +329,9 @@ class BaseTrainer(ABC):
 
         if is_best:
             best_path = os.path.join(self.save_dir, "checkpoints", "best_model.pth")
-            _atomic_torch_save(checkpoint, best_path)
-            if self.is_main:
-                print(f"[Trainer] Saved new best model to {best_path}")
+            if _atomic_torch_save(checkpoint, best_path):
+                if self.is_main:
+                    print(f"[Trainer] Verified and saved new best model to {best_path}")
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         """Override to add optimizers, schedulers, etc."""

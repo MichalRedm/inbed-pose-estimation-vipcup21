@@ -162,7 +162,7 @@ def train():
         root=args.data_root,
         subjects=range(s_val[0], s_val[1] + 1),
         modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
-        covers=dataset_cfg.get("covers", ["uncover"]),
+        covers=dataset_cfg.get("covers", None),
         split="valid",
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
     )

@@ -1,0 +1,47 @@
+# Project Configuration for Loop 25: Progressive Unfreezing (ULMFiT-Style)
+# Focus: Combining early stability of frozen stem+stage1 with late adaptibility of discriminative fine-tuning.
+
+project:
+  name: inbed-pose-estimation-loop25
+  seed: 42
+
+dataset:
+  root: "data/raw"
+  modalities: ["IR"]
+  subjects_train: [1, 80]       # Full training set (eliminates data scope confound from Loop 24)
+  subjects_val: [81, 90]
+  image_size: [256, 256]
+
+model:
+  name: "hrnet"
+  hrnet:
+    num_joints: 14
+    in_channels: 1 
+    architecture: "w32"
+    heatmap_size: [64, 64]
+    sigma: 2.0
+    pretrained: true      # Load ImageNet pretrained backbone weights
+    freeze_stem: true     # Phase 1: Stem is frozen
+    freeze_stage1: true   # Phase 1: Stage 1 is frozen
+
+training:
+  batch_size: 16
+  epochs: 50              # Extended to 50 epochs to allow Phase 2 proper convergence
+  lr: 0.0001              # Head LR in both phases
+  backbone_lr_ratio: 0.1  # Backbone fine-tunes gently at 0.1x head LR (1e-5) in Phase 2
+  unfreeze_epoch: 15      # Transition to Phase 2 at epoch 16 (0-indexed epoch 15)
+  weight_decay: 0.0001
+  
+  # Standard MSE Heatmap Setup
+  use_uncertainty_weighting: false
+  lambda_coord: 0.0
+  lambda_coord_occluded: 0.0
+  decode_method: "argmax"  # Argmax decoding for maximum spatial precision
+  
+  save_dir: "results/runs/loop25_progressive_unfreezing"
+  augmentation:
+    enabled: true
+    occlusion_prob: 0.5
+    flip_prob: 0.5
+    rotation_range: [-30, 30]
+    scaling_range: [0.8, 1.2]

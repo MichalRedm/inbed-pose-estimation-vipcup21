@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   History, 
@@ -57,6 +57,7 @@ const Overview: React.FC = () => {
   const [isStartingNew, setIsStartingNew] = useState(false);
   const [trainingStatus, setTrainingStatus] = useState<TrainingStatus | null>(null);
   const [runDetails, setRunDetails] = useState<RunDetails | null>(null);
+  const wasRunningRef = useRef(false);
 
   const fetchRuns = useCallback(async () => {
     try {
@@ -64,6 +65,15 @@ const Overview: React.FC = () => {
       setRuns(data.runs);
     } catch (error) {
       console.error('Failed to fetch runs:', error);
+    }
+  }, []);
+
+  const fetchRunDetails = useCallback(async (id: string) => {
+    try {
+      const details = await getRunDetails(id);
+      setRunDetails(details);
+    } catch (error) {
+      console.error('Failed to fetch run details:', error);
     }
   }, []);
 
@@ -76,10 +86,20 @@ const Overview: React.FC = () => {
       if (status.is_running && status.run_id && !selectedRun && !isStartingNew) {
         setSelectedRun(status.run_id);
       }
+
+      // Check for training completion
+      if (wasRunningRef.current && !status.is_running) {
+        console.log("Training finished, refreshing...");
+        fetchRuns();
+        if (selectedRun) {
+          fetchRunDetails(selectedRun);
+        }
+      }
+      wasRunningRef.current = status.is_running;
     } catch (error) {
       console.error('Failed to fetch training status:', error);
     }
-  }, [selectedRun, isStartingNew, setSelectedRun]);
+  }, [selectedRun, isStartingNew, setSelectedRun, fetchRuns, fetchRunDetails]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -98,14 +118,10 @@ const Overview: React.FC = () => {
 
   useEffect(() => {
     if (!selectedRun) return;
-    
-    let isCancelled = false;
-    getRunDetails(selectedRun).then(details => {
-      if (!isCancelled) setRunDetails(details);
+    Promise.resolve().then(() => {
+      fetchRunDetails(selectedRun);
     });
-    
-    return () => { isCancelled = true; };
-  }, [selectedRun]);
+  }, [selectedRun, fetchRunDetails]);
 
   const handleDeleteRun = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();

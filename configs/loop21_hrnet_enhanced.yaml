@@ -1,0 +1,42 @@
+# Project Configuration for Loop 21: Enhanced HRNet-W32
+# Focus: Long-term convergence and structural auxiliary loss
+
+project:
+  name: inbed-pose-estimation-loop21
+  seed: 42
+
+dataset:
+  root: "data/raw"
+  modalities: ["IR"]
+  subjects_train: [1, 80]
+  subjects_val: [81, 90]
+  image_size: [256, 256]
+
+model:
+  name: "hrnet"
+  hrnet:
+    num_joints: 14
+    in_channels: 1 
+    architecture: "w32"
+    heatmap_size: [64, 64]
+    sigma: 2.0
+    pretrained: true  # Now includes conv1 averaging
+
+training:
+  batch_size: 16
+  epochs: 60  # Doubled for deeper convergence
+  lr: 0.0002  # Slightly higher for faster adaptation
+  weight_decay: 0.0001
+  
+  # Multi-task setup
+  use_uncertainty_weighting: true
+  lambda_coord: 0.1           # Soft-argmax regression for visible joints
+  lambda_coord_occluded: 0.1  # Soft-argmax regression for occluded joints
+  
+  save_dir: "results/runs/loop21_hrnet_enhanced"
+  augmentation:
+    enabled: true
+    occlusion_prob: 0.7       # Keep hard occlusion to push the priors
+    flip_prob: 0.5
+    rotation_range: [-30, 30]
+    scaling_range: [0.8, 1.2]
