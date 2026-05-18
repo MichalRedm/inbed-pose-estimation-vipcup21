@@ -23,7 +23,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 | loop17_uncertainty | soft-argmax | **43.1%** | 24.5 px | **TOP ACCURACY** |
 | loop5_uda_refined | argmax | 36.2% | 31.4 px | UDA REF |
 | loop4_uda_alignment | argmax | 35.6% | 40.3 px | UDA BASE |
-| loop23_stabilized_pretraining | argmax | **33.5%** | 42.3 px | **SUCCESSFUL FINE-TUNING** |
+| loop23_stabilized_pretraining | argmax | **41.0%** | 37.0 px | **SUCCESSFUL FINE-TUNING** |
 | loop18_gcn_final_v5 | soft-argmax | 33.4% | 26.6 px | SUCCESS |
 | loop19 | soft-argmax | 12.7% | 66.7 px | **SKELETON COLLAPSE** |
 
@@ -66,7 +66,7 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 20 | Pre-trained HRNet-W32 + Uncertainty Weighting | SUCCESS | 35.1% | **UNDERFITTING**: Linear loss trend; needs more epochs. |
 | 21 | Enhanced HRNet (60 eps + Coord Loss + Conv1 Avg) | FINISHED | 32.0% | Model completed but PCK remained low. Stabilization fixes applied to infrastructure. |
 | 22 | Pre-trained HRNet-W32 + Pure Heatmap MSE + Argmax | FINISHED | 32.5% | **STALLED**: Performance did not improve. Hypothesis: Feature washout from high-level gradients. |
-| 23 | Stabilized Pre-training (Freeze Stem + Stage 1) | SUCCESS | **33.5%** | Successfully fine-tuned pre-trained backbone while avoiding feature washout. |
+| 23 | Stabilized Pre-training (Freeze Stem + Stage 1) | SUCCESS | **41.0%** | Successfully fine-tuned pre-trained backbone after resolving nested downsample/transition loading mismatch! |
 
 ## Next Planned Steps
 1. **Analyze Loop 23 Results**: Freezing generic layers successfully stabilized fine-tuning (PCK increased to 33.5%).

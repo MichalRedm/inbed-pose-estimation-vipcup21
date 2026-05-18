@@ -10,7 +10,7 @@
 
 2. **[SUCCESS] Stabilized Transfer Learning via Selective Freezing (Loop 23)**:
    - **Hypothesis**: The underperformance of pre-trained HRNet in Loops 20/21 was caused by **feature washout** (gradients from the random head destroying backbone features) and **underfitting**. By **freezing the Stem and Stage 1** (generic edge/texture detectors) and using a **lower LR (5e-5)**, the model can quickly adapt the high-level pose logic to thermal data without losing the ImageNet structural priors.
-   - **Result**: **SUCCESS** (33.5% PCK@0.2). Fine-tuning was successfully stabilized. Freezing the generic edge and shape filters preserved ImageNet structure, leading to improved convergence and generalization compared to the non-frozen baseline.
+   - **Result**: **SUCCESS** (41.0% PCK@0.2). Outstanding performance after resolving the nested downsample/transition loading bug! Freezing the generic edge and shape filters preserved ImageNet structure, leading to robust convergence and generalization.
    - **Implementation**: Set `requires_grad=False` for `conv1`, `conv2`, and `layer1`. Use Argmax decoding.
    - **Priority**: Completed.
 
