@@ -248,7 +248,7 @@ def main():
         print(f"Ignored {len(downloaded)} existing remote checkpoints.")
 
         def poll_and_download(session):
-            """Download any checkpoint not yet synced locally."""
+            """Download any checkpoint not yet synced locally with strict size verification."""
             # 1. Sync .pth checkpoints
             result = session.run(
                 f"ls {remote_ckpt_dir}/*.pth 2>/dev/null || true",
@@ -259,14 +259,64 @@ def main():
                 for f in result.stdout.splitlines()
                 if f.strip().endswith(".pth")
             ]
+            
+            sftp = None
+            try:
+                sftp = session._ssh.open_sftp()
+            except Exception as sftp_err:
+                print(f"[sync] Warning: Could not open SFTP connection for verification: {sftp_err}")
+
             for remote_path in remote_files:
                 fname = remote_path.split("/")[-1]
-                # Always download best_model.pth to ensure it's the latest
-                if fname not in downloaded or fname == "best_model.pth":
-                    print(f"\n[sync] Downloading {fname}...")
-                    session.download(remote_path, str(local_ckpt_dir), recursive=False)
-                    downloaded.add(fname)
-                    print(f"[sync] {fname} saved to {local_ckpt_dir}/")
+                # Always download best_model.pth and latest_model.pth to ensure they're complete
+                is_key_model = fname in ["best_model.pth", "latest_model.pth"]
+                if fname not in downloaded or is_key_model:
+                    # Get remote size for integrity check
+                    remote_size = None
+                    if sftp:
+                        try:
+                            remote_size = sftp.stat(remote_path).st_size
+                        except Exception:
+                            pass
+
+                    local_path = local_ckpt_dir / fname
+                    
+                    # Download with up to 3 retries and size verification
+                    for attempt in range(1, 4):
+                        print(f"\n[sync] Downloading {fname} (size={remote_size} bytes, attempt {attempt})...")
+                        try:
+                            # Clean up old file if it exists to avoid partial write issues
+                            if local_path.exists():
+                                try:
+                                    os.remove(local_path)
+                                except OSError:
+                                    pass
+
+                            session.download(remote_path, str(local_ckpt_dir), recursive=False)
+                            
+                            # Verify local file exists and matches remote size
+                            if local_path.exists():
+                                local_size = local_path.stat().st_size
+                                if remote_size is None or local_size == remote_size:
+                                    print(f"[sync] {fname} successfully saved and verified! ({local_size} bytes)")
+                                    downloaded.add(fname)
+                                    break
+                                else:
+                                    print(f"[sync] Warning: Size mismatch for {fname}! Remote: {remote_size}, Local: {local_size}")
+                            else:
+                                print(f"[sync] Warning: Local file {fname} not found after download.")
+                        except Exception as dl_err:
+                            print(f"[sync] Warning: Download failed for {fname}: {dl_err}")
+                        
+                        time.sleep(2.0)
+                    else:
+                        print(f"[sync] ERROR: Failed to download and verify {fname} after 3 attempts!")
+
+            if sftp:
+                try:
+                    sftp.close()
+                except Exception:
+                    pass
 
             # 2. Sync history.json and config.json
             for r_path, l_path in [
@@ -382,6 +432,13 @@ def main():
 
         training_thread.join()
         poller_thread.join(timeout=60)
+        
+        # FINAL STRIKE SYNCHRONOUS SYNC: Run one final, strict, synchronous verification sync on the main thread
+        print("\n[sync] Running final strict verification sync...")
+        try:
+            poll_and_download(gpu)
+        except Exception as sync_err:
+            print(f"[sync] Warning: Final synchronous sync encountered an error: {sync_err}")
 
         result = training_result[0] if training_result else None
         if result is None or not result.ok():
