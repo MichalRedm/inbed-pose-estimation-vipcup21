@@ -42,6 +42,25 @@ def main():
     )
     args_cli, other_args = parser.parse_known_args()
 
+    # Load config file to check for resume flag (enables seamless resume when started via API)
+    config_resume = False
+    if args_cli.config and os.path.exists(args_cli.config):
+        try:
+            with open(args_cli.config, "r", encoding="utf-8") as f:
+                if args_cli.config.endswith(".json"):
+                    import json
+                    cfg = json.load(f)
+                else:
+                    import yaml
+                    cfg = yaml.safe_load(f)
+                config_resume = cfg.get("training", {}).get("resume", False) or cfg.get("resume", False)
+        except Exception as e:
+            print(f"Warning: could not read config file {args_cli.config} for resume check: {e}")
+            
+    if config_resume:
+        print("[remote_train] Config file indicates resume=True. Forcing resume mode.")
+        args_cli.resume = True
+
     json_path = "gpu_connection.json"
     if not os.path.exists(json_path):
         print(f"Error: {json_path} not found.")
