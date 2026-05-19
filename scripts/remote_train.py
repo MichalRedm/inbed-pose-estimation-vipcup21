@@ -217,7 +217,20 @@ def main():
             for local_path, fname in [(local_latest, "latest_model.pth"), (local_best, "best_model.pth")]:
                 if local_path.exists():
                     print(f"[resume] Uploading local {fname} to remote...")
-                    gpu.upload(str(local_path), f"{remote_ckpt_dir}/{fname}", recursive=False)
+                    try:
+                        gpu.upload(str(local_path), f"{remote_ckpt_dir}/{fname}", recursive=False)
+                    except Exception as e:
+                        print(f"[resume] Warning: failed to upload {fname} due to {e}. Attempting to reconnect and retry...")
+                        try:
+                            gpu.disconnect()
+                            gpu.connect()
+                            gpu.upload(str(local_path), f"{remote_ckpt_dir}/{fname}", recursive=False)
+                            print(f"[resume] Successfully uploaded {fname} after reconnect.")
+                        except Exception as retry_err:
+                            print(f"[resume] Warning: retry upload failed for {fname}: {retry_err}")
+                            if fname == "latest_model.pth":
+                                # latest_model.pth is strictly required for resume
+                                raise retry_err
                 else:
                     print(f"[resume] Local {fname} not found, skipping.")
 
