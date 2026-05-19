@@ -7,6 +7,148 @@ import torchvision.transforms.v2 as v2
 from torchvision import tv_tensors
 
 
+class CutoutAugmentation:
+    """
+    Zeros out a randomly placed rectangular region of size up to ratio*w, ratio*h.
+    Directly targets model occlusion robustness and context-learning.
+    """
+
+    def __init__(self, probability: float = 0.5, size_ratio: float = 0.35):
+        self.probability = probability
+        self.size_ratio = size_ratio
+
+    def __call__(
+        self, image: Union[Image.Image, torch.Tensor]
+    ) -> Union[Image.Image, torch.Tensor]:
+        if random.random() > self.probability:
+            return image
+
+        is_tensor = torch.is_tensor(image)
+        if is_tensor:
+            device = image.device
+            img_pil = v2.functional.to_pil_image(image)
+        else:
+            img_pil = image
+
+        w, h = img_pil.size
+
+        # Generate random box size up to size_ratio
+        box_w = random.randint(int(w * 0.15), int(w * self.size_ratio))
+        box_h = random.randint(int(h * 0.15), int(h * self.size_ratio))
+
+        # Random location
+        x1 = random.randint(0, w - box_w)
+        y1 = random.randint(0, h - box_h)
+
+        # Draw a black rectangle (0) on a copy of the image
+        img_pil = img_pil.copy()
+        draw = ImageDraw.Draw(img_pil)
+        draw.rectangle([x1, y1, x1 + box_w, y1 + box_h], fill=0)
+
+        if is_tensor:
+            return v2.functional.to_image(img_pil).to(device)
+        return img_pil
+
+
+class ThermalIntensityJitter:
+    """
+    Randomly dampens or slightly boosts contrast and brightness to simulate thermal attenuation.
+    Directly addresses the 53% dynamic range gap measured in dataset analysis.
+    """
+
+    def __init__(
+        self,
+        probability: float = 0.5,
+        brightness_range: list[float] = [0.55, 1.15],
+        contrast_range: list[float] = [0.5, 1.15],
+    ):
+        self.probability = probability
+        self.brightness_range = brightness_range
+        self.contrast_range = contrast_range
+
+    def __call__(
+        self, image: Union[Image.Image, torch.Tensor]
+    ) -> Union[Image.Image, torch.Tensor]:
+        if random.random() > self.probability:
+            return image
+
+        is_tensor = torch.is_tensor(image)
+        if is_tensor:
+            device = image.device
+            img_pil = v2.functional.to_pil_image(image)
+        else:
+            img_pil = image
+
+        img_np = np.array(img_pil).astype(np.float32)
+
+        # Brightness jitter: uniform scaling
+        scale_b = random.uniform(self.brightness_range[0], self.brightness_range[1])
+        img_np = img_np * scale_b
+
+        # Contrast jitter: stretch/compress around mean
+        scale_c = random.uniform(self.contrast_range[0], self.contrast_range[1])
+        mean = img_np.mean()
+        img_np = (img_np - mean) * scale_c + mean
+
+        img_np = np.clip(img_np, 0, 255).astype(np.uint8)
+        img_pil = Image.fromarray(img_np)
+
+        if is_tensor:
+            return v2.functional.to_image(img_pil).to(device)
+        return img_pil
+
+
+class IRSensorNoise:
+    """
+    Simulates readout thermal/Gaussian noise and dead/hot pixels (salt & pepper).
+    Regularizes against spatial texture over-reliance.
+    """
+
+    def __init__(
+        self,
+        probability: float = 0.4,
+        sigma_range: list[float] = [5.0, 12.0],
+        sp_prob: float = 0.003,
+    ):
+        self.probability = probability
+        self.sigma_range = sigma_range
+        self.sp_prob = sp_prob
+
+    def __call__(
+        self, image: Union[Image.Image, torch.Tensor]
+    ) -> Union[Image.Image, torch.Tensor]:
+        if random.random() > self.probability:
+            return image
+
+        is_tensor = torch.is_tensor(image)
+        if is_tensor:
+            device = image.device
+            img_pil = v2.functional.to_pil_image(image)
+        else:
+            img_pil = image
+
+        img_np = np.array(img_pil).astype(np.float32)
+
+        # 1. Gaussian noise
+        sigma = random.uniform(self.sigma_range[0], self.sigma_range[1])
+        noise = np.random.normal(0, sigma, img_np.shape).astype(np.float32)
+        img_np = img_np + noise
+
+        # 2. Salt & Pepper noise (dead/hot pixels)
+        sp_mask = np.random.random(img_np.shape[:2])
+        # Salt (hot pixels) -> 255
+        img_np[sp_mask < (self.sp_prob / 2.0)] = 255.0
+        # Pepper (dead pixels) -> 0
+        img_np[sp_mask > (1.0 - self.sp_prob / 2.0)] = 0.0
+
+        img_np = np.clip(img_np, 0, 255).astype(np.uint8)
+        img_pil = Image.fromarray(img_np)
+
+        if is_tensor:
+            return v2.functional.to_image(img_pil).to(device)
+        return img_pil
+
+
 class ThermalDiffusionAugmenter:
     """
     Simulates the effect of a blanket on IR images by diffusing and dampening
@@ -45,12 +187,14 @@ class ThermalDiffusionAugmenter:
             if joints.shape[0] == 3:
                 j_np = joints.cpu().numpy()
                 for pair in [(0, 5), (1, 4), (2, 3), (8, 9)]:
-                    if j_np[2, pair[0]] < 2 and j_np[2, pair[1]] < 2:
-                        coverage_options.append(min(j_np[1, pair[0]], j_np[1, pair[1]]))
-            elif len(joints.shape) == 3:  # (1, 14, 2)
+                    if pair[0] < j_np.shape[1] and pair[1] < j_np.shape[1]:
+                        if j_np[2, pair[0]] < 2 and j_np[2, pair[1]] < 2:
+                            coverage_options.append(min(j_np[1, pair[0]], j_np[1, pair[1]]))
+            elif len(joints.shape) == 3:  # (1, N, 2)
                 j_np = joints[0].cpu().numpy()
                 for pair in [(0, 5), (1, 4), (2, 3), (8, 9)]:
-                    coverage_options.append(min(j_np[pair[0], 1], j_np[pair[1], 1]))
+                    if pair[0] < j_np.shape[0] and pair[1] < j_np.shape[0]:
+                        coverage_options.append(min(j_np[pair[0], 1], j_np[pair[1], 1]))
 
         full_coverage = random.random() < 0.1
         if full_coverage:
@@ -105,7 +249,6 @@ class ThermalDiffusionAugmenter:
         final_image = Image.composite(blanket_layer, img_pil, mask)
 
         if is_tensor:
-            # Use to_dtype to ensure proper tensor format without extra copies if already tensor
             return v2.functional.to_image(final_image).to(device)
         return final_image
 
@@ -126,14 +269,55 @@ class DataAugmenter:
             is_training=self.is_training,
         )
 
+        # New augmentations setup
+        self.intensity_jitter = None
+        if (
+            self.enabled
+            and self.is_training
+            and self.config.get("intensity_jitter_prob", 0.0) > 0
+        ):
+            self.intensity_jitter = ThermalIntensityJitter(
+                probability=self.config.get("intensity_jitter_prob", 0.5),
+                brightness_range=self.config.get(
+                    "intensity_jitter_range", [0.55, 1.15]
+                ),
+                contrast_range=self.config.get("contrast_jitter_range", [0.5, 1.15]),
+            )
+
+        self.sensor_noise = None
+        if (
+            self.enabled
+            and self.is_training
+            and self.config.get("sensor_noise_prob", 0.0) > 0
+        ):
+            self.sensor_noise = IRSensorNoise(
+                probability=self.config.get("sensor_noise_prob", 0.4),
+                sigma_range=self.config.get("sensor_noise_sigma", [5.0, 12.0]),
+            )
+
+        self.cutout = None
+        if (
+            self.enabled
+            and self.is_training
+            and self.config.get("cutout_prob", 0.0) > 0
+        ):
+            self.cutout = CutoutAugmentation(
+                probability=self.config.get("cutout_prob", 0.5),
+                size_ratio=self.config.get("cutout_size_ratio", 0.35),
+            )
+
         # Spatial transforms (Affine only, Flip handled manually)
         if self.enabled and self.is_training:
             rot_range = self.config.get("rotation_range", [-30, 30])
             scale_range = self.config.get("scaling_range", [0.8, 1.2])
+            translate = self.config.get("translation", None)
+            if translate is not None:
+                translate = tuple(translate)
 
             self.affine_transform = v2.RandomAffine(
                 degrees=rot_range,
                 scale=scale_range,
+                translate=translate,
                 interpolation=v2.InterpolationMode.BILINEAR,
             )
         else:
@@ -176,14 +360,21 @@ class DataAugmenter:
                     flip_indices = [5, 4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 12, 13]
                     vis = vis[flip_indices]
 
-        # 3. Apply Affine (Rotation + Scaling)
+        # 3. Apply Affine (Rotation + Scaling + Translation)
         if self.affine_transform:
             if kpts is not None:
                 image, kpts = self.affine_transform(image, kpts)
             else:
                 image = self.affine_transform(image)
 
-        # 4. Thermal diffusion
+        # 4. New Appearance Augmentations (Intensity jitter & noise)
+        if self.intensity_jitter:
+            image = self.intensity_jitter(image)
+
+        if self.sensor_noise:
+            image = self.sensor_noise(image)
+
+        # 5. Thermal diffusion (blanket simulation)
         source_image = image
         if return_pair:
             source_image = image.clone() if torch.is_tensor(image) else image.copy()
@@ -191,9 +382,14 @@ class DataAugmenter:
         if self.thermal_augmenter:
             image = self.thermal_augmenter(image, joints=kpts, is_ir=is_ir)
 
-        # 5. Final Assembly
+        # 6. Structured Cutout (post-blanket occlusion simulation)
+        if self.cutout:
+            image = self.cutout(image)
+
+        # 7. Final Assembly
         if kpts is not None:
-            final_coords = kpts.view(14, 2).T  # (2, 14)
+            num_kpts = kpts.shape[1]
+            final_coords = kpts.view(num_kpts, 2).T  # (2, num_kpts)
             final_joints = torch.cat([final_coords, vis.unsqueeze(0)], dim=0).numpy()
         else:
             final_joints = None

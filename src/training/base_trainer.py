@@ -325,13 +325,17 @@ class BaseTrainer(ABC):
 
         # Always save as latest for resumption
         latest_path = os.path.join(self.save_dir, "checkpoints", "latest_model.pth")
-        _atomic_torch_save(checkpoint, latest_path)
-
-        if is_best:
-            best_path = os.path.join(self.save_dir, "checkpoints", "best_model.pth")
-            if _atomic_torch_save(checkpoint, best_path):
-                if self.is_main:
-                    print(f"[Trainer] Verified and saved new best model to {best_path}")
+        if _atomic_torch_save(checkpoint, latest_path):
+            if is_best:
+                best_path = os.path.join(self.save_dir, "checkpoints", "best_model.pth")
+                try:
+                    import shutil
+                    shutil.copy2(latest_path, best_path)
+                    if self.is_main:
+                        print(f"[Trainer] Verified and saved new best model to {best_path}")
+                except Exception as e:
+                    if self.is_main:
+                        print(f"[Trainer] Warning: could not copy best model: {e}")
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         """Override to add optimizers, schedulers, etc."""

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from typing import Dict, Any
 import torch.nn.functional as F
+import torch.distributed as dist
 from .base_trainer import BaseTrainer
 from .losses import AnatomicalLoss, UncertaintyWeighting
 from ..models.layers import SoftArgmax2D

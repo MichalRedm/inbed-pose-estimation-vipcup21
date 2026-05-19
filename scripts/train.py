@@ -113,6 +113,13 @@ def train():
     if args.run_id:
         run_root = Path(__file__).parent.parent / "results" / "runs" / args.run_id
         os.makedirs(run_root / "checkpoints", exist_ok=True)
+        if int(os.environ.get("RANK", 0)) == 0:
+            # Clean up any leftover .tmp files from previous crashed runs to save disk space
+            for tmp_file in (run_root / "checkpoints").glob("*.tmp"):
+                try:
+                    os.remove(tmp_file)
+                except Exception:
+                    pass
         config["training"]["save_dir"] = str(run_root)
 
         # Save config snapshot for reproducibility

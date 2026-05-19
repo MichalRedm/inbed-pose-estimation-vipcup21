@@ -61,15 +61,28 @@ def main():
 
     print("--- Starting Remote Training Session ---")
     with mgr.use(backend_name) as gpu:
-        # 1. Fresh Run Cleanup (Move BEFORE sync to avoid deleting uploaded configs)
-        if not args_cli.resume and args_cli.run_id:
+        # 1. Fresh Run Cleanup & Accumulation Prevention (Move BEFORE sync to avoid deleting uploaded configs)
+        if args_cli.run_id:
             remote_run_dir = f"/root/project/results/runs/{args_cli.run_id}"
-            print(f"[clean] Wiping remote directory {remote_run_dir}...")
-            gpu.run(f"rm -rf {remote_run_dir} || true", stream=False)
-        elif not args_cli.resume:
-            remote_ckpt_dir = "/root/project/models/checkpoints"
-            print(f"[clean] Wiping remote checkpoints in {remote_ckpt_dir}...")
-            gpu.run(f"rm -rf {remote_ckpt_dir}/* || true", stream=False)
+            if not args_cli.resume:
+                print(f"[clean] Wiping remote directory {remote_run_dir}...")
+                gpu.run(f"rm -rf {remote_run_dir} || true", stream=False)
+            else:
+                # Clean up any stale .tmp files that could cause resume issues
+                print(f"[clean] Removing stale .tmp files in {remote_run_dir}...")
+                gpu.run(f"find {remote_run_dir} -name '*.tmp' -delete || true", stream=False)
+            
+            # Clean up all other run directories to prevent accumulation of massive checkpoint files
+            print(f"[clean] Cleaning up all other run folders under results/runs/ to prevent disk space accumulation...")
+            gpu.run(
+                f"find /root/project/results/runs/ -maxdepth 1 -mindepth 1 -type d ! -name '{args_cli.run_id}' -exec rm -rf {{}} \\; || true",
+                stream=False
+            )
+        else:
+            if not args_cli.resume:
+                remote_ckpt_dir = "/root/project/models/checkpoints"
+                print(f"[clean] Wiping remote checkpoints in {remote_ckpt_dir}...")
+                gpu.run(f"rm -rf {remote_ckpt_dir}/* || true", stream=False)
 
         # 2. Sync local code and configs to remote
         gpu.sync_project(remote_dir="/root/project")
