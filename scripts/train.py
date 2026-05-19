@@ -202,11 +202,12 @@ def train():
         ckpt_files = list(ckpt_root.glob("*.pth"))
         if ckpt_files:
 
-            def get_epoch(f):
-                m = re.search(r"epoch_(\d+)", f.name)
-                return int(m.group(1)) if m else 0
-
-            latest_ckpt = max(ckpt_files, key=os.path.getmtime)
+            latest_model_path = ckpt_root / "latest_model.pth"
+            if latest_model_path.exists():
+                latest_ckpt = latest_model_path
+            else:
+                latest_ckpt = max(ckpt_files, key=os.path.getmtime)
+                
             if rank == 0:
                 print(f"Loading checkpoint: {latest_ckpt}")
 
