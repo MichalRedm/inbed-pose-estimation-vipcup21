@@ -70,14 +70,7 @@ class AnatomicalLoss(nn.Module):
             p2 = pred_joints_norm[:, j2]
             length = torch.norm(p1 - p2, dim=1)
 
-            if self.mode == "two_sided_hinge":
-                # Penalize if length is greater than target, or shrinks below 45% of target
-                target_max = target
-                target_min = 0.45 * target
-                loss_upper = F.relu(length - target_max)
-                loss_lower = F.relu(target_min - length)
-                loss_prior += torch.mean(torch.pow(loss_upper + loss_lower, 2))
-            elif self.mode == "hinge":
+            if self.mode == "hinge":
                 # Use squared ReLU for a smooth hinge loss (penalize only if length > target)
                 loss_prior += torch.mean(torch.pow(F.relu(length - target), 2))
             else:
