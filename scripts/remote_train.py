@@ -175,6 +175,22 @@ def main():
 
         os.makedirs(local_ckpt_dir, exist_ok=True)
 
+        # If resuming, check if local checkpoints exist and upload them to remote
+        if args_cli.resume:
+            print("\n[resume] Checking for local checkpoints to upload...")
+            local_latest = local_ckpt_dir / "latest_model.pth"
+            local_best = local_ckpt_dir / "best_model.pth"
+            
+            # Ensure remote checkpoint directory exists
+            gpu.run(f"mkdir -p {remote_ckpt_dir}", stream=False)
+            
+            for local_path, fname in [(local_latest, "latest_model.pth"), (local_best, "best_model.pth")]:
+                if local_path.exists():
+                    print(f"[resume] Uploading local {fname} to remote...")
+                    gpu.upload(str(local_path), f"{remote_ckpt_dir}/{fname}", recursive=False)
+                else:
+                    print(f"[resume] Local {fname} not found, skipping.")
+
         # Initial snapshot: mark existing remote checkpoints as 'downloaded'
         # so we don't pull down old data at the start.
         print("Taking initial snapshot of remote checkpoints...")
