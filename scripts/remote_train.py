@@ -42,12 +42,23 @@ def main():
     )
     args_cli, other_args = parser.parse_known_args()
 
+    # Extract config path from other_args list (as --config is not explicitly defined in argparse)
+    config_path = None
+    if "--config" in other_args:
+        idx = other_args.index("--config")
+        if idx + 1 < len(other_args):
+            config_path = other_args[idx + 1]
+    else:
+        for arg in other_args:
+            if arg.startswith("--config="):
+                config_path = arg.split("=", 1)[1]
+
     # Load config file to check for resume flag (enables seamless resume when started via API)
     config_resume = False
-    if args_cli.config and os.path.exists(args_cli.config):
+    if config_path and os.path.exists(config_path):
         try:
-            with open(args_cli.config, "r", encoding="utf-8") as f:
-                if args_cli.config.endswith(".json"):
+            with open(config_path, "r", encoding="utf-8") as f:
+                if config_path.endswith(".json"):
                     import json
                     cfg = json.load(f)
                 else:
@@ -55,7 +66,7 @@ def main():
                     cfg = yaml.safe_load(f)
                 config_resume = cfg.get("training", {}).get("resume", False) or cfg.get("resume", False)
         except Exception as e:
-            print(f"Warning: could not read config file {args_cli.config} for resume check: {e}")
+            print(f"Warning: could not read config file {config_path} for resume check: {e}")
             
     if config_resume:
         print("[remote_train] Config file indicates resume=True. Forcing resume mode.")
