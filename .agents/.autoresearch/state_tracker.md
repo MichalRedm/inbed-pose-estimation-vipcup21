@@ -1,8 +1,8 @@
 # State Tracker
 
 - **Current Loop**: 26
-- **Phase**: Planning (Phase 2) — Awaiting implementation approval
-- **Status**: Loop 25 completed. Progressive unfreezing (ULMFiT-style) achieved **41.87% PCK@0.2** (peak, epoch 33), final 40.33%. The pretrained approach is now **confirmed to have a structural ceiling** at ~42%, cannot beat the 46.6% scratch baseline. **VERDICT: Abandon pretrained fine-tuning route. Pivot to scratch-based improvements.** Next highest-ROI directions are (1) Sigma Curriculum (proven +3-5% in literature, already works in Loop 17 context) combined with (2) Structured Cutout Augmentation.
+- **Phase**: Phase 4 — Running Training (Paused)
+- **Status**: Loop 26 training started successfully with the Gaussian kernel size alignment fix (preventing the Epoch 28 out-of-bounds crash). Training progressed through Epoch 5 (loss decreased to 0.0051, checkpoints saved and synced) and was gracefully paused via API CLI for PC shutdown. Ready to resume with the `--resume` flag when restarted.
 - **Absolute Priority**: 
   1. **PIVOT CONFIRMED**: Pretrained approach definitively abandoned. The HRNet RGB→IR domain gap, combined with the 80-subject training set scale and 1-channel conv1 limitation, creates a structural ceiling at ~42% that progressive unfreezing cannot breach.
   2. **Scratch Baselines remain superior**: loop2 (46.6%), loop9 (45.1%), loop17 (43.1%) are the targets.
