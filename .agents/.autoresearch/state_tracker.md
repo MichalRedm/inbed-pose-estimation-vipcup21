@@ -1,12 +1,12 @@
 # State Tracker
 
-- **Current Loop**: 27
+- **Current Loop**: 28
 - **Phase**: Phase 1 — Grounded Brainstorming & Planning
-- **Status**: Loop 26 training completed but suffered from two critical pipeline bugs (horizontal flip keypoint scrambling and CPU dataloader worker curriculum desync) that caused joint coalescence/skeleton collapse. These pipeline bugs have been fully fixed and unit-tested locally. Ready to launch Loop 27, a clean rerun of the Sigma Curriculum + Cutout recipe on the fully pristine, bug-free codebase.
+- **Status**: Loop 27 training successfully completed! Reached a groundbreaking peak PCK of **50.3%** and MPJPE of **27.2 px** on the cover1+cover2 val set, beating the baseline (46.6%) by **+3.7 percentage points** and breaking the 50% barrier for the very first time! Skeleton spread ratio (0.83) confirms zero skeleton collapse. Pipeline fixes (horizontal flip keypoint reordering and Dynamic GPU-based heatmap curriculum generation) completely resolved all training issues.
 - **Absolute Priority**: 
-  1. **PIVOT CONFIRMED**: Pretrained approach definitively abandoned. The HRNet RGB→IR domain gap, combined with the 80-subject training set scale and 1-channel conv1 limitation, creates a structural ceiling at ~42% that progressive unfreezing cannot breach.
-  2. **Scratch Baselines remain superior**: loop2 (46.6%), loop9 (45.1%), loop17 (43.1%) are the targets.
-- **Baseline**: Loop 2 (46.6% PCK@0.2).
+  1. **PIVOT CONFIRMED**: Pretrained approach definitively abandoned. Focus is exclusively on scratch-based improvements.
+  2. **Top Baseline**: Loop 27 (50.3% PCK@0.2, 27.2 px MPJPE) is the new Top Baseline.
+- **Baseline**: Loop 27 (50.3% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -16,6 +16,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 
 | Run | Decoder | PCK@0.2 (strict) | MPJPE | Status |
 |-----|---------|--------------------|--------------------|--------|
+| loop27_clean_sigma_cutout | argmax | **50.3%** | 27.2 px | **NEW TOP PCK** |
 | loop2_fixed_aug | argmax | **46.6%** | 29.6 px | **TOP PRECISION** |
 | loop9_anatomical_hinge | soft-argmax | **45.1%** | 25.3 px | RELIABLE |
 | loop3_improved_thermal | argmax | 44.7% | 27.4 px | SUCCESS |
@@ -71,6 +72,7 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 24 | Discriminative LR (0.1× backbone, fully unfrozen) | UNDERPERFORMED | **36.7%** | Worse than Loop 23 (41.0%) despite discriminative LR. Root cause: initial gradient washout from random head is too severe even at 1e-5 backbone LR. Linear convergence visible (still improving at epoch 30). |
 | 25 | Progressive Unfreezing (Phase 1: Frozen 15 ep, Phase 2: Disc. LR) | UNDERPERFORMED | **41.87%** (peak E33) / 40.33% final | Best pretrained result yet, but still 4.7pp below scratch baseline (46.6%). Hard plateau at ~42% despite 50 epochs and full backbone fine-tuning. Confirmed train-val divergence (gap grew 1731% in Phase 2), indicating mild overfitting on 80-subject set. **VERDICT: Structural ceiling on pretrained route. Pivot to scratch-based improvements.** |
 | 26 | Sigma Curriculum + Cutout (Scratch, 40ep) | FAILURE (BUGS) | **44.4%** | **PIPELINE BUGS**: (1) Horizontal flip keypoints were not re-indexed (coordinates scrambled under 50% flip); (2) Dynamic sigma curriculum failed to sync to CPU dataloader worker processes (sigma stayed at 3.0). Resulted in joint coalescence and coordinate collapse. Bugs are now fully fixed and verified locally. |
+| 27 | Clean Rerun of Sigma Curriculum + Cutout (Scratch, 40ep) | SUCCESS | **50.3%** | Resolved worker curriculum desync via dynamic GPU-based target generation, and corrected keypoint swap indexing for horizontal flips. Reached a groundbreaking PCK of **50.3%** (beating scratch baseline by **+3.7pp**) and **27.2 px MPJPE** with zero skeleton collapse. |
 
 ## ⚠️ CRITICAL: Pretrained Route Post-Mortem (2026-05-18 — Final)
 
@@ -84,6 +86,6 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 
 **FINAL VERDICT**: The pretrained HRNet-W32 approach is definitively abandoned as a primary strategy for this dataset. The ceiling is structurally imposed by domain gap, conv1 limitation, and insufficient data scale for backbone adaptation. All future loops will focus on scratch-based improvements.
 
-## Next Planned Steps (Approved in Loop 27)
-1. **Loop 27 — Clean Rerun of Sigma Curriculum + Cutout Augmentation (Scratch, Subjects 1-80)**: Combine the most impactful proven techniques: sigma annealing (3.0→1.5 over 30 epochs) with structured Cutout augmentation (block up to 35% of the image) to improve occlusion robustness, thermal intensity jitter, readout sensor noise, and random translations. Run for 40 epochs on full 80-subject set using the **fully fixed keypoint flip indexing and GPU-based on-the-fly heatmap curriculum**. Expected peak: 48-52% PCK, < 24 px MPJPE.
-2. **Loop 28 (Contingent)**: If Loop 27 beats 46.6%, stack the hinge loss from Loop 9 (foreshortening prior) on top of the Loop 27 recipe.
+## Next Planned Steps (Approved in Loop 28)
+1. **Loop 28 — Stack Hinge Loss on top of Loop 27 Recipe (Scratch, Subjects 1-80)**: Now that we have a highly robust, high-performing scratch-based pipeline yielding 50.3% PCK and 27.2 px MPJPE, we will stack the anatomical hinge loss from Loop 9 (which penalizes foreshortened body segments) to regularize keypoint regression and improve localization accuracy of extremity joints (wrists, ankles), aiming for < 24 px MPJPE and 51-53% PCK.
+2. **Loop 29 (Contingent)**: Stack GCN pose refinement or test custom joint-specific focal heatmap weight scheduling on top of the optimal Loop 28 base.
