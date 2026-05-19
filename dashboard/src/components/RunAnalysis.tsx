@@ -75,9 +75,9 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
         const metrics = (historyDict[ep] || historyDict[String(ep)]) as HistoryMetrics | undefined || {};
         return {
           epoch: ep,
-          loss: loss ?? 0,
-          val_loss: metrics.val_loss ?? metrics.val_loss_pose ?? 0,
-          adv: trainingStatus.adv_loss_history?.[i] ?? 0,
+          loss: loss ?? null,
+          val_loss: (metrics.val_loss ?? metrics.val_loss_pose) ?? null,
+          adv: trainingStatus.adv_loss_history?.[i] ?? null,
         };
       }).filter(d => d.epoch <= total);
     }
@@ -86,9 +86,9 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
     if (details.history && details.history.length > 0) {
       return details.history.map((h: Record<string, number>, i) => ({
         epoch: h.epoch ?? (i + 1),
-        loss: h.loss ?? h.loss_pose ?? h.train_loss ?? 0,
-        val_loss: h.val_loss ?? h.val_loss_pose ?? 0,
-        adv: h.adv_loss ?? 0,
+        loss: h.loss ?? h.loss_pose ?? h.train_loss ?? null,
+        val_loss: h.val_loss ?? h.val_loss_pose ?? null,
+        adv: h.adv_loss ?? null,
       }));
     }
     
