@@ -1,8 +1,8 @@
 # State Tracker
 
-- **Current Loop**: 26
-- **Phase**: Phase 4 — Running Training (Paused)
-- **Status**: Loop 26 training started successfully with the Gaussian kernel size alignment fix (preventing the Epoch 28 out-of-bounds crash). Training progressed through Epoch 5 (loss decreased to 0.0051, checkpoints saved and synced) and was gracefully paused via API CLI for PC shutdown. Ready to resume with the `--resume` flag when restarted.
+- **Current Loop**: 27
+- **Phase**: Phase 1 — Grounded Brainstorming & Planning
+- **Status**: Loop 26 training completed but suffered from two critical pipeline bugs (horizontal flip keypoint scrambling and CPU dataloader worker curriculum desync) that caused joint coalescence/skeleton collapse. These pipeline bugs have been fully fixed and unit-tested locally. Ready to launch Loop 27, a clean rerun of the Sigma Curriculum + Cutout recipe on the fully pristine, bug-free codebase.
 - **Absolute Priority**: 
   1. **PIVOT CONFIRMED**: Pretrained approach definitively abandoned. The HRNet RGB→IR domain gap, combined with the 80-subject training set scale and 1-channel conv1 limitation, creates a structural ceiling at ~42% that progressive unfreezing cannot breach.
   2. **Scratch Baselines remain superior**: loop2 (46.6%), loop9 (45.1%), loop17 (43.1%) are the targets.
@@ -25,6 +25,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 | loop4_uda_alignment | argmax | 35.6% | 40.3 px | UDA BASE |
 | loop23_stabilized_pretraining | argmax | **41.0%** | 37.0 px | **SUCCESSFUL FINE-TUNING** |
 | loop18_gcn_final_v5 | soft-argmax | 33.4% | 26.6 px | SUCCESS |
+| loop26_sigma_cutout | soft-argmax | 44.4% | 30.3 px | **COLLAPSED (BUGGY)** |
 | loop19 | soft-argmax | 12.7% | 66.7 px | **SKELETON COLLAPSE** |
 
 The loop16 `best_model.pth` was saved based on **combined val loss** (heatmap MSE + coord L1 + anatomical), NOT on PCK. Combined loss is dominated by the anatomical term (lambda=0.5) and does not align with PCK. The actual best PCK epoch for loop16 is unknown because only epoch_1.pth (corrupted) and best_model.pth were downloaded.
@@ -69,6 +70,7 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 23 | Stabilized Pre-training (Freeze Stem + Stage 1) | SUCCESS | **41.0%** | Successfully fine-tuned pre-trained backbone after resolving nested downsample/transition loading mismatch! |
 | 24 | Discriminative LR (0.1× backbone, fully unfrozen) | UNDERPERFORMED | **36.7%** | Worse than Loop 23 (41.0%) despite discriminative LR. Root cause: initial gradient washout from random head is too severe even at 1e-5 backbone LR. Linear convergence visible (still improving at epoch 30). |
 | 25 | Progressive Unfreezing (Phase 1: Frozen 15 ep, Phase 2: Disc. LR) | UNDERPERFORMED | **41.87%** (peak E33) / 40.33% final | Best pretrained result yet, but still 4.7pp below scratch baseline (46.6%). Hard plateau at ~42% despite 50 epochs and full backbone fine-tuning. Confirmed train-val divergence (gap grew 1731% in Phase 2), indicating mild overfitting on 80-subject set. **VERDICT: Structural ceiling on pretrained route. Pivot to scratch-based improvements.** |
+| 26 | Sigma Curriculum + Cutout (Scratch, 40ep) | FAILURE (BUGS) | **44.4%** | **PIPELINE BUGS**: (1) Horizontal flip keypoints were not re-indexed (coordinates scrambled under 50% flip); (2) Dynamic sigma curriculum failed to sync to CPU dataloader worker processes (sigma stayed at 3.0). Resulted in joint coalescence and coordinate collapse. Bugs are now fully fixed and verified locally. |
 
 ## ⚠️ CRITICAL: Pretrained Route Post-Mortem (2026-05-18 — Final)
 
@@ -82,6 +84,6 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 
 **FINAL VERDICT**: The pretrained HRNet-W32 approach is definitively abandoned as a primary strategy for this dataset. The ceiling is structurally imposed by domain gap, conv1 limitation, and insufficient data scale for backbone adaptation. All future loops will focus on scratch-based improvements.
 
-## Next Planned Steps (Approved in Loop 26)
-1. **Loop 26 — Sigma Curriculum + Cutout Augmentation (Scratch, Subjects 1-80)**: Combine the most impactful proven techniques: sigma annealing (3.0→1.5 over 30 epochs) from Loop 17 with structured Cutout augmentation (block up to 30% of the image) to improve occlusion robustness. This directly targets the two remaining performance gaps: localization precision (sigma) and cover-2 generalization (cutout). Run for 40 epochs on full 80-subject set. Expected peak: 47-50%.
-2. **Loop 27 (Contingent)**: If Loop 26 beats 46.6%, stack the hinge loss from Loop 9 (foreshortening prior) on top of the Loop 26 recipe.
+## Next Planned Steps (Approved in Loop 27)
+1. **Loop 27 — Clean Rerun of Sigma Curriculum + Cutout Augmentation (Scratch, Subjects 1-80)**: Combine the most impactful proven techniques: sigma annealing (3.0→1.5 over 30 epochs) with structured Cutout augmentation (block up to 35% of the image) to improve occlusion robustness, thermal intensity jitter, readout sensor noise, and random translations. Run for 40 epochs on full 80-subject set using the **fully fixed keypoint flip indexing and GPU-based on-the-fly heatmap curriculum**. Expected peak: 48-52% PCK, < 24 px MPJPE.
+2. **Loop 28 (Contingent)**: If Loop 27 beats 46.6%, stack the hinge loss from Loop 9 (foreshortening prior) on top of the Loop 27 recipe.

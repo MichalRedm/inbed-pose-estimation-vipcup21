@@ -26,13 +26,18 @@
    - **Result**: **41.87% PCK@0.2 (peak, E33), 40.33% final**. Best pretrained result yet. Phase 2 transition was clean — no loss spike, correct parameter group setup confirmed. However, train-val loss gap grew by 1731% during Phase 2 (from 0.00005 to 0.00101), revealing that the 80-subject dataset is too small to fully adapt 915 backbone parameter groups without overfitting. **STRUCTURAL CEILING CONFIRMED at ~42%.** The fundamental RGB→IR domain gap and 1-channel conv1 weakness cannot be overcome by fine-tuning scheduling alone.
    - **Priority**: Completed. **VERDICT: Abandon pretrained route.**
 
-5. **[HIGHEST PRIORITY — Loop 26] Sigma Curriculum + Structured Cutout Augmentation (Scratch, Subjects 1-80)**:
-   - **Hypothesis**: Two independent and complementary improvements to the best scratch baseline (Loop 2, 46.6%):
-     - **Sigma Curriculum (3.0→1.5 over 30 epochs)**: Start with wide Gaussians (easy to localize broad region), progressively narrow to force fine-grained localization. Loop 17 already partially validated this (43.1% without full data), and literature confirms +3-5% gains. The curriculum prevents the model from getting stuck in coarse-grained local minima.
-     - **Structured Cutout (Large Block Masking, 30-50% area)**: Zero out contiguous rectangular blocks during training to force holistic structural reasoning. The model currently over-relies on local thermal texture; cutout forces it to predict occluded limbs from structural priors. Directly addresses cover2 performance gap.
-   - **Implementation**: Add `sigma_start/sigma_end` schedule to `base_trainer.py` (already exists from Loop 17). Add `CutoutAugmentation` class to augmentation pipeline with configurable block size and probability.
-   - **Priority**: **HIGHEST** (both components have low implementation cost, high ROI, and are orthogonal — they can be tested together or separately).
-   - **Expected PCK**: 47–51%. If sigma curriculum alone gives ~3pp improvement on top of Loop 2 (estimated 49.6%), and cutout provides +1-2% occlusion robustness, we could reach 50%+ for the first time.
+5. **[FAILURE — PIPELINE BUGS] Loop 26: Sigma Curriculum + Structured Cutout (Scratch, Subjects 1-80)**:
+   - **Hypothesis**: Combine sigma annealing curriculum with structured cutout, thermal jitter, translation, and sensor noise to improve cover1/cover2 accuracy.
+   - **Result**: Underperformed (44.4% PCK). Investigated and discovered two severe pipeline bugs: (1) horizontal flip scrambled keypoint coordinate mapping due to missing index re-indexing; (2) persistent CPU dataloader worker processes failed to synchronize epoch-varying sigma (remained stuck at 3.0). This resulted in contradictory spatial signals and caused joint coalescence / skeleton collapse.
+   - **Action**: Fix bugs completely. Re-run as Loop 27.
+
+6. **[HIGHEST PRIORITY — Loop 27] Clean Sigma Curriculum + Structured Cutout Rerun (Scratch, Subjects 1-80)**:
+   - **Hypothesis**: Re-running the exact same excellent Loop 26 recipe (sigma annealing 3.0→1.5 over 30 epochs + structured Cutout + translation + thermal dynamic range jitter + sensor noise) on a **fully clean, bug-free codebase** with:
+     - Correct keypoint horizontal flip index mapping (left-right sides swapped).
+     - GPU-based on-the-fly vectorized heatmap generation `generate_pytorch_heatmaps` to guarantee 100% synchronized curriculum execution.
+     - PCK-based best checkpoint selection.
+   - **Expected PCK**: 48–52%, < 24 px MPJPE (beating the 46.6% scratch baseline).
+   - **Priority**: **HIGHEST**.
 
 4. **Structured Regional Cutout (Simulated Extreme Occlusion)**:
    - **Hypothesis**: The current `ThermalDiffusionAugmenter` only applies a wavy blur to simulate a blanket. The model relies too much on residual thermal leakage. Applying "GridMask" or large contiguous "Cutout" blocks that zero out entire limbs will force the network to learn holistic structural dependencies rather than local textures, preparing it for the extreme occlusion of `cover2`.
