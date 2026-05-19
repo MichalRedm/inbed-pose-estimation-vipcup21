@@ -7,13 +7,13 @@ from src.training.uda_trainer import UDATrainer
 
 
 @pytest.fixture
-def base_config():
+def base_config(tmp_path):
     return {
         "model": {"name": "hrnet", "hrnet": {"num_joints": 14, "in_channels": 1}},
         "training": {
             "lr": 0.0001,
             "weight_decay": 0.0001,
-            "save_dir": "models/checkpoints",
+            "save_dir": str(tmp_path / "models" / "checkpoints"),
         },
         "dataset": {"image_size": [256, 256]},
     }

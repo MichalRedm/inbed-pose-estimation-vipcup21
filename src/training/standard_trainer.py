@@ -96,7 +96,11 @@ class StandardTrainer(BaseTrainer):
             or self.lambda_coord_occluded > 0
         ):
             # Use high temperature to ensure soft-argmax focuses on the actual peak
-            self.soft_argmax = SoftArgmax2D(temperature=100.0).to(device)
+            # Pass window_size (defaulting to 15) to enable local-masked soft-argmax
+            soft_argmax_window = training_cfg.get("soft_argmax_window", 15)
+            self.soft_argmax = SoftArgmax2D(
+                temperature=100.0, window_size=soft_argmax_window
+            ).to(device)
 
         if self.lambda_anatomical > 0:
             self.anatomical_criterion = AnatomicalLoss(

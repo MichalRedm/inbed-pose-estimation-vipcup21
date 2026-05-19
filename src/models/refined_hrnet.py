@@ -22,7 +22,10 @@ class GCNRefinedHRNet(nn.Module):
             hrnet_cfg = config
 
         self.hrnet = HRNet(hrnet_cfg)
-        self.soft_argmax = SoftArgmax2D(temperature=100.0)
+        soft_argmax_window = hrnet_cfg.get("soft_argmax_window", 15)
+        self.soft_argmax = SoftArgmax2D(
+            temperature=100.0, window_size=soft_argmax_window
+        )
         self.refiner = PoseRefinementGCN(
             num_joints=hrnet_cfg.get("num_joints", 14),
             hidden_dim=hrnet_cfg.get("gcn_hidden_dim", 64),

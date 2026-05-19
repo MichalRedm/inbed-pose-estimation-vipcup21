@@ -1,0 +1,48 @@
+model:
+  name: hrnet
+  hrnet:
+    pretrained: false             # Scratch model only
+    architecture: w32
+    num_joints: 14
+    in_channels: 1
+    heatmap_size: [64, 64]
+    sigma: 2                      # Default; overridden by curriculum
+    soft_argmax_window: 15        # Masked window to isolate peak in refiner
+
+training:
+  epochs: 40
+  batch_size: 16
+  lr: 0.0001
+  weight_decay: 0.0001
+  sigma_start: 3.0                # GPU Target Heatmap Curriculum
+  sigma_end: 1.5
+  
+  # Structural Penalization Parameters
+  lambda_anatomical: 0.1          # Anatomical structural weight
+  anatomical_mode: "two_sided_hinge"
+  warmup_epochs: 10               # Warm up the anatomical loss to avoid early local minima
+  
+  # Differentiable coordinate supervision using our Local-Masked Soft-Argmax
+  lambda_coord: 2.0               # Direct coordinate regression L1 loss
+  lambda_coord_occluded: 1.0
+  soft_argmax_window: 15          # Local window size in trainer
+  
+  augmentation:
+    enabled: true
+    flip_prob: 0.5
+    rotation_range: [-30, 30]
+    scaling_range: [0.8, 1.2]
+    translation: [0.10, 0.10]
+    occlusion_prob: 0.5
+    cutout_prob: 0.5
+    cutout_size_ratio: 0.35
+    intensity_jitter_prob: 0.5
+    intensity_jitter_range: [0.55, 1.15]
+    contrast_jitter_range: [0.5, 1.15]
+    sensor_noise_prob: 0.4
+    sensor_noise_sigma: [5, 12]
+
+dataset:
+  subjects_train: [1, 80]
+  subjects_val: [81, 90]
+  image_size: [256, 256]
