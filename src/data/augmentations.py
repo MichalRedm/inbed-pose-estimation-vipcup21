@@ -356,8 +356,9 @@ class DataAugmenter:
                 image = v2.functional.hflip(image)
                 if kpts is not None:
                     kpts = v2.functional.hflip(kpts)
-                    # Reorder joints for symmetry
+                    # Reorder joints for symmetry (must reorder BOTH keypoint coordinates and visibility)
                     flip_indices = [5, 4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 12, 13]
+                    kpts = tv_tensors.KeyPoints(kpts[:, flip_indices, :], canvas_size=kpts.canvas_size)
                     vis = vis[flip_indices]
 
         # 3. Apply Affine (Rotation + Scaling + Translation)

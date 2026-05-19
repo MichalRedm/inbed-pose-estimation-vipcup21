@@ -53,6 +53,24 @@
 8. **Joint-Specific Adaptive Loss Scaling (Focal Heatmap Loss)**:
    - **Result**: [FAILURE] (Loop 11). Over-focus on extremities led to structural instability.
 
+9. **[FUTURE] Input Channel Replication with Pristine Pretrained Backbone (ImageNet HRNet-W32)**:
+   - **Hypothesis**: Instead of modifying the pre-trained `conv1` layer to accept 1-channel input (and losing features due to averaging), keep `in_channels=3` in HRNet. Replicate the 1-channel thermal input three times to form a 3-channel input ($R=G=B$). This preserves 100% of the ImageNet edge/texture spatial priors in `conv1`, preventing initial feature washout and resolving the structural ceiling of pretrained models on thermal data.
+   - **Implementation**: Set `in_channels=3` and `pretrained=True` in HRNet config. Modify `VIPCupDataset` to output `[3, H, W]` tensors for IR images by repeating the channel.
+   - **Priority**: High (Low implementation cost, high theoretical ROI to bridge the domain gap).
+   - **Expected PCK**: 48–52%.
+
+10. **[FUTURE] Cross-Modality Feature Distillation (Aligned RGB → IR)**:
+    - **Hypothesis**: Since the SLP dataset contains aligned RGB and IR image pairs, we can train a strong RGB-only teacher model on the color images. During training of the thermal student model, we apply a feature-imitation loss (e.g., MSE or Cosine Similarity) between the intermediate feature maps of the RGB teacher and the IR student. This transfers robust, occlusion-invariant human spatial priors from the clear RGB domain into the thermal domain.
+    - **Implementation**: Train a standard HRNet on RGB uncover images. Save the weights as a teacher. During thermal training, run both images, matching the final parallel stream outputs before the head.
+    - **Priority**: Medium-High (High ROI, moderate implementation effort).
+    - **Expected PCK**: 50–54%.
+
+11. **[FUTURE] Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose**:
+    - **Hypothesis**: Instead of training top-down HRNet from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` project. Fine-tune them directly on the SLP dataset.
+    - **Implementation**: Load `yolo11n-pose.pt` using the `ultralytics` API, map keypoint labels, and fine-tune on the SLP training split.
+    - **Priority**: Medium (Leverages existing thermal-specific pre-trained weights, but requires integrating the `ultralytics` codebase).
+    - **Expected PCK**: 48–53%.
+
 ## Web Research Syntheses
 - **Foreshortening Priors**: 2D bone lengths are upper-bounded by physical 3D length but lower-bounded by 0. Using a Hinge loss (ReLU) on length exceeding the max effectively models this projection constraint.
 - **Curriculum Learning for Priors**: Enforcing structural constraints too early can lead to poor local minima. A linear warmup allows the model to find the correct spatial basins first.
@@ -66,6 +84,9 @@
 - **Loop 25 Post-Mortem — Pretrained Route Final Analysis (2026-05-18)**: Progressive unfreezing executed correctly (confirmed by remote logs: `[HRNet] All parameters unfrozen (progressive unfreezing Phase 2).`; `[Factory] Using Discriminative LR! Head: 5, Backbone: 915 param groups, ratio 0.1`). Phase 2 transition at E16 produced an immediate PCK jump (+4pp) with zero loss spike, confirming the 2-phase design was technically sound. However, the train-val loss divergence gap grew from 0.00005 (E16) to 0.00101 (E50) — a 1731% increase — indicating progressive backbone overfitting, not domain adaptation. Peak PCK of 41.87% was reached at epoch 33 then regressed to 40.33% at epoch 50. **THE HARD CEILING AT ~42% IS STRUCTURAL**: the RGB→IR domain gap (texture vs. heat diffusion statistics), the averaging of conv1 from 3→1 channels (losing the pre-trained first-layer detector), and the dataset being too small (~1700 images) to fully fine-tune 915 backbone parameter groups all compound to prevent the pretrained backbone from ever catching up to a scratch model initialized appropriately for this domain.
 - **Literature Confirmation**: 2023-2024 research on IR pose estimation confirms that RGB-pretrained HRNet fine-tuned on thermal data consistently underperforms vs. models pre-trained on grayscale COCO or thermal-specific data. Modality-specific batch normalization and modality-adaptive loss functions are required to bridge this gap without domain-specific pre-training data, neither of which is feasible within our current pipeline constraints.
 - **Sigma Curriculum Mechanism**: Research confirms sigma annealing (wide→narrow Gaussian) provides a curriculum that: (1) provides wide basin of attraction early (easy gradient signal), (2) progressively forces finer-grained localization, (3) prevents the model from converging to coarse-grained local minima where it "knows" the rough joint region but cannot pinpoint exact location. Expected improvement: +3-5% PCK on structured datasets.
+- **Modality Pre-training & Grayscale COCO (2026-05-19 Web Research)**: In-depth survey of thermal/IR pose estimation literature (LLVIP-Pose, UCH-ThermalPose, OpenThermalPose) confirms that RGB-pretrained backbones undergo severe **feature washout** when the early 3-channel layers are averaged to 1-channel. The state-of-the-art recommendation is either: (1) **Channel Replication**: Keep `in_channels=3` and replicate the 1-channel IR input three times ($R=G=B=IR$), allowing ImageNet features to function with 100% integrity; or (2) **Grayscale COCO Pre-training**: Pre-train standard models on grayscale-converted MS COCO to naturally align weight statistics with single-channel intensity before domain transfer.
+- **IS2AI OpenThermalPose Checkpoints**: The official `IS2AI/OpenThermalPose` research initiative has released public pre-trained YOLOv8-pose and YOLO11-pose checkpoints trained directly on thermal LWIR imagery. These act as a strong alternative baseline for high-speed, real-time thermal human pose estimation on edge devices.
+- **Cross-Modality Distillation**: For datasets with aligned modalities (like SLP's RGB and IR pairs in the uncover phase), cross-modality distillation—where a powerful RGB teacher model guides a thermal student model's feature maps—is highly effective at transferring rich spatial priors to the thermal network.
 
 ## Graveyard
 - **Adversarial UDA (Global)**: Loop 5. Caused feature washout.

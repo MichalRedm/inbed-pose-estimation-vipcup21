@@ -8,6 +8,58 @@ from .losses import AnatomicalLoss, UncertaintyWeighting
 from ..models.layers import SoftArgmax2D
 
 
+def generate_pytorch_heatmaps(joints: torch.Tensor, heatmap_size=(64, 64), image_size=(256, 256), sigma=2.0) -> torch.Tensor:
+    """
+    Generate 2D Gaussian heatmaps on PyTorch tensors directly on the target device.
+    joints: tensor of shape (B, 3, 14) -> (coords, joints) -> joints[:, :2, :] is (x, y)
+    heatmap_size: (H_out, W_out)
+    image_size: (H_in, W_in)
+    sigma: float
+    """
+    B, _, J = joints.shape
+    H_out, W_out = heatmap_size
+    H_in, W_in = image_size
+    device = joints.device
+    
+    # Scale joints to heatmap size
+    scale_x = W_out / W_in
+    scale_y = H_out / H_in
+    
+    mu_x = joints[:, 0, :] * scale_x  # (B, J)
+    mu_y = joints[:, 1, :] * scale_y  # (B, J)
+    visibility = joints[:, 2, :]      # (B, J)
+    
+    # Create coordinate grids
+    grid_y, grid_x = torch.meshgrid(
+        torch.arange(H_out, device=device, dtype=torch.float32),
+        torch.arange(W_out, device=device, dtype=torch.float32),
+        indexing="ij"
+    )  # (H_out, W_out)
+    
+    grid_x = grid_x.view(1, 1, H_out, W_out)  # (1, 1, H_out, W_out)
+    grid_y = grid_y.view(1, 1, H_out, W_out)  # (1, 1, H_out, W_out)
+    
+    mu_x = mu_x.view(B, J, 1, 1)  # (B, J, 1, 1)
+    mu_y = mu_y.view(B, J, 1, 1)  # (B, J, 1, 1)
+    
+    # Generate Gaussian
+    dist_sq = (grid_x - mu_x)**2 + (grid_y - mu_y)**2
+    sigma_val = float(sigma)
+    heatmaps = torch.exp(-dist_sq / (2 * sigma_val**2))
+    
+    # Apply visibility and out-of-bounds mask
+    invalid_mask = (visibility > 1) | ((joints[:, 0, :] == 0) & (joints[:, 1, :] == 0))  # (B, J)
+    invalid_mask = invalid_mask.view(B, J, 1, 1)
+    
+    heatmaps = heatmaps.masked_fill(invalid_mask, 0.0)
+    
+    # Also mask out individual joints that are out of bounds
+    out_of_bounds = (mu_x < 0) | (mu_y < 0) | (mu_x >= W_out) | (mu_y >= H_out)  # (B, J, 1, 1)
+    heatmaps = heatmaps.masked_fill(out_of_bounds, 0.0)
+    
+    return heatmaps
+
+
 class StandardTrainer(BaseTrainer):
     """
     Standard supervised trainer for pose estimation with optional anatomical constraints.
@@ -100,10 +152,17 @@ class StandardTrainer(BaseTrainer):
     def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
         images = batch["image"].to(self.device)
         joints = batch["joints"].to(self.device)  # (B, 3, 14)
-        targets = batch["target"].to(self.device)
 
-        # Track current sigma for metrics
+        # Track current sigma for metrics and dynamic curriculum
         sigma = self._get_current_sigma(self.current_epoch)
+        
+        # Generate target heatmaps dynamically with high precision on the GPU!
+        targets = generate_pytorch_heatmaps(
+            joints=joints,
+            heatmap_size=(64, 64),
+            image_size=(256, 256),
+            sigma=sigma
+        )
 
         # Forward pass
         model_to_call = (
@@ -186,9 +245,16 @@ class StandardTrainer(BaseTrainer):
     def _val_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
         images = batch["image"].to(self.device)
         joints = batch["joints"].to(self.device)
-        targets = batch["target"].to(self.device)
 
         sigma = self._get_current_sigma(self.current_epoch)
+        
+        # Generate target heatmaps dynamically with high precision on the GPU!
+        targets = generate_pytorch_heatmaps(
+            joints=joints,
+            heatmap_size=(64, 64),
+            image_size=(256, 256),
+            sigma=sigma
+        )
 
         # Forward pass
         model_to_call = (
