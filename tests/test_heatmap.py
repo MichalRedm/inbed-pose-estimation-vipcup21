@@ -64,6 +64,25 @@ def test_visibility_semantics():
     )
 
 
+def test_diverse_sigmas():
+    """Verify that heatmap generation is stable across various sigma values (curriculum decay)."""
+    dataset = _make_dataset()
+    joints = torch.zeros((3, 14))
+    joints[0, 0] = 128
+    joints[1, 0] = 128
+    joints[2, 0] = 0
+
+    # Test all sigma values likely to occur during curriculum scheduling
+    for sigma in [3.0, 2.5, 2.0, 1.75, 1.6, 1.5, 1.0, 0.5]:
+        dataset.set_sigma(sigma)
+        try:
+            hm = dataset._generate_heatmaps(joints)
+            assert hm.shape == (14, 64, 64), f"Wrong shape for sigma={sigma}"
+            assert hm[0].max() > 0, f"Gaussian peak missing for sigma={sigma}"
+        except Exception as e:
+            pytest.fail(f"Heatmap generation failed with sigma={sigma}: {e}")
+
+
 if __name__ == "__main__":
-    test_heatmap_generation()
-    test_visibility_semantics()
+    import pytest
+    pytest.main([__file__])
