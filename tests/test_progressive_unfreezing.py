@@ -69,6 +69,7 @@ def test_standard_trainer_progressive_unfreezing_setup():
     # Cleanup save_dir
     import shutil
     import os
+
     save_dir = config["training"]["save_dir"]
     if os.path.exists(save_dir):
         shutil.rmtree(save_dir)

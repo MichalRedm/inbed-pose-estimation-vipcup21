@@ -330,9 +330,12 @@ class BaseTrainer(ABC):
                 best_path = os.path.join(self.save_dir, "checkpoints", "best_model.pth")
                 try:
                     import shutil
+
                     shutil.copy2(latest_path, best_path)
                     if self.is_main:
-                        print(f"[Trainer] Verified and saved new best model to {best_path}")
+                        print(
+                            f"[Trainer] Verified and saved new best model to {best_path}"
+                        )
                 except Exception as e:
                     if self.is_main:
                         print(f"[Trainer] Warning: could not copy best model: {e}")

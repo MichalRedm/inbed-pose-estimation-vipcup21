@@ -7,6 +7,7 @@ from src.training.manager import TrainingManager
 def manager():
     import shutil
     from pathlib import Path
+
     m = TrainingManager()
     yield m
     if m.current_run_id:

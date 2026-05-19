@@ -85,4 +85,5 @@ def test_diverse_sigmas():
 
 if __name__ == "__main__":
     import pytest
+
     pytest.main([__file__])

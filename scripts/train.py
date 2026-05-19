@@ -1,7 +1,6 @@
 import os
 import torch
 import argparse
-import re
 import json
 import torch.distributed as dist
 import random
@@ -201,13 +200,12 @@ def train():
         ckpt_root = Path(config["training"]["save_dir"]) / "checkpoints"
         ckpt_files = list(ckpt_root.glob("*.pth"))
         if ckpt_files:
-
             latest_model_path = ckpt_root / "latest_model.pth"
             if latest_model_path.exists():
                 latest_ckpt = latest_model_path
             else:
                 latest_ckpt = max(ckpt_files, key=os.path.getmtime)
-                
+
             if rank == 0:
                 print(f"Loading checkpoint: {latest_ckpt}")
 

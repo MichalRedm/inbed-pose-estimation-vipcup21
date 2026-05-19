@@ -60,14 +60,20 @@ def main():
             with open(config_path, "r", encoding="utf-8") as f:
                 if config_path.endswith(".json"):
                     import json
+
                     cfg = json.load(f)
                 else:
                     import yaml
+
                     cfg = yaml.safe_load(f)
-                config_resume = cfg.get("training", {}).get("resume", False) or cfg.get("resume", False)
+                config_resume = cfg.get("training", {}).get("resume", False) or cfg.get(
+                    "resume", False
+                )
         except Exception as e:
-            print(f"Warning: could not read config file {config_path} for resume check: {e}")
-            
+            print(
+                f"Warning: could not read config file {config_path} for resume check: {e}"
+            )
+
     if config_resume:
         print("[remote_train] Config file indicates resume=True. Forcing resume mode.")
         args_cli.resume = True
@@ -100,13 +106,17 @@ def main():
             else:
                 # Clean up any stale .tmp files that could cause resume issues
                 print(f"[clean] Removing stale .tmp files in {remote_run_dir}...")
-                gpu.run(f"find {remote_run_dir} -name '*.tmp' -delete || true", stream=False)
-            
+                gpu.run(
+                    f"find {remote_run_dir} -name '*.tmp' -delete || true", stream=False
+                )
+
             # Clean up all other run directories to prevent accumulation of massive checkpoint files
-            print(f"[clean] Cleaning up all other run folders under results/runs/ to prevent disk space accumulation...")
+            print(
+                "[clean] Cleaning up all other run folders under results/runs/ to prevent disk space accumulation..."
+            )
             gpu.run(
                 f"find /root/project/results/runs/ -maxdepth 1 -mindepth 1 -type d ! -name '{args_cli.run_id}' -exec rm -rf {{}} \\; || true",
-                stream=False
+                stream=False,
             )
         else:
             if not args_cli.resume:
@@ -210,24 +220,41 @@ def main():
             print("\n[resume] Checking for local checkpoints to upload...")
             local_latest = local_ckpt_dir / "latest_model.pth"
             local_best = local_ckpt_dir / "best_model.pth"
-            
+
             # Ensure remote checkpoint directory exists
             gpu.run(f"mkdir -p {remote_ckpt_dir}", stream=False)
-            
-            for local_path, fname in [(local_latest, "latest_model.pth"), (local_best, "best_model.pth")]:
+
+            for local_path, fname in [
+                (local_latest, "latest_model.pth"),
+                (local_best, "best_model.pth"),
+            ]:
                 if local_path.exists():
                     print(f"[resume] Uploading local {fname} to remote...")
                     try:
-                        gpu.upload(str(local_path), f"{remote_ckpt_dir}/{fname}", recursive=False)
+                        gpu.upload(
+                            str(local_path),
+                            f"{remote_ckpt_dir}/{fname}",
+                            recursive=False,
+                        )
                     except Exception as e:
-                        print(f"[resume] Warning: failed to upload {fname} due to {e}. Attempting to reconnect and retry...")
+                        print(
+                            f"[resume] Warning: failed to upload {fname} due to {e}. Attempting to reconnect and retry..."
+                        )
                         try:
                             gpu.disconnect()
                             gpu.connect()
-                            gpu.upload(str(local_path), f"{remote_ckpt_dir}/{fname}", recursive=False)
-                            print(f"[resume] Successfully uploaded {fname} after reconnect.")
+                            gpu.upload(
+                                str(local_path),
+                                f"{remote_ckpt_dir}/{fname}",
+                                recursive=False,
+                            )
+                            print(
+                                f"[resume] Successfully uploaded {fname} after reconnect."
+                            )
                         except Exception as retry_err:
-                            print(f"[resume] Warning: retry upload failed for {fname}: {retry_err}")
+                            print(
+                                f"[resume] Warning: retry upload failed for {fname}: {retry_err}"
+                            )
                             if fname == "latest_model.pth":
                                 # latest_model.pth is strictly required for resume
                                 raise retry_err
@@ -259,12 +286,14 @@ def main():
                 for f in result.stdout.splitlines()
                 if f.strip().endswith(".pth")
             ]
-            
+
             sftp = None
             try:
                 sftp = session._ssh.open_sftp()
             except Exception as sftp_err:
-                print(f"[sync] Warning: Could not open SFTP connection for verification: {sftp_err}")
+                print(
+                    f"[sync] Warning: Could not open SFTP connection for verification: {sftp_err}"
+                )
 
             for remote_path in remote_files:
                 fname = remote_path.split("/")[-1]
@@ -280,10 +309,12 @@ def main():
                             pass
 
                     local_path = local_ckpt_dir / fname
-                    
+
                     # Download with up to 3 retries and size verification
                     for attempt in range(1, 4):
-                        print(f"\n[sync] Downloading {fname} (size={remote_size} bytes, attempt {attempt})...")
+                        print(
+                            f"\n[sync] Downloading {fname} (size={remote_size} bytes, attempt {attempt})..."
+                        )
                         try:
                             # Clean up old file if it exists to avoid partial write issues
                             if local_path.exists():
@@ -292,25 +323,37 @@ def main():
                                 except OSError:
                                     pass
 
-                            session.download(remote_path, str(local_ckpt_dir), recursive=False)
-                            
+                            session.download(
+                                remote_path, str(local_ckpt_dir), recursive=False
+                            )
+
                             # Verify local file exists and matches remote size
                             if local_path.exists():
                                 local_size = local_path.stat().st_size
                                 if remote_size is None or local_size == remote_size:
-                                    print(f"[sync] {fname} successfully saved and verified! ({local_size} bytes)")
+                                    print(
+                                        f"[sync] {fname} successfully saved and verified! ({local_size} bytes)"
+                                    )
                                     downloaded.add(fname)
                                     break
                                 else:
-                                    print(f"[sync] Warning: Size mismatch for {fname}! Remote: {remote_size}, Local: {local_size}")
+                                    print(
+                                        f"[sync] Warning: Size mismatch for {fname}! Remote: {remote_size}, Local: {local_size}"
+                                    )
                             else:
-                                print(f"[sync] Warning: Local file {fname} not found after download.")
+                                print(
+                                    f"[sync] Warning: Local file {fname} not found after download."
+                                )
                         except Exception as dl_err:
-                            print(f"[sync] Warning: Download failed for {fname}: {dl_err}")
-                        
+                            print(
+                                f"[sync] Warning: Download failed for {fname}: {dl_err}"
+                            )
+
                         time.sleep(2.0)
                     else:
-                        print(f"[sync] ERROR: Failed to download and verify {fname} after 3 attempts!")
+                        print(
+                            f"[sync] ERROR: Failed to download and verify {fname} after 3 attempts!"
+                        )
 
             if sftp:
                 try:
@@ -432,13 +475,15 @@ def main():
 
         training_thread.join()
         poller_thread.join(timeout=60)
-        
+
         # FINAL STRIKE SYNCHRONOUS SYNC: Run one final, strict, synchronous verification sync on the main thread
         print("\n[sync] Running final strict verification sync...")
         try:
             poll_and_download(gpu)
         except Exception as sync_err:
-            print(f"[sync] Warning: Final synchronous sync encountered an error: {sync_err}")
+            print(
+                f"[sync] Warning: Final synchronous sync encountered an error: {sync_err}"
+            )
 
         result = training_result[0] if training_result else None
         if result is None or not result.ok():

@@ -189,7 +189,9 @@ class ThermalDiffusionAugmenter:
                 for pair in [(0, 5), (1, 4), (2, 3), (8, 9)]:
                     if pair[0] < j_np.shape[1] and pair[1] < j_np.shape[1]:
                         if j_np[2, pair[0]] < 2 and j_np[2, pair[1]] < 2:
-                            coverage_options.append(min(j_np[1, pair[0]], j_np[1, pair[1]]))
+                            coverage_options.append(
+                                min(j_np[1, pair[0]], j_np[1, pair[1]])
+                            )
             elif len(joints.shape) == 3:  # (1, N, 2)
                 j_np = joints[0].cpu().numpy()
                 for pair in [(0, 5), (1, 4), (2, 3), (8, 9)]:
@@ -358,7 +360,9 @@ class DataAugmenter:
                     kpts = v2.functional.hflip(kpts)
                     # Reorder joints for symmetry (must reorder BOTH keypoint coordinates and visibility)
                     flip_indices = [5, 4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 12, 13]
-                    kpts = tv_tensors.KeyPoints(kpts[:, flip_indices, :], canvas_size=kpts.canvas_size)
+                    kpts = tv_tensors.KeyPoints(
+                        kpts[:, flip_indices, :], canvas_size=kpts.canvas_size
+                    )
                     vis = vis[flip_indices]
 
         # 3. Apply Affine (Rotation + Scaling + Translation)
