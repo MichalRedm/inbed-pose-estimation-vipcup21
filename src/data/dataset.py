@@ -270,7 +270,9 @@ class VIPCupDataset(Dataset):
                 continue
 
             # Generate gaussian
-            size = 6 * self.sigma + 1
+            size = int(6 * self.sigma + 1)
+            if size % 2 == 0:
+                size += 1
             x = np.arange(0, size, 1, float)
             y = x[:, np.newaxis]
             x0 = y0 = size // 2

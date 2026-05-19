@@ -33,3 +33,8 @@ To prevent "random mess" regressions in inference and ensure long-term research 
 
 ## 7. Coordinate Passthrough
 - **No Double-Decoding**: If a model natively outputs coordinates (`output_type == "coordinates"`), the inference pipeline MUST bypass `decode_heatmaps`. The `PoseDecodingWrapper` and `InferenceService` both enforce this check to prevent `ValueError` shape mismatches.
+
+## 8. Heatmap Decoding Parity
+- **No Heatmap Decoding Mutations**: Any modification to `decode_heatmaps` inside `src/utils/pose.py` or classes like `SoftArgmax2D` MUST default to the exact standard global argmax/soft-argmax behaviors unless explicitly configured otherwise.
+- **Parametric Default Protection**: Any new decoding features (such as local windowing, masking, or custom kernels) must default to disabled (`None` or `False`) so that legacy models loading these classes operate with 100% mathematical and behavioral parity compared to their original training settings.
+

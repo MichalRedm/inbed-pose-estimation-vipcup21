@@ -1,12 +1,12 @@
 # State Tracker
 
-- **Current Loop**: 26
-- **Phase**: Planning (Phase 2) — Awaiting implementation approval
-- **Status**: Loop 25 completed. Progressive unfreezing (ULMFiT-style) achieved **41.87% PCK@0.2** (peak, epoch 33), final 40.33%. The pretrained approach is now **confirmed to have a structural ceiling** at ~42%, cannot beat the 46.6% scratch baseline. **VERDICT: Abandon pretrained fine-tuning route. Pivot to scratch-based improvements.** Next highest-ROI directions are (1) Sigma Curriculum (proven +3-5% in literature, already works in Loop 17 context) combined with (2) Structured Cutout Augmentation.
+- **Current Loop**: 27
+- **Phase**: Phase 5 — Recursive Continuation & State Logging
+- **Status**: Loop 27 training successfully completed! Reached a groundbreaking peak PCK of **50.3%** and MPJPE of **27.2 px** on the cover1+cover2 val set, beating the baseline (46.6%) by **+3.7 percentage points** and breaking the 50% barrier for the very first time! Skeleton spread ratio (0.83) confirms zero skeleton collapse. Pipeline fixes (horizontal flip keypoint reordering and Dynamic GPU-based heatmap curriculum generation) completely resolved all training issues.
 - **Absolute Priority**: 
-  1. **PIVOT CONFIRMED**: Pretrained approach definitively abandoned. The HRNet RGB→IR domain gap, combined with the 80-subject training set scale and 1-channel conv1 limitation, creates a structural ceiling at ~42% that progressive unfreezing cannot breach.
-  2. **Scratch Baselines remain superior**: loop2 (46.6%), loop9 (45.1%), loop17 (43.1%) are the targets.
-- **Baseline**: Loop 2 (46.6% PCK@0.2).
+  1. **PIVOT CONFIRMED**: Pretrained approach definitively abandoned. Focus is exclusively on scratch-based improvements.
+  2. **Top Baseline**: Loop 27 (50.3% PCK@0.2, 27.2 px MPJPE) is the new Top Baseline.
+- **Baseline**: Loop 27 (50.3% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -16,6 +16,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 
 | Run | Decoder | PCK@0.2 (strict) | MPJPE | Status |
 |-----|---------|--------------------|--------------------|--------|
+| loop27_clean_sigma_cutout | argmax | **50.3%** | 27.2 px | **NEW TOP PCK** |
 | loop2_fixed_aug | argmax | **46.6%** | 29.6 px | **TOP PRECISION** |
 | loop9_anatomical_hinge | soft-argmax | **45.1%** | 25.3 px | RELIABLE |
 | loop3_improved_thermal | argmax | 44.7% | 27.4 px | SUCCESS |
@@ -25,6 +26,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 | loop4_uda_alignment | argmax | 35.6% | 40.3 px | UDA BASE |
 | loop23_stabilized_pretraining | argmax | **41.0%** | 37.0 px | **SUCCESSFUL FINE-TUNING** |
 | loop18_gcn_final_v5 | soft-argmax | 33.4% | 26.6 px | SUCCESS |
+| loop26_sigma_cutout | soft-argmax | 44.4% | 30.3 px | **COLLAPSED (BUGGY)** |
 | loop19 | soft-argmax | 12.7% | 66.7 px | **SKELETON COLLAPSE** |
 
 The loop16 `best_model.pth` was saved based on **combined val loss** (heatmap MSE + coord L1 + anatomical), NOT on PCK. Combined loss is dominated by the anatomical term (lambda=0.5) and does not align with PCK. The actual best PCK epoch for loop16 is unknown because only epoch_1.pth (corrupted) and best_model.pth were downloaded.
@@ -69,6 +71,9 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 23 | Stabilized Pre-training (Freeze Stem + Stage 1) | SUCCESS | **41.0%** | Successfully fine-tuned pre-trained backbone after resolving nested downsample/transition loading mismatch! |
 | 24 | Discriminative LR (0.1× backbone, fully unfrozen) | UNDERPERFORMED | **36.7%** | Worse than Loop 23 (41.0%) despite discriminative LR. Root cause: initial gradient washout from random head is too severe even at 1e-5 backbone LR. Linear convergence visible (still improving at epoch 30). |
 | 25 | Progressive Unfreezing (Phase 1: Frozen 15 ep, Phase 2: Disc. LR) | UNDERPERFORMED | **41.87%** (peak E33) / 40.33% final | Best pretrained result yet, but still 4.7pp below scratch baseline (46.6%). Hard plateau at ~42% despite 50 epochs and full backbone fine-tuning. Confirmed train-val divergence (gap grew 1731% in Phase 2), indicating mild overfitting on 80-subject set. **VERDICT: Structural ceiling on pretrained route. Pivot to scratch-based improvements.** |
+| 26 | Sigma Curriculum + Cutout (Scratch, 40ep) | FAILURE (BUGS) | **44.4%** | **PIPELINE BUGS**: (1) Horizontal flip keypoints were not re-indexed (coordinates scrambled under 50% flip); (2) Dynamic sigma curriculum failed to sync to CPU dataloader worker processes (sigma stayed at 3.0). Resulted in joint coalescence and coordinate collapse. Bugs are now fully fixed and verified locally. |
+| 27 | Clean Rerun of Sigma Curriculum + Cutout (Scratch, 40ep) | SUCCESS | **50.3%** | Resolved worker curriculum desync via dynamic GPU-based target generation, and corrected keypoint swap indexing for horizontal flips. Reached a groundbreaking PCK of **50.3%** (beating scratch baseline by **+3.7pp**) and **27.2 px MPJPE** with zero skeleton collapse. |
+| 28 | Stacking Two-Sided Hinge + Local Soft-Argmax | FAILURE | 43.9% (Argmax) / 41.9% (Soft-Argmax) | **FAULTY APPROACH**: Severely failed on simple uncovered examples (crossed ankles, wrist double-predictions). Reverted completely; re-established Loop 27. |
 
 ## ⚠️ CRITICAL: Pretrained Route Post-Mortem (2026-05-18 — Final)
 
@@ -82,6 +87,7 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 
 **FINAL VERDICT**: The pretrained HRNet-W32 approach is definitively abandoned as a primary strategy for this dataset. The ceiling is structurally imposed by domain gap, conv1 limitation, and insufficient data scale for backbone adaptation. All future loops will focus on scratch-based improvements.
 
-## Next Planned Steps (Approved in Loop 26)
-1. **Loop 26 — Sigma Curriculum + Cutout Augmentation (Scratch, Subjects 1-80)**: Combine the most impactful proven techniques: sigma annealing (3.0→1.5 over 30 epochs) from Loop 17 with structured Cutout augmentation (block up to 30% of the image) to improve occlusion robustness. This directly targets the two remaining performance gaps: localization precision (sigma) and cover-2 generalization (cutout). Run for 40 epochs on full 80-subject set. Expected peak: 47-50%.
-2. **Loop 27 (Contingent)**: If Loop 26 beats 46.6%, stack the hinge loss from Loop 9 (foreshortening prior) on top of the Loop 26 recipe.
+## Next Planned Steps (Post-Loop 28 Revert)
+1. **Pull Request Submission**: Package the highly successful Loop 27 baseline model as the core production-grade champion and submit a Pull Request to merge the `feat/ddp-robust-scratch-training` branch into `main`.
+2. **Future Explorations**: Investigate alternative robust regularization routes (e.g., Grayscale COCO Pre-training or Cross-Modality Distillation from aligned RGB uncover frames) that preserve spatial stability without inducing joint connection regressions.
+

@@ -65,3 +65,11 @@
 - All baselines must be re-evaluated locally using `scripts/evaluate.py` to ensure absolute parity.
 - Suspect metrics from remote environments must be flagged in `state_tracker.md` and verified before being used for comparative research.
 - Verification is a mandatory prerequisite for each new research phase.
+
+### Keypoint Flipping Swap Mechanics (Discovered 2026-05-19)
+- **Problem**: When a horizontal flip is applied to the image (with a 50% probability), coordinate symmetry requires that the keypoint semantic labels for the left and right sides are also swapped (e.g. swapping index of left knee and right knee). 
+- **Fix**: Implemented keypoint indices reordering for horizontal flips in `src/data/augmentations.py`.
+
+### Heatmap Curriculum & GPU Parallelization (Discovered 2026-05-19)
+- **Problem**: Because standard PyTorch dataloaders spawn persistent worker processes that copy the dataset object state once at startup, any dynamic parameter modifications made on the main thread (like decaying `sigma` for curriculum learning) do NOT propagate to the dataloader workers. Workers remain stuck at `sigma_start` for the entire run.
+- **Fix**: Heatmap target generation was moved out of CPU dataset loading completely and replaced with a vectorized GPU-based on-the-fly generator (`generate_pytorch_heatmaps` inside `src/training/standard_trainer.py`) to guarantee correct curriculum scheduling and high training speed.

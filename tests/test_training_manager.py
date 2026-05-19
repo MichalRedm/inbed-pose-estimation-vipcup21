@@ -5,7 +5,15 @@ from src.training.manager import TrainingManager
 
 @pytest.fixture
 def manager():
-    return TrainingManager()
+    import shutil
+    from pathlib import Path
+
+    m = TrainingManager()
+    yield m
+    if m.current_run_id:
+        run_dir = Path(__file__).parent.parent / "results" / "runs" / m.current_run_id
+        if run_dir.exists():
+            shutil.rmtree(run_dir)
 
 
 def test_manager_status_initial(manager):
