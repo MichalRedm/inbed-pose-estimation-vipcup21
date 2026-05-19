@@ -1,7 +1,7 @@
 # State Tracker
 
-- **Current Loop**: 28
-- **Phase**: Phase 1 — Grounded Brainstorming & Planning
+- **Current Loop**: 27
+- **Phase**: Phase 5 — Recursive Continuation & State Logging
 - **Status**: Loop 27 training successfully completed! Reached a groundbreaking peak PCK of **50.3%** and MPJPE of **27.2 px** on the cover1+cover2 val set, beating the baseline (46.6%) by **+3.7 percentage points** and breaking the 50% barrier for the very first time! Skeleton spread ratio (0.83) confirms zero skeleton collapse. Pipeline fixes (horizontal flip keypoint reordering and Dynamic GPU-based heatmap curriculum generation) completely resolved all training issues.
 - **Absolute Priority**: 
   1. **PIVOT CONFIRMED**: Pretrained approach definitively abandoned. Focus is exclusively on scratch-based improvements.
@@ -73,6 +73,7 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 25 | Progressive Unfreezing (Phase 1: Frozen 15 ep, Phase 2: Disc. LR) | UNDERPERFORMED | **41.87%** (peak E33) / 40.33% final | Best pretrained result yet, but still 4.7pp below scratch baseline (46.6%). Hard plateau at ~42% despite 50 epochs and full backbone fine-tuning. Confirmed train-val divergence (gap grew 1731% in Phase 2), indicating mild overfitting on 80-subject set. **VERDICT: Structural ceiling on pretrained route. Pivot to scratch-based improvements.** |
 | 26 | Sigma Curriculum + Cutout (Scratch, 40ep) | FAILURE (BUGS) | **44.4%** | **PIPELINE BUGS**: (1) Horizontal flip keypoints were not re-indexed (coordinates scrambled under 50% flip); (2) Dynamic sigma curriculum failed to sync to CPU dataloader worker processes (sigma stayed at 3.0). Resulted in joint coalescence and coordinate collapse. Bugs are now fully fixed and verified locally. |
 | 27 | Clean Rerun of Sigma Curriculum + Cutout (Scratch, 40ep) | SUCCESS | **50.3%** | Resolved worker curriculum desync via dynamic GPU-based target generation, and corrected keypoint swap indexing for horizontal flips. Reached a groundbreaking PCK of **50.3%** (beating scratch baseline by **+3.7pp**) and **27.2 px MPJPE** with zero skeleton collapse. |
+| 28 | Stacking Two-Sided Hinge + Local Soft-Argmax | FAILURE | 43.9% (Argmax) / 41.9% (Soft-Argmax) | **FAULTY APPROACH**: Severely failed on simple uncovered examples (crossed ankles, wrist double-predictions). Reverted completely; re-established Loop 27. |
 
 ## ⚠️ CRITICAL: Pretrained Route Post-Mortem (2026-05-18 — Final)
 
@@ -86,6 +87,7 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 
 **FINAL VERDICT**: The pretrained HRNet-W32 approach is definitively abandoned as a primary strategy for this dataset. The ceiling is structurally imposed by domain gap, conv1 limitation, and insufficient data scale for backbone adaptation. All future loops will focus on scratch-based improvements.
 
-## Next Planned Steps (Approved in Loop 28)
-1. **Loop 28 — Stack Hinge Loss on top of Loop 27 Recipe (Scratch, Subjects 1-80)**: Now that we have a highly robust, high-performing scratch-based pipeline yielding 50.3% PCK and 27.2 px MPJPE, we will stack the anatomical hinge loss from Loop 9 (which penalizes foreshortened body segments) to regularize keypoint regression and improve localization accuracy of extremity joints (wrists, ankles), aiming for < 24 px MPJPE and 51-53% PCK.
-2. **Loop 29 (Contingent)**: Stack GCN pose refinement or test custom joint-specific focal heatmap weight scheduling on top of the optimal Loop 28 base.
+## Next Planned Steps (Post-Loop 28 Revert)
+1. **Pull Request Submission**: Package the highly successful Loop 27 baseline model as the core production-grade champion and submit a Pull Request to merge the `feat/ddp-robust-scratch-training` branch into `main`.
+2. **Future Explorations**: Investigate alternative robust regularization routes (e.g., Grayscale COCO Pre-training or Cross-Modality Distillation from aligned RGB uncover frames) that preserve spatial stability without inducing joint connection regressions.
+

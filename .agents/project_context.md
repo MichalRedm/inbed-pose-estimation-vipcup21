@@ -31,7 +31,11 @@ Finalize and validate the production-grade architectural refactoring of the pose
 - [x] Implemented Robust Backward Compatibility for legacy checkpoints.
 - [x] Centralized Model Registry (`src/models/registry.py`) to prevent isolation bugs.
 - [x] Implemented Regression Testing for model loading (`tests/test_legacy_compatibility.py`).
-- [ ] Surpass Loop 2 (46.6% PCK@0.2) with stabilized Loop 22 training.
+- [x] Resolved horizontal keypoint flip indexing swap bug in data augmentations.
+- [x] Implemented synchronized dynamic GPU-based target heatmap curriculum rendering in StandardTrainer.
+- [x] Transitioned trainer tests to use dynamic PyTorch-managed tmp_path directories, completely preventing test run leaks.
+- [x] Surpass Loop 2 (46.6% PCK@0.2) with landmark Loop 27 training (50.3% PCK@0.2, 27.2 px MPJPE).
+- [x] Evaluated and cataloged Loop 28 (Two-Sided Hinge + Local Soft-Argmax) failure modes, confirming Loop 27 as our production-grade baseline.
 
 ## Dashboard-Driven ML
 - **Real-time Monitoring**: All training and evaluation MUST be performed via the Dashboard API (see `ml_operations.md` rule).

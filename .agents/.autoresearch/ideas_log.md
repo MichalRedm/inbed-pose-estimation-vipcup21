@@ -39,6 +39,11 @@
    - **Expected PCK**: 48–52%, < 24 px MPJPE (beating the 46.6% scratch baseline).
    - **Priority**: **HIGHEST**.
 
+7. **[FAILED] Stacking Two-Sided Anatomical Hinge Loss & Local-Masked Soft-Argmax (Loop 28)**:
+   - **Hypothesis**: Stack the two regularizers on top of Loop 27 to eliminate spatial/anatomical collapse and extremity peak hopping.
+   - **Result**: **FAILED**. On simple uncovered IR poses, the model severely failed, introducing wrist double-prediction artifacts and crossed right-to-left ankle connection diagonals.
+   - **Action**: Completely reverted all Loop 28 code changes and re-established Loop 27 as our final stable baseline.
+
 4. **Structured Regional Cutout (Simulated Extreme Occlusion)**:
    - **Hypothesis**: The current `ThermalDiffusionAugmenter` only applies a wavy blur to simulate a blanket. The model relies too much on residual thermal leakage. Applying "GridMask" or large contiguous "Cutout" blocks that zero out entire limbs will force the network to learn holistic structural dependencies rather than local textures, preparing it for the extreme occlusion of `cover2`.
    - **Implementation**: Add a simple structured cutout augmentation that completely masks 25-50% of the image during training.
@@ -102,14 +107,11 @@
 - **Multi-Scale Heatmap Supervision**: Loop 13. Supervising intermediate resolutions (1/8, 1/16) caused gradient noise and a -2.1% PCK regression.
 - **Normalized Skeleton Collapse**: Loop 19. Using anatomical hinge loss on 0-1 normalized coordinates without strong heatmap anchoring caused all joints to collapse into a single point to minimize bone length error (loss reached 0.00009).
 - **Thermal Diffusion (Initial)**: Sign error in rotation augmentations.
-
-- **Loop 21 Enhanced HRNet (Pre-trained + Soft-Argmax + 60 Epochs)**: Loop 21. Achieved only 32.0% PCK. **VISUAL FAILURE**: Inference on training examples shows severe **Joint Coalescence** in the head area. Multiple joints (extremities, torso) are clustered around the head, indicating that the Soft-Argmax 'center-of-mass' calculation is being pulled toward the highest intensity thermal region, and the Coordinate Regression loss is not strong enough to pull them away, or is actively encouraging this clustering to minimize global error. This confirms that Soft-Argmax is currently detrimental to precision.
+- **Loop 21 Enhanced HRNet (Pre-trained + Soft-Argmax + 60 Epochs)**: Loop 21. Achieved only 32.0% PCK. **VISUAL FAILURE**: Soft-Argmax center-of-mass calculation is pulled toward the highest intensity thermal region (head).
+- **Loop 28 Double-Structural Regularization (Two-Sided Hinge + Local Soft-Argmax)**: **SEVERE FAILURE**. Enforcing coordinate regression limits combined with local peak-masking created unnatural skeletal deformations and double-prediction artifacts on high-intensity thermal areas (e.g., wrist double-predictions and crossed right/left ankle lines on completely simple uncover poses). Standard pixel-level heatmap MSE (Loop 27) remains significantly cleaner and more robust.
 
 ## Current Iteration
-- **Loop 9**: Foreshortening-Aware Hinge Loss (SUCCESS). Reached 45.1% PCK@0.2.
-- **Loop 17**: Multi-Task Uncertainty Weighting (SUCCESS). 43.1% PCK@0.2.
-- **Loop 18**: GCN Refinement (FAILURE). 33.4% PCK@0.2.
-- **Loop 19**: Normalized Anatomical Hinge (FAILURE). 12.7% PCK@0.2. Skeleton collapse.
-- **Loop 20/21**: Pre-trained HRNet + Soft-Argmax (FAILURE). 32.0% PCK@0.2. Coordinate regression is hindering precision.
-- **Loop 23**: Stabilized Pre-training — Frozen Stem+Stage1 (SUCCESS). 41.0% PCK@0.2.
-- **Loop 24**: Discriminative LR — Fully Unfrozen (UNDERPERFORMED). 36.7% PCK@0.2. Gradient washout at epoch 1 despite 0.1× backbone LR. Still monotonically improving at epoch 30 — convergence not reached.
+- **Loop 27**: Clean Rerun of Sigma Curriculum + Cutout (Scratch, 40ep) (**LANDMARK SUCCESS - 50.3% PCK@0.2**). Perfect spatial coordination without structural collapse. Reverted Loop 28 completely and established Loop 27 as our final production-grade standard.
+
+
+
