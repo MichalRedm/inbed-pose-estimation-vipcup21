@@ -156,6 +156,11 @@ def train():
     s_val = dataset_cfg.get("subjects_val", [81, 90])
     augmenter = DataAugmenter(config["training"].get("augmentation", {}))
 
+    # Determine in_channels from model config
+    model_cfg = config.get("model", {})
+    model_name = model_cfg.get("name", "hrnet")
+    in_channels = model_cfg.get(model_name, {}).get("in_channels", 1)
+
     train_dataset = VIPCupDataset(
         root=args.data_root,
         subjects=range(s_train[0], s_train[1] + 1),
@@ -163,6 +168,7 @@ def train():
         split="train",
         augmenter=augmenter,
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
+        in_channels=in_channels,
     )
     val_dataset = VIPCupDataset(
         root=args.data_root,
@@ -171,6 +177,7 @@ def train():
         covers=dataset_cfg.get("covers", None),
         split="valid",
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
+        in_channels=in_channels,
     )
 
     train_sampler = (

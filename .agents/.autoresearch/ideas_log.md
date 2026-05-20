@@ -11,7 +11,8 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 ### 1. Input Channel Replication with Pristine Pretrained Backbone (ImageNet HRNet-W32)
 *   **Hypothesis**: Averaging the 3-channel weights of the first convolution (`conv1`) to accept 1-channel thermal IR inputs wipes out pre-trained Edge/Shape detection priors, breaking the feature extraction chain. By setting `in_channels=3` and replicating the 1-channel thermal input three times ($R=G=B=IR$), we preserve 100% of the ImageNet edge/texture spatial priors in `conv1`, preventing initial feature washout.
 *   **Implementation**: Keep `in_channels=3` and `pretrained=True` in HRNet config. Modify `VIPCupDataset` to output `[3, H, W]` tensors by repeating the single thermal channel.
-*   **ROI Status**: **HIGH (ROI Rank 1)** — Extremely low implementation cost (10 lines of code change in dataset and config) with a high theoretical probability of unlocking pre-trained backbone convergence.
+*   **Status**: **SUCCESS (Loop 29)** — Reached **52.0% PCK@0.2** and **29.3 px MPJPE**. Hypothesis confirmed: preserving ImageNet conv1 priors via replication bridges the domain gap.
+*   **ROI Status**: **ARCHIVED** — Successful. Now the new project baseline.
 
 ### 2. Cross-Modality Feature Distillation (Aligned RGB → IR in Uncover Phase)
 *   **Hypothesis**: The SLP dataset provides perfectly aligned RGB and IR image pairs in the uncover phase. We can train a powerful RGB-only teacher model on clear color images. During student training on thermal IR, we apply a feature-imitation loss (e.g., Mean Squared Error or Cosine Similarity) between intermediate feature maps of the RGB teacher and the IR student. This transfers rich, occlusion-invariant human spatial priors into the thermal student network.

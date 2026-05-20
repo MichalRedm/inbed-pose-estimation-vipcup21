@@ -38,6 +38,8 @@ All "Verified" metrics in this repository must meet the following criteria:
 
 | Run | PCK@0.2 | MPJPE | Status |
 |-----|---------|-------|--------|
+| **loop29_channel_replication** | **52.0%** | 29.3 px | **NEW TOP PCK** |
+| **loop27_clean_sigma_cutout** | **50.3%** | 27.2 px | **TOP ROBUSTNESS** |
 | **loop2_fixed_aug** | **46.6%** | 29.6 px | **TOP PRECISION** |
 | **loop9_anatomical** | **45.1%** | 25.3 px | RELIABLE |
 | **loop17_uncertainty** | **43.1%** | **24.5 px** | **TOP ACCURACY** |

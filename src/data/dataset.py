@@ -36,6 +36,7 @@ class VIPCupDataset(Dataset):
         transform=None,
         augmenter: Optional[DataAugmenter] = None,
         image_size=(256, 256),
+        in_channels: int = 1,
     ):
         self.root = Path(root)
         self.split = split  # "train" or "valid"
@@ -50,6 +51,7 @@ class VIPCupDataset(Dataset):
         self.image_size = image_size
         self.heatmap_size = (64, 64)  # HRNet output size
         self.sigma = 2.0
+        self.in_channels = in_channels
 
         self.samples = self._prepare_samples()
         if self.subjects and not self.samples:
@@ -166,9 +168,12 @@ class VIPCupDataset(Dataset):
         )
         image_path = sample["image_paths"][target_mod]
 
-        # Load and convert to 1-channel (L) for IR, as requested for simplification
+        # Load and convert to 1-channel (L) or 3-channel (RGB) for IR
         if target_mod == "IR":
-            image = Image.open(image_path).convert("L")
+            if self.in_channels == 3:
+                image = Image.open(image_path).convert("RGB")
+            else:
+                image = Image.open(image_path).convert("L")
         else:
             image = Image.open(image_path).convert("RGB")
 

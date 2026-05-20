@@ -41,14 +41,28 @@ def verify_inference(run_id, image_path, output_dir="results/debug_inference"):
     model.eval()
 
     # Load and preprocess image
-    image = Image.open(image_path).convert("L")
+    model_cfg = config.get("model", {})
+    model_name = model_cfg.get("name", "hrnet")
+    in_channels = model_cfg.get(model_name, {}).get("in_channels", 1)
+
+    image = Image.open(image_path)
+    if in_channels == 3:
+        image = image.convert("RGB")
+    else:
+        image = image.convert("L")
     model_image_size = tuple(config.get("dataset", {}).get("image_size", [256, 256]))
 
     img_resized = image.resize(model_image_size)
-    img_tensor = (
-        torch.from_numpy(np.array(img_resized)).unsqueeze(0).unsqueeze(0).float()
-        / 255.0
-    )
+    if in_channels == 3:
+        img_tensor = (
+            torch.from_numpy(np.array(img_resized)).permute(2, 0, 1).unsqueeze(0).float()
+            / 255.0
+        )
+    else:
+        img_tensor = (
+            torch.from_numpy(np.array(img_resized)).unsqueeze(0).unsqueeze(0).float()
+            / 255.0
+        )
     img_tensor = img_tensor.to(device)
 
     with torch.no_grad():
