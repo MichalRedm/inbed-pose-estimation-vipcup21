@@ -226,6 +226,11 @@ def evaluate(
     if rank <= 0:
         print(f"Loading: {checkpoint_path}")
 
+    # Determine in_channels from model config
+    model_cfg = config.get("model", {})
+    model_name = model_cfg.get("name", "hrnet")
+    in_channels = model_cfg.get(model_name, {}).get("in_channels", 1)
+
     if state is None:
         state = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
@@ -291,6 +296,7 @@ def evaluate(
         covers=["uncover", "cover1", "cover2"],
         split="valid",
         image_size=image_size,
+        in_channels=in_channels,
     )
 
     if len(val_dataset) == 0:

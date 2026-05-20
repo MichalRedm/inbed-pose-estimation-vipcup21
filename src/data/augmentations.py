@@ -240,6 +240,8 @@ class ThermalDiffusionAugmenter:
         if random.random() < 0.3:
             grid_y, grid_x = np.mgrid[0:h, 0:w]
             texture = 5 * np.sin(grid_x / 5) * np.cos(grid_y / 5)
+            if len(dampened_np.shape) == 3:
+                texture = texture[:, :, np.newaxis]
             dampened_np = np.clip(dampened_np + texture, 0, 255)
 
         dampened = Image.fromarray(dampened_np.astype(np.uint8))
