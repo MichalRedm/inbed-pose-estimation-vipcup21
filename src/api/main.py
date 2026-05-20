@@ -653,6 +653,7 @@ async def predict(
         raise HTTPException(status_code=400, detail=f"File must be an image: {str(e)}")
     except Exception as e:
         import traceback
+
         with open("api.log", "a") as log:
             log.write(f"  ERROR in predict: {str(e)}\n")
             log.write(traceback.format_exc() + "\n")
