@@ -1,0 +1,33 @@
+model:
+  name: hrnet
+  hrnet:
+    pretrained: true
+    architecture: w32
+    num_joints: 14
+    in_channels: 3
+    heatmap_size: [64, 64]
+    sigma: 2                      # default; overridden by curriculum
+
+training:
+  epochs: 40
+  lr: 0.0001                      # Head learning rate
+  backbone_lr_ratio: 0.1          # Discriminative LR: 0.1 * 1e-4 = 1e-5 for backbone
+  batch_size: 16
+  sigma_start: 3.0
+  sigma_end: 1.5                  # Tighter localization
+  use_uncertainty_weighting: true
+  
+  augmentation:
+    horizontal_flip: true
+    rotation_range: 30
+    scale_range: [0.75, 1.25]
+    thermal_diffusion: true
+    cutout_prob: 0.3              # Keep cutout from Loop 27 for robustness
+    sensor_noise_sigma: [5, 12]
+
+dataset:
+  subjects_train: [1, 80]
+  subjects_val: [81, 90]
+  image_size: [256, 256]
+  modalities: ["IR"]
+  covers: ["uncover", "cover1", "cover2"]

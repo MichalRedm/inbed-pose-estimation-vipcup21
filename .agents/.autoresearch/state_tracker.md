@@ -2,10 +2,10 @@
 
 - **Current Loop**: 29
 - **Phase**: Phase 5 — Recursive Continuation & State Logging
-- **Status**: Loop 29 (Channel Replication) successfully completed! Reached a new record PCK of **52.0%** and MPJPE of **29.3 px**. The hypothesis that replicating the input channel preserves ImageNet spatial priors was **CONFIRMED**, unlocking the pre-trained HRNet-W32 backbone to outperform the best scratch-based models (+1.7pp improvement).
+- **Status**: Loop 30 (Discriminative LR) was a catastrophic failure (31.6% PCK). Reverted to the Loop 29 (Channel Replication) configuration, which remains the project champion at **52.0% PCK**. The discriminative LR of 1e-5 was too low for IR domain adaptation.
 - **Absolute Priority**: 
-  1. **Loop 30 Planning**: Investigate further refinements (e.g., combining replication with multi-scale distillation or more aggressive augmentations).
-  2. **Top Baseline**: Loop 29 (52.0% PCK@0.2, 29.3 px MPJPE) is the new Top Baseline.
+  1. **Pull Request Submission**: Finalize and submit the PR for the `feat/channel-replication` branch using the Loop 29 parameters.
+  2. **Top Baseline**: Loop 29 (52.0% PCK@0.2, 29.3 px MPJPE) is the definitive Top Baseline.
 - **Baseline**: Loop 29 (52.0% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -76,6 +76,7 @@ The `best_model.pth` saving criterion has been fixed to use **val PCK** (impleme
 | 27 | Clean Rerun of Sigma Curriculum + Cutout (Scratch, 40ep) | SUCCESS | **50.3%** | Resolved worker curriculum desync via dynamic GPU-based target generation, and corrected keypoint swap indexing for horizontal flips. Reached a groundbreaking PCK of **50.3%** (beating scratch baseline by **+3.7pp**) and **27.2 px MPJPE** with zero skeleton collapse. |
 | 28 | Stacking Two-Sided Hinge + Local Soft-Argmax | FAILURE | 43.9% (Argmax) / 41.9% (Soft-Argmax) | **FAULTY APPROACH**: Severely failed on simple uncovered examples (crossed ankles, wrist double-predictions). Reverted completely; re-established Loop 27. |
 | 29 | Input Channel Replication (3-channel IR) | SUCCESS | **52.0%** | **NEW TOP PCK**. Hypothesis confirmed: preserving ImageNet conv1 priors via replication bridges the domain gap. |
+| 30 | Discriminative LR (0.1x backbone) | FAILURE | 31.6% | **BACKBONE UNDERFITTING**: 1e-5 backbone LR was too low to adapt to IR features. |
 
 ## ⚠️ CRITICAL: Pretrained Route Post-Mortem (2026-05-18 — Final)
 
