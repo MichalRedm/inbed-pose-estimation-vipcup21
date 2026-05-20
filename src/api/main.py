@@ -1,8 +1,8 @@
 import io
 import torch
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
-from fastapi.responses import FileResponse
-from PIL import Image
+from fastapi.responses import FileResponse, StreamingResponse
+from PIL import Image, UnidentifiedImageError
 import numpy as np
 from pathlib import Path
 import sys
@@ -12,9 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import shutil
 import time
-import os
+import base64
 from fastapi.staticfiles import StaticFiles
 from typing import Dict, Any
+import torchvision.transforms.v2 as v2
 
 # Add project root to sys.path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
@@ -31,12 +32,27 @@ from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
 from src.training.trainer import PoseTrainer  # noqa: E402
 from src.api.inference import inference_service  # noqa: E402
+from src.data.augmentations import (  # noqa: E402
+    DataAugmenter,
+    get_available_augmentations,
+    apply_custom_augmentations,
+)
 
 app = FastAPI(
     title="In-Bed Pose Estimation API",
     description="API for predicting 14 human joints from in-bed images (RGB or IR).",
     version="1.0.0",
 )
+
+# Global storage for dataset objects
+dataset_container = {}
+
+# Serve static files from runs directory
+runs_static_dir = project_root / "results" / "runs"
+runs_static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static/runs", StaticFiles(directory=str(runs_static_dir)), name="runs")
+
+EVALUATION_CACHE_FILE = project_root / "models" / "evaluation_cache.json"
 
 
 class GPUConfig(BaseModel):
@@ -48,6 +64,13 @@ class GPUConfig(BaseModel):
     gpu: str = ""
     ssh_config_alias: str = ""
     proxy_command: str = ""
+
+
+class AugmentationApplyRequest(BaseModel):
+    split: str = "train"
+    index: int
+    modality: str = "IR"
+    augmentations: list[dict] = []
 
 
 # Enable CORS
@@ -72,7 +95,6 @@ def format_evaluation_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
             for name, pck, error in zip(j_names, pj_pck, pj_error)
         ]
 
-        # Clean up original arrays for JSON serialization
         if "per_joint_pck" in metrics:
             del metrics["per_joint_pck"]
         if "per_joint_error" in metrics:
@@ -80,20 +102,11 @@ def format_evaluation_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
         if "per_joint_mpjpe" in metrics:
             del metrics["per_joint_mpjpe"]
 
-    # Convert other metrics to float for JSON
     for key in ["loss", "mpjpe", "pck"]:
         if key in metrics and metrics[key] is not None:
             metrics[key] = float(metrics[key])
 
     return metrics
-
-
-# Serve static files from runs directory
-runs_static_dir = project_root / "results" / "runs"
-runs_static_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/static/runs", StaticFiles(directory=str(runs_static_dir)), name="runs")
-
-EVALUATION_CACHE_FILE = project_root / "models" / "evaluation_cache.json"
 
 
 def load_evaluation_cache():
@@ -112,7 +125,9 @@ def save_evaluation_cache(cache):
         json.dump(cache, f, indent=4)
 
 
-# Root & Health Endpoints
+# --- Basic & Config Endpoints ---
+
+
 @app.get("/")
 async def root():
     gpu_info = {"available": torch.cuda.is_available()}
@@ -135,25 +150,16 @@ async def root():
     }
 
 
-# Configuration Endpoints
 @app.get("/config/gpu")
 async def get_gpu_config():
-    # Try multiple common locations for the config file
     paths = [
         project_root / "gpu_connection.json",
         Path("gpu_connection.json"),
         Path(__file__).parent.parent.parent / "gpu_connection.json",
     ]
-
-    json_path = None
-    for p in paths:
-        if p.exists():
-            json_path = p
-            break
-
+    json_path = next((p for p in paths if p.exists()), None)
     if not json_path:
         return {}
-
     try:
         with open(json_path, "r") as f:
             return json.load(f)
@@ -163,7 +169,6 @@ async def get_gpu_config():
 
 @app.post("/config/gpu")
 async def save_gpu_config(config: GPUConfig):
-    # Prefer saving to the root of the project
     json_path = project_root / "gpu_connection.json"
     try:
         with open(json_path, "w") as f:
@@ -178,9 +183,7 @@ async def get_training_settings():
     try:
         return get_training_config()
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load training config: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to load config: {str(e)}")
 
 
 @app.post("/config/training")
@@ -189,63 +192,32 @@ async def save_training_settings(config: dict):
         save_training_config(config)
         return {"message": "Training configuration saved successfully"}
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save training config: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
 
 
 @app.post("/gpu/verify")
 def verify_gpu():
-    # Run the verification script and capture output
-    # Note: Using 'def' instead of 'async def' so FastAPI runs this in a threadpool
-    # and doesn't block the event loop during the long SSH connection attempt.
     json_path = project_root / "gpu_connection.json"
-
     if not json_path.exists():
-        return {
-            "success": False,
-            "stdout": "",
-            "stderr": f"Config file not found at {json_path}. Please save your configuration first.",
-        }
-
+        return {"success": False, "stdout": "", "stderr": "Config not found"}
     try:
-        # Pass explicit paths to the script
         script_path = project_root / "scripts" / "verify_remote_gpu.py"
-
         result = subprocess.run(
             [sys.executable, str(script_path), "--json", str(json_path)],
             capture_output=True,
             text=True,
-            timeout=90,  # Increased timeout for slow SSH handshakes
+            timeout=90,
         )
         return {
             "success": result.returncode == 0,
             "stdout": result.stdout,
             "stderr": result.stderr,
         }
-    except subprocess.TimeoutExpired:
-        return {
-            "success": False,
-            "stdout": "",
-            "stderr": "Verification timed out after 90 seconds. Check if Kaggle is still running and cloudflared is installed.",
-        }
     except Exception as e:
-        return {
-            "success": False,
-            "stdout": "",
-            "stderr": f"Internal server error: {str(e)}",
-        }
+        return {"success": False, "stdout": "", "stderr": str(e)}
 
 
-# InferenceService is used for model management
-
-
-@app.get("/hello")
-async def hello():
-    return {"message": "Hello from API"}
-
-
-dataset_container = {}
+# --- Training & Runs Endpoints ---
 
 
 @app.get("/training/status")
@@ -274,58 +246,36 @@ async def list_runs():
     runs_dir = project_root / "results" / "runs"
     if not runs_dir.exists():
         return {"runs": []}
-
     runs = []
-    # Get current active run from manager
     active_run_id = (
         training_manager.current_run_id if training_manager.is_running else None
     )
-
     for run_path in sorted(
         runs_dir.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True
     ):
         if not run_path.is_dir():
             continue
-
-        run_id = run_path.name
         run_info = {
-            "id": run_id,
+            "id": run_path.name,
             "created_at": time.ctime(run_path.stat().st_ctime),
-            "status": "active" if run_id == active_run_id else "completed",
-            "has_config": (run_path / "config.json").exists(),
-            "has_history": (run_path / "history.json").exists(),
-            "has_eval": (run_path / "eval_results.json").exists()
-            or (run_path / "evaluation.json").exists(),
-            "has_audit": (run_path / "visual_audit_best_model.png").exists(),
+            "status": "active" if run_path.name == active_run_id else "completed",
         }
-
-        # Load summary from history if available
-        if run_info["has_history"]:
+        eval_file = next(
+            (
+                f
+                for f in [run_path / "eval_results.json", run_path / "evaluation.json"]
+                if f.exists()
+            ),
+            None,
+        )
+        if eval_file:
             try:
-                with open(run_path / "history.json", "r") as f:
-                    history = json.load(f)
-                    if history:
-                        run_info["epochs"] = len(history)
-                        run_info["final_loss"] = history[-1].get("train_loss")
-                        run_info["final_val_loss"] = history[-1].get("val_loss")
-                        run_info["final_val_pck"] = history[-1].get("val_pck")
-            except Exception:
-                pass
-
-        if run_info["has_eval"]:
-            try:
-                eval_file = run_path / "eval_results.json"
-                if not eval_file.exists():
-                    eval_file = run_path / "evaluation.json"
                 with open(eval_file, "r") as f:
                     eval_data = json.load(f)
                     run_info["eval_pck"] = eval_data.get("pck")
-                    run_info["eval_mpjpe"] = eval_data.get("mpjpe")
             except Exception:
                 pass
-
         runs.append(run_info)
-
     return {"runs": runs}
 
 
@@ -334,57 +284,22 @@ async def get_run_details(run_id: str):
     run_path = project_root / "results" / "runs" / run_id
     if not run_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
-
     details = {"id": run_id}
-
-    # Load config
-    if (run_path / "config.json").exists():
-        with open(run_path / "config.json", "r") as f:
-            details["config"] = json.load(f)
-
-    # Load history
-    if (run_path / "history.json").exists():
-        with open(run_path / "history.json", "r") as f:
-            details["history"] = json.load(f)
-
-    # Load evaluation results (check both standard filenames)
-    eval_file = run_path / "eval_results.json"
-    if not eval_file.exists():
-        eval_file = run_path / "evaluation.json"
-
-    if eval_file.exists():
+    for f_name, key in [("config.json", "config"), ("history.json", "history")]:
+        if (run_path / f_name).exists():
+            with open(run_path / f_name, "r") as f:
+                details[key] = json.load(f)
+    eval_file = next(
+        (
+            f
+            for f in [run_path / "eval_results.json", run_path / "evaluation.json"]
+            if f.exists()
+        ),
+        None,
+    )
+    if eval_file:
         with open(eval_file, "r") as f:
             details["evaluation"] = format_evaluation_metrics(json.load(f))
-
-    # Visual audit path
-    if (run_path / "visual_audit_best_model.png").exists():
-        details["visual_audit_url"] = (
-            f"/static/runs/{run_id}/visual_audit_best_model.png"
-        )
-
-    # List checkpoints
-    ckpt_dir = run_path / "checkpoints"
-    if ckpt_dir.exists():
-        checkpoints = sorted(list(ckpt_dir.glob("*.pth")))
-        details["checkpoints"] = [
-            {
-                "name": cp.name,
-                "size_mb": cp.stat().st_size / (1024 * 1024),
-            }
-            for cp in checkpoints
-        ]
-
-    # Load logs
-    log_file = run_path / "training.log"
-    if log_file.exists():
-        try:
-            with open(log_file, "r", encoding="utf-8") as f:
-                # Return last 500 lines to avoid blowing up the response size
-                lines = f.readlines()
-                details["logs"] = [line.strip() for line in lines[-500:]]
-        except Exception:
-            details["logs"] = ["Error loading logs"]
-
     return details
 
 
@@ -393,12 +308,11 @@ async def delete_run(run_id: str):
     run_path = project_root / "results" / "runs" / run_id
     if not run_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
-
     try:
         shutil.rmtree(run_path)
-        return {"message": f"Run {run_id} deleted successfully"}
+        return {"message": f"Run {run_id} deleted"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete run: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/evaluate")
@@ -409,21 +323,14 @@ async def evaluate_model(
     force: bool = False,
     remote: bool = False,
 ):
-    # Normalize split name
     if split == "valid":
         split = "val"
-
-    # Load cache
     cache = load_evaluation_cache()
-
-    # Determine checkpoint path and config
     checkpoint_path = None
     eval_config = {}
-    checkpoint_key = "default"
-
+    checkpoint_key = checkpoint or (f"{run_id}_best" if run_id else "default")
     if checkpoint:
         checkpoint_path = project_root / "models" / "checkpoints" / checkpoint
-        checkpoint_key = checkpoint
     elif run_id:
         checkpoint_path = (
             project_root
@@ -433,79 +340,44 @@ async def evaluate_model(
             / "checkpoints"
             / "best_model.pth"
         )
-        checkpoint_key = f"{run_id}_best"
         config_path = project_root / "results" / "runs" / run_id / "config.json"
         if config_path.exists():
             with open(config_path, "r") as f:
                 eval_config = json.load(f)
-
-    # Load model with specific checkpoint if provided
     if checkpoint_path:
         if not checkpoint_path.exists():
-            raise HTTPException(
-                status_code=404, detail=f"Checkpoint not found at {checkpoint_path}"
-            )
+            raise HTTPException(status_code=404, detail="Checkpoint not found")
         inference_service.load_model(str(checkpoint_path))
-
     if remote:
         if not run_id:
             raise HTTPException(
-                status_code=400, detail="run_id is required for remote evaluation"
+                status_code=400, detail="run_id required for remote eval"
             )
-
-        # Trigger remote evaluation via manager helper
-        # We run it synchronously here since the API is already blocking for local eval
-        success = training_manager._run_evaluation(is_remote=True, run_id=run_id)
-
-        if not success:
+        if not training_manager._run_evaluation(is_remote=True, run_id=run_id):
             raise HTTPException(status_code=500, detail="Remote evaluation failed")
-
-        # Load the downloaded results
         eval_file = project_root / "results" / "runs" / run_id / "evaluation.json"
-        if not eval_file.exists():
-            raise HTTPException(
-                status_code=500, detail="Evaluation results not found after remote run"
-            )
-
         with open(eval_file, "r") as f:
             metrics = json.load(f)
     else:
-        # Get dataset
-        ds = dataset_container.get(split)
-        if not ds and split == "val":
-            # Check if we have any dataset at all
-            ds = list(dataset_container.values())[0] if dataset_container else None
-
-        if not ds:
-            raise HTTPException(
-                status_code=404, detail=f"Dataset split {split} not found"
-            )
-
-        loader = DataLoader(
-            ds, batch_size=8, shuffle=False, num_workers=0, collate_fn=collate_skip_none
+        ds = dataset_container.get(split) or (
+            list(dataset_container.values())[0] if dataset_container else None
         )
-
-        # Use InferenceService model for evaluation
-        model = inference_service._model
-        device = inference_service._device
-
-        trainer = PoseTrainer(model, device=device, config=eval_config)
+        if not ds:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        loader = DataLoader(
+            ds, batch_size=8, shuffle=False, collate_fn=collate_skip_none
+        )
+        trainer = PoseTrainer(
+            inference_service._model,
+            device=inference_service._device,
+            config=eval_config,
+        )
         metrics = trainer.evaluate(loader)
-
-    # Format per-joint metrics for display
     metrics = format_evaluation_metrics(metrics)
-
-    # Convert other metrics to float for JSON
-    for key in ["loss", "mpjpe", "pck"]:
-        if key in metrics:
-            metrics[key] = float(metrics[key])
-
-    # Save to cache
     if checkpoint_key not in cache:
         cache[checkpoint_key] = {}
     cache[checkpoint_key][split] = metrics
     save_evaluation_cache(cache)
-
     return metrics
 
 
@@ -514,7 +386,6 @@ async def list_models():
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
     if not checkpoint_dir.exists():
         return {"models": []}
-
     checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
     return {
         "models": [
@@ -528,6 +399,9 @@ async def list_models():
     }
 
 
+# --- Dataset & Augmentation Endpoints ---
+
+
 @app.get("/dataset/stats")
 async def get_dataset_stats():
     summary = {
@@ -537,24 +411,15 @@ async def get_dataset_stats():
         "modalities": ["IR", "RGB"],
         "covers": set(),
     }
-
-    # Map internal dictionary keys to the output JSON keys expected by the frontend
-    splits_mapping = [("train", "train"), ("val", "valid")]
-
-    for dict_key, json_key in splits_mapping:
+    for dict_key, json_key in [("train", "train"), ("val", "valid")]:
         ds = dataset_container.get(dict_key)
         if not ds:
             continue
-
-        count = len(ds)
-        summary[json_key] = count
-        summary["total"] += count
-
+        summary[json_key] = len(ds)
+        summary["total"] += len(ds)
         for sample in ds.samples:
             summary["covers"].add(sample["cover"])
-
     summary["covers"] = sorted(list(summary["covers"]))
-
     return summary
 
 
@@ -568,43 +433,36 @@ async def get_samples(
 ):
     ds = dataset_container.get(split)
     if not ds:
-        raise HTTPException(status_code=404, detail=f"Split {split} not found")
-
-    filtered_samples = []
+        raise HTTPException(status_code=404, detail="Split not found")
+    filtered = []
     for i, sample in enumerate(ds.samples):
-        if cover and sample["cover"] != cover:
+        if (cover and sample["cover"] != cover) or (
+            subject and sample["subject"] != subject
+        ):
             continue
-        if subject and sample["subject"] != subject:
-            continue
-
-        # Add index to the sample info for later retrieval
-        sample_info = {
-            "index": i,
-            "id": f"{split}_{i}",
-            "subject": sample["subject"],
-            "cover": sample["cover"],
-            "modalities": list(sample["image_paths"].keys()),
-            "has_joints": any(j is not None for j in sample["joints"].values()),
-        }
-
-        # For the list view, we provide the IR path if available, else first modality
-        default_mod = (
-            "IR" if "IR" in sample["image_paths"] else sample_info["modalities"][0]
+        mod = (
+            "IR"
+            if "IR" in sample["image_paths"]
+            else list(sample["image_paths"].keys())[0]
         )
-        sample_info["image_path"] = str(sample["image_paths"][default_mod])
-        sample_info["modality"] = default_mod
-
-        filtered_samples.append(sample_info)
-
-    total = len(filtered_samples)
-    start = (page - 1) * limit
-    end = start + limit
-
+        filtered.append(
+            {
+                "index": i,
+                "id": f"{split}_{i}",
+                "subject": sample["subject"],
+                "cover": sample["cover"],
+                "modalities": list(sample["image_paths"].keys()),
+                "has_joints": any(j is not None for j in sample["joints"].values()),
+                "image_path": str(sample["image_paths"][mod]),
+                "modality": mod,
+            }
+        )
+    start, end = (page - 1) * limit, page * limit
     return {
-        "total": total,
+        "total": len(filtered),
         "page": page,
         "limit": limit,
-        "samples": filtered_samples[start:end],
+        "samples": filtered[start:end],
     }
 
 
@@ -613,29 +471,20 @@ async def get_sample_detail(split: str, idx: int):
     ds = dataset_container.get(split)
     if not ds or idx >= len(ds):
         raise HTTPException(status_code=404, detail="Sample not found")
-
     sample = ds.samples[idx]
-
-    # Get resolutions per modality
-    resolutions = {}
+    resolutions, joints_data = {}, {}
     for mod, path in sample["image_paths"].items():
         try:
             with Image.open(path) as img:
-                w, h = img.size
-                resolutions[mod] = {"width": w, "height": h}
+                resolutions[mod] = {"width": img.width, "height": img.height}
         except Exception:
             resolutions[mod] = {"width": 256, "height": 256}
-
-    # Prepare joints - return a dictionary of joints per modality
-    joints_data = {}
-    for mod, joints in sample["joints"].items():
-        if joints is not None:
-            # joints is (3, 14) -> (x, y, visibility)
-            joints_data[mod] = joints[:2, :].T.tolist()
-        else:
-            joints_data[mod] = None
-
-    res = {
+        joints_data[mod] = (
+            sample["joints"][mod][:2, :].T.tolist()
+            if sample["joints"][mod] is not None
+            else None
+        )
+    return {
         "id": idx,
         "split": split,
         "subject": sample["subject"],
@@ -643,11 +492,7 @@ async def get_sample_detail(split: str, idx: int):
         "modalities": list(sample["image_paths"].keys()),
         "resolutions": resolutions,
         "joints_per_modality": joints_data,
-        "filenames": {
-            mod: Path(path).name for mod, path in sample["image_paths"].items()
-        },
     }
-    return res
 
 
 @app.get("/dataset/image/{split}/{idx}")
@@ -657,79 +502,175 @@ async def get_dataset_image(
     ds = dataset_container.get(split)
     if not ds or idx >= len(ds):
         raise HTTPException(status_code=404, detail="Sample not found")
-
     sample = ds.samples[idx]
-    if modality not in sample["image_paths"]:
-        # Fallback to first available if requested not found
-        modality = list(sample["image_paths"].keys())[0]
-
-    image_path = sample["image_paths"][modality]
-
+    image_path = sample["image_paths"].get(
+        modality, list(sample["image_paths"].values())[0]
+    )
     if not augment:
         return FileResponse(image_path)
-
-    # Apply augmentation for preview
-    image = Image.open(image_path)
-    if modality == "IR":
-        image = image.convert("L")
-    else:
-        image = image.convert("RGB")
-
+    image = Image.open(image_path).convert("L" if modality == "IR" else "RGB")
     joints = sample["joints"].get(modality)
-
-    # Use the global training config for augmentation settings
     train_config = (
         training_manager.config if hasattr(training_manager, "config") else {}
     )
     aug_cfg = train_config.get("training", {}).get("augmentation", {})
-
-    from src.data.augmentations import DataAugmenter
-
     augmenter = DataAugmenter(
         enabled=True,
-        occlusion_prob=1.0,  # Force occlusion for preview if it's the goal
+        occlusion_prob=1.0,
         flip_prob=aug_cfg.get("flip_prob", 0.5),
         rotation_range=aug_cfg.get("rotation_range", [-30, 30]),
         scaling_range=aug_cfg.get("scaling_range", [0.8, 1.2]),
     )
+    aug_img, _ = augmenter(image, joints, is_ir=(modality == "IR"))
+    buf = io.BytesIO()
+    aug_img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
 
-    augmented_image, _ = augmenter(image, joints, is_ir=(modality == "IR"))
 
-    # Return as streaming response
-    img_byte_arr = io.BytesIO()
-    augmented_image.save(img_byte_arr, format="PNG")
-    img_byte_arr.seek(0)
+@app.get("/augmentations")
+async def list_augmentations():
+    return {"augmentations": get_available_augmentations()}
 
-    from fastapi.responses import StreamingResponse
 
-    return StreamingResponse(img_byte_arr, media_type="image/png")
+@app.post("/augmentations/apply")
+async def apply_augmentations_endpoint(request: AugmentationApplyRequest):
+    ds = dataset_container.get(request.split)
+    if not ds or request.index >= len(ds):
+        raise HTTPException(status_code=404, detail="Sample not found")
+    sample = ds.samples[request.index]
+    if request.modality not in sample["image_paths"]:
+        raise HTTPException(status_code=404, detail="Modality not found")
+    image = Image.open(sample["image_paths"][request.modality]).convert(
+        "L" if request.modality == "IR" else "RGB"
+    )
+    aug_image, aug_joints = apply_custom_augmentations(
+        image,
+        sample["joints"].get(request.modality),
+        request.augmentations,
+        is_ir=(request.modality == "IR"),
+    )
+    if torch.is_tensor(aug_image):
+        aug_image = v2.functional.to_pil_image(aug_image)
+    buf = io.BytesIO()
+    aug_image.save(buf, format="PNG")
+    img_str = base64.b64encode(buf.getvalue()).decode()
+    joints_list = []
+    if aug_joints is not None:
+        for i in range(aug_joints.shape[1]):
+            joints_list.append(
+                {
+                    "name": LSP_JOINT_NAMES[i] if i < len(LSP_JOINT_NAMES) else f"J{i}",
+                    "x": float(aug_joints[0, i]),
+                    "y": float(aug_joints[1, i]),
+                    "vis": float(aug_joints[2, i]),
+                }
+            )
+    return {
+        "image": f"data:image/png;base64,{img_str}",
+        "joints": joints_list,
+        "original_size": {"width": image.width, "height": image.height},
+    }
+
+
+# --- Inference Endpoints ---
+
+
+@app.post("/predict")
+async def predict(
+    file: UploadFile = File(...),
+    model_name: str = Form(None),
+    run_id: str = Form(None),
+    checkpoint: str = Form(None),
+):
+    try:
+        checkpoint_path = None
+        if run_id:
+            checkpoint_path = (
+                project_root
+                / "results"
+                / "runs"
+                / run_id
+                / "checkpoints"
+                / (checkpoint or "best_model.pth")
+            )
+        elif model_name:
+            checkpoint_path = project_root / "models" / "checkpoints" / model_name
+        else:
+            checkpoints = sorted(
+                list((project_root / "models" / "checkpoints").glob("*.pth"))
+            )
+            if checkpoints:
+                checkpoint_path = checkpoints[-1]
+        if checkpoint_path and checkpoint_path.exists():
+            inference_service.load_model(str(checkpoint_path))
+
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+        # Determine channels from loaded model if possible
+        in_channels = 1  # Default
+        if inference_service._model:
+            m = inference_service._model
+            if hasattr(m, "model"):
+                m = m.model
+            if hasattr(m, "conv1"):
+                in_channels = getattr(m.conv1, "in_channels", 1)
+
+        image = image.convert("RGB" if in_channels == 3 else "L")
+        orig_size = image.size
+        model_size = (
+            tuple(
+                inference_service._config.get("dataset", {}).get(
+                    "image_size", [256, 256]
+                )
+            )
+            if inference_service._config
+            else (256, 256)
+        )
+        img_resized = image.resize(model_size)
+        img_tensor = torch.from_numpy(np.array(img_resized)).float() / 255.0
+        if in_channels == 1:
+            img_tensor = img_tensor.unsqueeze(0).unsqueeze(0)
+        else:
+            img_tensor = img_tensor.permute(2, 0, 1).unsqueeze(0)
+
+        preds = inference_service.predict(img_tensor)
+        scale_x, scale_y = orig_size[0] / model_size[0], orig_size[1] / model_size[1]
+        results = [
+            {
+                "joint": LSP_JOINT_NAMES[i] if i < len(LSP_JOINT_NAMES) else f"J{i}",
+                "x": float(x) * scale_x,
+                "y": float(y) * scale_y,
+            }
+            for i, (x, y) in enumerate(preds[0].cpu().numpy())
+        ]
+        return {
+            "filename": file.filename,
+            "original_size": {"width": orig_size[0], "height": orig_size[1]},
+            "predictions": results,
+        }
+    except (UnidentifiedImageError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"File must be an image: {str(e)}")
+    except Exception as e:
+        import traceback
+        with open("api.log", "a") as log:
+            log.write(f"  ERROR in predict: {str(e)}\n")
+            log.write(traceback.format_exc() + "\n")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.on_event("startup")
 async def startup_event():
-    # Use the global training config for augmentation settings
     train_config = (
         training_manager.config if hasattr(training_manager, "config") else {}
     )
-
-    # Initialize InferenceService with latest checkpoint
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
     checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
-
     if checkpoints:
-        latest_checkpoint = checkpoints[-1]
-        inference_service.load_model(str(latest_checkpoint))
-    else:
-        print(
-            f"WARNING: No checkpoints found in {checkpoint_dir}. Model will not be initialized."
-        )
-
-    # Initialize datasets
+        inference_service.load_model(str(checkpoints[-1]))
     try:
-        # Fallback to default if no manager config
         dataset_cfg = train_config.get("dataset", {})
         root_path = project_root / dataset_cfg.get("root", "data/raw")
-        print(f"Initializing datasets from root: {root_path}")
         dataset_container["train"] = VIPCupDataset(
             root=root_path,
             subjects=range(
@@ -750,138 +691,8 @@ async def startup_event():
             covers=["uncover", "cover1", "cover2"],
             split="valid",
         )
-        print(
-            f"Datasets initialized. Train: {len(dataset_container['train'])} samples, Val: {len(dataset_container['val'])} samples"
-        )
     except Exception as e:
         print(f"Error initializing datasets: {e}")
-
-
-@app.post("/predict")
-async def predict(
-    file: UploadFile = File(...),
-    model_name: str = Form(None),
-    run_id: str = Form(None),
-    checkpoint: str = Form(None),
-):
-    try:
-        # Determine checkpoint path
-        checkpoint_path = None
-        if run_id:
-            checkpoint_path = (
-                project_root
-                / "results"
-                / "runs"
-                / run_id
-                / "checkpoints"
-                / (checkpoint or "best_model.pth")
-            )
-        elif model_name:
-            checkpoint_path = project_root / "models" / "checkpoints" / model_name
-        else:
-            checkpoint_dir = Path(project_root) / "models" / "checkpoints"
-            checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
-            if checkpoints:
-                checkpoint_path = checkpoints[-1]
-
-        if checkpoint_path and not os.path.exists(checkpoint_path):
-            raise HTTPException(
-                status_code=404, detail=f"Checkpoint not found: {checkpoint_path}"
-            )
-
-        # Load/Switch model in InferenceService
-        if checkpoint_path:
-            inference_service.load_model(str(checkpoint_path))
-
-        # Determine expected channels dynamically
-        in_channels = 1
-        if inference_service._model is not None:
-            model_to_check = inference_service._model
-            if hasattr(model_to_check, "model"):
-                model_to_check = model_to_check.model
-            if hasattr(model_to_check, "conv1") and hasattr(
-                model_to_check.conv1, "in_channels"
-            ):
-                in_channels = model_to_check.conv1.in_channels
-            elif inference_service._config:
-                model_cfg = inference_service._config.get("model", {})
-                model_name_cfg = model_cfg.get("name")
-                if model_name_cfg:
-                    in_channels = model_cfg.get(model_name_cfg, {}).get(
-                        "in_channels", 1
-                    )
-
-        # Load image
-        contents = await file.read()
-        image = Image.open(io.BytesIO(contents))
-        if in_channels == 3:
-            image = image.convert("RGB")
-        else:
-            image = image.convert("L")
-        original_size = image.size
-
-        # Preprocess
-        model_image_size = (256, 256)
-        if inference_service._config:
-            model_image_size = tuple(
-                inference_service._config.get("dataset", {}).get(
-                    "image_size", [256, 256]
-                )
-            )
-
-        image_resized = image.resize(model_image_size)
-        if in_channels == 3:
-            img_tensor = (
-                torch.from_numpy(np.array(image_resized))
-                .permute(2, 0, 1)
-                .unsqueeze(0)
-                .float()
-                / 255.0
-            )
-        else:
-            img_tensor = (
-                torch.from_numpy(np.array(image_resized))
-                .unsqueeze(0)
-                .unsqueeze(0)
-                .float()
-                / 255.0
-            )
-
-        # Perform inference using singleton service
-        preds = inference_service.predict(img_tensor)
-
-        # Rescale predictions
-        scale_x = original_size[0] / model_image_size[0]
-        scale_y = original_size[1] / model_image_size[1]
-        scaled_preds = preds[0].cpu().numpy()
-
-        results = []
-        for i, (x, y) in enumerate(scaled_preds):
-            results.append(
-                {
-                    "joint": LSP_JOINT_NAMES[i]
-                    if i < len(LSP_JOINT_NAMES)
-                    else f"Joint_{i}",
-                    "x": float(x) * scale_x,
-                    "y": float(y) * scale_y,
-                }
-            )
-
-        return {
-            "filename": file.filename,
-            "original_size": {"width": original_size[0], "height": original_size[1]},
-            "predictions": results,
-        }
-
-    except (Image.UnidentifiedImageError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=f"File must be an image: {str(e)}")
-    except Exception as e:
-        with open("api.log", "a") as log:
-            log.write(f"  ERROR in predict: {str(e)}\n")
-            import traceback
-
-            log.write(traceback.format_exc() + "\n")
-        raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
 
 
 if __name__ == "__main__":

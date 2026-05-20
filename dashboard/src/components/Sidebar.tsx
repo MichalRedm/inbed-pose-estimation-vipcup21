@@ -4,7 +4,8 @@ import axios from 'axios';
 import { 
   Activity, 
   Settings, 
-  Layers
+  Layers,
+  Wand2
 } from 'lucide-react';
 
 import { API_BASE_URL } from '../services/api';
@@ -30,6 +31,7 @@ const Sidebar: React.FC = () => {
   const navItems = [
     { name: 'Runs', path: '/', icon: Activity },
     { name: 'Dataset', path: '/dataset', icon: Layers },
+    { name: 'Augment', path: '/augmentations', icon: Wand2 },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
 

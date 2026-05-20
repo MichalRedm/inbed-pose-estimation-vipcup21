@@ -77,6 +77,21 @@ export const getSampleDetail = async (split: string, idx: number) => {
 export const getDatasetImageUrl = (split: string, idx: number, modality: string = 'IR', augment: boolean = false) => {
   return `${API_BASE_URL}/dataset/image/${split}/${idx}?modality=${modality}&augment=${augment}`;
 };
+
+export const getAvailableAugmentations = async () => {
+  const response = await axios.get(`${API_BASE_URL}/augmentations`);
+  return response.data;
+};
+
+export const applyAugmentations = async (data: {
+  split: string;
+  index: number;
+  modality: string;
+  augmentations: Array<{ id: string; params: Record<string, unknown> }>;
+}) => {
+  const response = await axios.post(`${API_BASE_URL}/augmentations/apply`, data);
+  return response.data;
+};
 export const evaluateModel = async (split: string = 'val', checkpoint?: string, runId?: string, force: boolean = false, remote: boolean = false) => {
   const response = await axios.post(`${API_BASE_URL}/evaluate`, null, {
     params: { split, checkpoint, run_id: runId, force, remote }
