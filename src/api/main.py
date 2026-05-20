@@ -704,6 +704,14 @@ async def get_dataset_image(
 
     return StreamingResponse(img_byte_arr, media_type="image/png")
 
+
+@app.on_event("startup")
+async def startup_event():
+    # Use the global training config for augmentation settings
+    train_config = (
+        training_manager.config if hasattr(training_manager, "config") else {}
+    )
+
     # Initialize InferenceService with latest checkpoint
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
     checkpoints = sorted(list(checkpoint_dir.glob("*.pth")))
@@ -791,13 +799,17 @@ async def predict(
             model_to_check = inference_service._model
             if hasattr(model_to_check, "model"):
                 model_to_check = model_to_check.model
-            if hasattr(model_to_check, "conv1") and hasattr(model_to_check.conv1, "in_channels"):
+            if hasattr(model_to_check, "conv1") and hasattr(
+                model_to_check.conv1, "in_channels"
+            ):
                 in_channels = model_to_check.conv1.in_channels
             elif inference_service._config:
                 model_cfg = inference_service._config.get("model", {})
                 model_name_cfg = model_cfg.get("name")
                 if model_name_cfg:
-                    in_channels = model_cfg.get(model_name_cfg, {}).get("in_channels", 1)
+                    in_channels = model_cfg.get(model_name_cfg, {}).get(
+                        "in_channels", 1
+                    )
 
         # Load image
         contents = await file.read()
@@ -820,12 +832,18 @@ async def predict(
         image_resized = image.resize(model_image_size)
         if in_channels == 3:
             img_tensor = (
-                torch.from_numpy(np.array(image_resized)).permute(2, 0, 1).unsqueeze(0).float()
+                torch.from_numpy(np.array(image_resized))
+                .permute(2, 0, 1)
+                .unsqueeze(0)
+                .float()
                 / 255.0
             )
         else:
             img_tensor = (
-                torch.from_numpy(np.array(image_resized)).unsqueeze(0).unsqueeze(0).float()
+                torch.from_numpy(np.array(image_resized))
+                .unsqueeze(0)
+                .unsqueeze(0)
+                .float()
                 / 255.0
             )
 

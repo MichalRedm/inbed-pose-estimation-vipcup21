@@ -55,7 +55,10 @@ def verify_inference(run_id, image_path, output_dir="results/debug_inference"):
     img_resized = image.resize(model_image_size)
     if in_channels == 3:
         img_tensor = (
-            torch.from_numpy(np.array(img_resized)).permute(2, 0, 1).unsqueeze(0).float()
+            torch.from_numpy(np.array(img_resized))
+            .permute(2, 0, 1)
+            .unsqueeze(0)
+            .float()
             / 255.0
         )
     else:
