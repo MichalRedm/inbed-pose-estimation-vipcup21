@@ -394,49 +394,76 @@ class ThermalDiffusionAugmenter:
             damp_factor = random.uniform(0.08, 0.45)
 
         img_np = np.array(img_pil).astype(np.float32)
-        
-        # Estimate ambient bed background level dynamically (15th percentile)
         ambient_est = np.percentile(img_np, 15)
+
+        # 4. Generate physics-based heat transfer components
+        # Non-linear heat source: emphasize the hottest parts of the body for blooming (e.g., chest, crotch)
+        heat_source_np = np.maximum(img_np - ambient_est, 0.0)
+        heat_source_np = np.power(heat_source_np / (255.0 - ambient_est + 1e-5), 1.6) * (255.0 - ambient_est) + ambient_est
+        heat_source_img = Image.fromarray(np.clip(heat_source_np, 0, 255).astype(np.uint8))
+
+        # 4a. Heat bloom (highly diffused heat traveling through air gaps, completely destroying human shape)
+        bloom_radius = random.uniform(20.0, 45.0) # Massive blur for wide heat blobs
+        bloom_img = heat_source_img.filter(ImageFilter.GaussianBlur(radius=bloom_radius))
+        bloom_np = np.array(bloom_img).astype(np.float32)
+
+        # 4b. Contact hotspots (less diffused, representing body parts pressing against the blanket)
+        contact_radius = random.uniform(5.0, 12.0)
+        contact_img = heat_source_img.filter(ImageFilter.GaussianBlur(radius=contact_radius))
+        contact_np = np.array(contact_img).astype(np.float32)
+
+        # 5. Generate large-scale blanket drape mask (simulate folds and valleys)
+        drape_mask = Image.new("L", img_pil.size, 255)
+        drape_draw = ImageDraw.Draw(drape_mask)
+        num_folds = random.randint(5, 9) # More folds to break up the shape
         
-        # 4. Generate realistic blanket wrinkles (folds that selectively dim the body heat signature)
-        wrinkle_np = np.ones(img_np.shape, dtype=np.float32)
-        if random.random() < 0.85:
-            wrinkle_mask = Image.new("L", img_pil.size, 255)
-            wrinkle_draw = ImageDraw.Draw(wrinkle_mask)
-            num_wrinkles = random.randint(3, 7)
+        for _ in range(num_folds):
+            fx1 = random.randint(-40, w + 40)
+            fy1 = random.randint(base_y - 40, h + 40)
+            fx2 = random.randint(-40, w + 40)
+            fy2 = fy1 + random.randint(60, 200) # Mostly vertical/diagonal downwards
             
-            for _ in range(num_wrinkles):
-                fx1 = random.randint(-10, w + 10)
-                fy1 = random.randint(base_y - 10, h + 10)
-                fx2 = random.randint(fx1 - 40, fx1 + 40)
-                fy2 = fy1 + random.randint(30, 130)
-                
-                cx = random.randint(min(fx1, fx2) - 15, max(fx1, fx2) + 15)
-                cy = (fy1 + fy2) // 2 + random.randint(-15, 15)
-                
-                pts = []
-                for t in np.linspace(0, 1, 15):
-                    px = int((1-t)**2 * fx1 + 2*(1-t)*t * cx + t**2 * fx2)
-                    py = int((1-t)**2 * fy1 + 2*(1-t)*t * cy + t**2 * fy2)
-                    pts.append((px, py))
-                
-                # Wrinkle dims the underlying heat by drawing a soft dark line on the mask
-                wrinkle_val = random.randint(130, 195)
-                wrinkle_width = random.randint(3, 9)
-                wrinkle_draw.line(pts, fill=wrinkle_val, width=wrinkle_width, joint="round")
+            cx = random.randint(min(fx1, fx2) - 60, max(fx1, fx2) + 60)
+            cy = (fy1 + fy2) // 2 + random.randint(-30, 30)
             
-            wrinkle_blur = wrinkle_mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(5.0, 11.0)))
-            wrinkle_np = np.array(wrinkle_blur).astype(np.float32) / 255.0
+            pts = []
+            for t in np.linspace(0, 1, 15):
+                px = int((1-t)**2 * fx1 + 2*(1-t)*t * cx + t**2 * fx2)
+                py = int((1-t)**2 * fy1 + 2*(1-t)*t * cy + t**2 * fy2)
+                pts.append((px, py))
+            
+            # Valleys block much more heat now (lower transmission)
+            fold_val = random.randint(20, 110)
+            fold_width = random.randint(15, 45) # Very wide, soft folds
+            drape_draw.line(pts, fill=fold_val, width=fold_width, joint="round")
+            
+        drape_blur = drape_mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(8.0, 20.0)))
+        drape_np = np.array(drape_blur).astype(np.float32) / 255.0
 
-        # Physical model: keep background at mattress ambient temp, and apply subtractive wrinkle dimming on body heat
-        excess_heat = (img_np - ambient_est) * damp_factor * wrinkle_np
-        dampened_np = np.where(
-            img_np > ambient_est,
-            ambient_est + excess_heat,
-            img_np
-        )
+        # 6. Mix bloom and contact based on the drape (blanket topology)
+        drape_min = drape_np.min()
+        drape_max = drape_np.max()
+        if drape_max > drape_min:
+            blend_weight = (drape_np - drape_min) / (drape_max - drape_min + 1e-5)
+        else:
+            blend_weight = drape_np
+        
+        # Scale blend_weight so we always have a mix of bloom and contact
+        blend_weight = blend_weight * 0.7 + 0.1
+        mixed_heat_np = bloom_np * (1.0 - blend_weight) + contact_np * blend_weight
 
-        # 5. Draw a soft drop-shadow crease along the blanket edge (extremely subtle)
+        # 7. Apply subtractive dampening based on physical heat transfer
+        # Valleys (lower drape_np) attenuate the transferred heat more heavily
+        excess_heat = np.maximum(mixed_heat_np - ambient_est, 0.0) * damp_factor * drape_np
+        
+        # Smoothly overwrite the sharp body with the diffused blob, keeping the ambient bed sheet texture
+        heat_mask = np.clip((mixed_heat_np - ambient_est) / 8.0, 0.0, 1.0)
+        noise = np.random.normal(0, 2.5, img_np.shape).astype(np.float32)
+        base_blanket = ambient_est + noise
+        
+        dampened_np = img_np * (1.0 - heat_mask) + (base_blanket + excess_heat) * heat_mask
+
+        # 8. Draw a soft drop-shadow crease along the blanket edge
         shadow_mask = Image.new("L", img_pil.size, 0)
         shadow_draw = ImageDraw.Draw(shadow_mask)
         shadow_draw.line(points, fill=255, width=random.randint(5, 10), joint="round")
@@ -444,19 +471,9 @@ class ThermalDiffusionAugmenter:
         shadow_np = np.array(shadow_mask).astype(np.float32) / 255.0
         dampened_np = dampened_np * (1.0 - shadow_np * random.uniform(0.02, 0.07))
 
-        # 7. Apply Heat Diffusion / Blur
-        if "blur_radius" in kwargs:
-            blur_radius = kwargs["blur_radius"]
-        else:
-            if damp_factor < 0.15:
-                blur_radius = random.uniform(8.0, 15.0)
-            else:
-                blur_radius = random.uniform(4.5, 9.0)
+        dampened = Image.fromarray(np.clip(dampened_np, 0, 255).astype(np.uint8))
         
-        blurred = img_pil.filter(ImageFilter.GaussianBlur(radius=blur_radius))
-        dampened = Image.fromarray(dampened_np.astype(np.uint8))
-        
-        # Blanket layer: composite dampened body heat with the blurred image
+        # Blanket layer: composite dampened blobby body heat with the original uncovered image
         final_image = Image.composite(dampened, img_pil, mask)
 
         if is_tensor:
