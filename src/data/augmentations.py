@@ -393,13 +393,17 @@ class ThermalDiffusionAugmenter:
         else:
             damp_factor = random.uniform(0.08, 0.45)
 
-        # Ambient temperature/radiation of the blanket fabric itself
-        blanket_ambient = random.uniform(15.0, 32.0)
-
         img_np = np.array(img_pil).astype(np.float32)
         
-        # Physical model: body transmission + blanket self-emission
-        dampened_np = img_np * damp_factor + blanket_ambient * (1.0 - damp_factor)
+        # Estimate ambient bed background level dynamically (15th percentile)
+        ambient_est = np.percentile(img_np, 15)
+        
+        # Physical model: keep background at mattress ambient temp, only attenuate body heat above it
+        dampened_np = np.where(
+            img_np > ambient_est,
+            ambient_est + (img_np - ambient_est) * damp_factor,
+            img_np
+        )
 
         # 4. Generate realistic blanket folds (creases and valleys)
         if random.random() < 0.8:
@@ -437,7 +441,7 @@ class ThermalDiffusionAugmenter:
         shadow_draw.line(points, fill=255, width=random.randint(6, 12), joint="round")
         shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(4, 8)))
         shadow_np = np.array(shadow_mask).astype(np.float32) / 255.0
-        dampened_np = dampened_np * (1.0 - shadow_np * random.uniform(0.15, 0.35))
+        dampened_np = dampened_np * (1.0 - shadow_np * random.uniform(0.04, 0.12))
 
         # 6. Add coarse fabric texture (low-frequency thermal blotches) and sensor readout noise
         tex_w, tex_h = max(4, w // 4), max(4, h // 4)
