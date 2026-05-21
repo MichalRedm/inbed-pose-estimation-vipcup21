@@ -326,11 +326,11 @@ class ThermalDiffusionAugmenter:
             if len(j_np.shape) == 2 and j_np.shape[0] >= 14:
                 if j_np[13, 0] > 0 or j_np[13, 1] > 0:
                     head_y = j_np[13, 1]
-                
+
                 for s_idx in [8, 9]:
                     if j_np[s_idx, 0] > 0 or j_np[s_idx, 1] > 0:
                         shoulders_y.append(j_np[s_idx, 1])
-                
+
                 for h_idx in [2, 3]:
                     if j_np[h_idx, 0] > 0 or j_np[h_idx, 1] > 0:
                         hips_y.append(j_np[h_idx, 1])
@@ -353,7 +353,7 @@ class ThermalDiffusionAugmenter:
             # 2. Waist down (hips area)
             # 3. Thighs/knees down (knees area)
             coverage_choices = []
-            
+
             if shoulders_y:
                 coverage_choices.append(min(shoulders_y))
             if hips_y:
@@ -407,18 +407,20 @@ class ThermalDiffusionAugmenter:
             fy2 = fy1 + random.randint(80, 250)
             cx = random.randint(min(fx1, fx2) - 50, max(fx1, fx2) + 50)
             cy = (fy1 + fy2) // 2 + random.randint(-20, 20)
-            
+
             pts = []
             for t in np.linspace(0, 1, 15):
-                px = int((1-t)**2 * fx1 + 2*(1-t)*t * cx + t**2 * fx2)
-                py = int((1-t)**2 * fy1 + 2*(1-t)*t * cy + t**2 * fy2)
+                px = int((1 - t) ** 2 * fx1 + 2 * (1 - t) * t * cx + t**2 * fx2)
+                py = int((1 - t) ** 2 * fy1 + 2 * (1 - t) * t * cy + t**2 * fy2)
                 pts.append((px, py))
-            
+
             fold_val = random.randint(40, 120)
             fold_width = random.randint(25, 50)
             drape_draw.line(pts, fill=fold_val, width=fold_width, joint="round")
-        
-        drape_blur = drape_mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(10.0, 18.0)))
+
+        drape_blur = drape_mask.filter(
+            ImageFilter.GaussianBlur(radius=random.uniform(10.0, 18.0))
+        )
         drape_np = np.array(drape_blur).astype(np.float32) / 255.0
 
         # 4a. Generate small-scale wrinkles mask (simulate sharp fine folds)
@@ -432,18 +434,20 @@ class ThermalDiffusionAugmenter:
             fy2 = fy1 + random.randint(40, 180)
             cx = (fx1 + fx2) // 2 + random.randint(-15, 15)
             cy = (fy1 + fy2) // 2 + random.randint(-10, 10)
-            
+
             pts = []
             for t in np.linspace(0, 1, 10):
-                px = int((1-t)**2 * fx1 + 2*(1-t)*t * cx + t**2 * fx2)
-                py = int((1-t)**2 * fy1 + 2*(1-t)*t * cy + t**2 * fy2)
+                px = int((1 - t) ** 2 * fx1 + 2 * (1 - t) * t * cx + t**2 * fx2)
+                py = int((1 - t) ** 2 * fy1 + 2 * (1 - t) * t * cy + t**2 * fy2)
                 pts.append((px, py))
-            
+
             fold_val = random.randint(80, 160)
             fold_width = random.randint(3, 7)
             wrinkle_draw.line(pts, fill=fold_val, width=fold_width, joint="round")
-            
-        wrinkle_blur = wrinkle_mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(2.0, 4.5)))
+
+        wrinkle_blur = wrinkle_mask.filter(
+            ImageFilter.GaussianBlur(radius=random.uniform(2.0, 4.5))
+        )
         wrinkle_np = np.array(wrinkle_blur).astype(np.float32) / 255.0
 
         # Combine large-scale drapes and small-scale wrinkles
@@ -456,7 +460,7 @@ class ThermalDiffusionAugmenter:
 
         # 6. Simulate physical body heat transmission through blanket
         body_heat = np.maximum(img_np - ambient_est, 0.0)
-        
+
         # Apply non-linear boost to emphasize hottest contact points
         body_heat_norm = body_heat / (np.max(body_heat) + 1e-5)
         body_heat_boosted = np.power(body_heat_norm, 1.3) * np.max(body_heat)
@@ -465,15 +469,17 @@ class ThermalDiffusionAugmenter:
         # Heat bloom and contact diffusion (scaled down to avoid the "too blurry" issue)
         bloom_radius = random.uniform(8.0, 16.0)
         contact_radius = random.uniform(2.5, 5.0)
-        
+
         bloom_img = heat_pil.filter(ImageFilter.GaussianBlur(radius=bloom_radius))
         contact_img = heat_pil.filter(ImageFilter.GaussianBlur(radius=contact_radius))
-        
+
         bloom_np = np.array(bloom_img).astype(np.float32)
         contact_np = np.array(contact_img).astype(np.float32)
 
         # Mix bloom and contact based on the combined drape topology
-        mixed_heat_np = bloom_np * (1.0 - combined_drape_np) + contact_np * combined_drape_np
+        mixed_heat_np = (
+            bloom_np * (1.0 - combined_drape_np) + contact_np * combined_drape_np
+        )
 
         # 7. Apply dampening factors
         if "damp_factor" in kwargs:
@@ -489,14 +495,18 @@ class ThermalDiffusionAugmenter:
         # 8. Draw a soft drop-shadow crease along the blanket edge (top-line only!)
         shadow_mask = Image.new("L", img_pil.size, 0)
         shadow_draw = ImageDraw.Draw(shadow_mask)
-        shadow_draw.line(wavy_points, fill=255, width=random.randint(4, 8), joint="round")
-        shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(2, 5)))
+        shadow_draw.line(
+            wavy_points, fill=255, width=random.randint(4, 8), joint="round"
+        )
+        shadow_mask = shadow_mask.filter(
+            ImageFilter.GaussianBlur(radius=random.uniform(2, 5))
+        )
         shadow_np = np.array(shadow_mask).astype(np.float32) / 255.0
         dampened_np = dampened_np * (1.0 - shadow_np * random.uniform(0.03, 0.08))
 
         # Convert back to PIL Image
         dampened = Image.fromarray(np.clip(dampened_np, 0, 255).astype(np.uint8))
-        
+
         # Blanket layer: composite the blanket area with the original uncovered image using the wavy mask
         final_image = Image.composite(dampened, img_pil, mask)
 
