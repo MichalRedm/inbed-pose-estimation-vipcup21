@@ -387,14 +387,19 @@ class ThermalDiffusionAugmenter:
         draw.polygon(points, fill=255)
         mask = mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(4, 8)))
 
-        # 3. Simulate blanket thermal attenuation (damp_factor)
+        # 3. Simulate blanket thermal self-emission and attenuation (damp_factor)
         if "damp_factor" in kwargs:
             damp_factor = kwargs["damp_factor"]
         else:
             damp_factor = random.uniform(0.08, 0.45)
 
+        # Ambient temperature/radiation of the blanket fabric itself
+        blanket_ambient = random.uniform(15.0, 32.0)
+
         img_np = np.array(img_pil).astype(np.float32)
-        dampened_np = img_np * damp_factor
+        
+        # Physical model: body transmission + blanket self-emission
+        dampened_np = img_np * damp_factor + blanket_ambient * (1.0 - damp_factor)
 
         # 4. Generate realistic blanket folds (creases and valleys)
         if random.random() < 0.8:
@@ -426,11 +431,26 @@ class ThermalDiffusionAugmenter:
             fold_np = np.array(fold_blur).astype(np.float32) - 128.0
             dampened_np = np.clip(dampened_np + fold_np * random.uniform(0.6, 1.5), 0, 255)
 
-        # 5. Add small sensor readout noise specifically under the blanket
-        noise = np.random.normal(0, random.uniform(2, 6), dampened_np.shape).astype(np.float32)
-        dampened_np = np.clip(dampened_np + noise, 0, 255)
+        # 5. Draw a soft drop-shadow/crease along the blanket edge to simulate folds and air gaps
+        shadow_mask = Image.new("L", img_pil.size, 0)
+        shadow_draw = ImageDraw.Draw(shadow_mask)
+        shadow_draw.line(points, fill=255, width=random.randint(6, 12), joint="round")
+        shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(4, 8)))
+        shadow_np = np.array(shadow_mask).astype(np.float32) / 255.0
+        dampened_np = dampened_np * (1.0 - shadow_np * random.uniform(0.15, 0.35))
 
-        # 6. Apply Heat Diffusion / Blur
+        # 6. Add coarse fabric texture (low-frequency thermal blotches) and sensor readout noise
+        tex_w, tex_h = max(4, w // 4), max(4, h // 4)
+        coarse_noise = np.random.normal(0, random.uniform(2.5, 6.0), (tex_h, tex_w)).astype(np.float32)
+        coarse_noise_full = np.array(
+            Image.fromarray(coarse_noise).resize((w, h), Image.Resampling.BILINEAR)
+        )
+        dampened_np = np.clip(dampened_np + coarse_noise_full, 0, 255)
+        
+        fine_noise = np.random.normal(0, random.uniform(1.0, 3.0), dampened_np.shape).astype(np.float32)
+        dampened_np = np.clip(dampened_np + fine_noise, 0, 255)
+
+        # 7. Apply Heat Diffusion / Blur
         if "blur_radius" in kwargs:
             blur_radius = kwargs["blur_radius"]
         else:
