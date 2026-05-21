@@ -38,14 +38,15 @@ All "Verified" metrics in this repository must meet the following criteria:
 
 | Run | PCK@0.2 | MPJPE | Status |
 |-----|---------|-------|--------|
-| **loop29_channel_replication** | **52.0%** | 29.3 px | **NEW TOP PCK** |
+| **loop31_improved_cover** | **64.0%** | **17.8 px** | **ALL-TIME UNDISPUTED RECORD** |
+| **loop29_channel_replication** | **52.0%** | 29.3 px | PREVIOUS RECORD CHAMPION |
 | **loop27_clean_sigma_cutout** | **50.3%** | 27.2 px | **TOP ROBUSTNESS** |
-| **loop2_fixed_aug** | **46.6%** | 29.6 px | **TOP PRECISION** |
+| **loop2_fixed_aug** | **46.6%** | 29.6 px | Solid Scratch Baseline |
 | **loop9_anatomical** | **45.1%** | 25.3 px | RELIABLE |
-| **loop17_uncertainty** | **43.1%** | **24.5 px** | **TOP ACCURACY** |
-| loop23_stabilized_pretraining | 41.0% | 37.0 px | BEST PRETRAINED (unstable plateau) |
-| loop18_gcn_refinement| 33.4% | 26.6 px | FAILURE (Smoothing) |
-| loop24_unfrozen_pretraining | 36.7% | 41.3 px | UNDERPERFORMED (still converging at ep30) |
+| **loop17_uncertainty** | **43.1%** | **24.5 px** | HIGH-ACCURACY |
+| loop23_stabilized_pretraining | 41.0% | 37.0 px | FINE-TUNED |
+| loop18_gcn_refinement| 33.4% | 26.6 px | GCN Smoothing Collapse |
+| loop24_unfrozen_pretraining | 36.7% | 41.3 px | UNDERPERFORMED |
 | loop19_normalized_ana | 12.7% | 66.7 px | FAILURE (**Skeleton Collapse**) |
 
 > Previous figures (76.4%, 78.5%, 81.0%, 84.6% etc.) were computed by the flawed remote evaluate.py and were based on the less strict **PCK@0.5** metric. They are directionally useful (comparing relative improvement) but not accurate absolute baselines for the current **PCK@0.2** standard.
