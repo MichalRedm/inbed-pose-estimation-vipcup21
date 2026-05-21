@@ -267,12 +267,14 @@ const Augmentations: React.FC = () => {
             
             {result ? (
               <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-                <img 
-                  src={result.image} 
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px' }} 
-                  alt="Augmented" 
-                />
-                <JointOverlay joints={result.joints} width={result.original_size.width} height={result.original_size.height} />
+                <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <img 
+                    src={result.image} 
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px' }} 
+                    alt="Augmented" 
+                  />
+                  <JointOverlay joints={result.joints} width={result.original_size.width} height={result.original_size.height} />
+                </div>
               </div>
             ) : (
               <div className="empty-state" style={{ border: 'none' }}>

@@ -295,68 +295,223 @@ class ThermalDiffusionAugmenter:
         else:
             img_pil = image
 
+        original_mode = img_pil.mode
+        if original_mode != "L":
+            img_pil = img_pil.convert("L")
+
         w, h = img_pil.size
+
+        # 1. Determine blanket Y start position (base_y)
+        # Head (index 13) and neck/thorax (index 12) should ALWAYS remain uncovered!
+        head_y = None
+        shoulders_y = []
+        hips_y = []
+        knees_y = []
+
+        if joints is not None:
+            # Handle keypoints tensor format
+            if torch.is_tensor(joints):
+                if len(joints.shape) == 3:  # (1, N, 2)
+                    j_np = joints[0].cpu().numpy()
+                elif len(joints.shape) == 2:  # (N, 2) or (3, N)
+                    if joints.shape[0] == 3:
+                        j_np = joints[:2, :].T.cpu().numpy()
+                    else:
+                        j_np = joints.cpu().numpy()
+                else:
+                    j_np = np.array(joints)
+            else:
+                j_np = np.array(joints)
+
+            if len(j_np.shape) == 2 and j_np.shape[0] >= 14:
+                if j_np[13, 0] > 0 or j_np[13, 1] > 0:
+                    head_y = j_np[13, 1]
+
+                for s_idx in [8, 9]:
+                    if j_np[s_idx, 0] > 0 or j_np[s_idx, 1] > 0:
+                        shoulders_y.append(j_np[s_idx, 1])
+
+                for h_idx in [2, 3]:
+                    if j_np[h_idx, 0] > 0 or j_np[h_idx, 1] > 0:
+                        hips_y.append(j_np[h_idx, 1])
+
+                for k_idx in [1, 4]:
+                    if j_np[k_idx, 0] > 0 or j_np[k_idx, 1] > 0:
+                        knees_y.append(j_np[k_idx, 1])
+
+        # Enforce minimum Y to protect the head
+        min_allowed_y = int(h * 0.15)
+        if head_y is not None:
+            min_allowed_y = max(min_allowed_y, int(head_y + 15))
 
         if "base_y_ratio" in kwargs:
             base_y = int(kwargs["base_y_ratio"] * h)
+            base_y = max(min_allowed_y, base_y)
         else:
-            coverage_options = []
-            if joints is not None:
-                if len(joints.shape) == 3:  # (1, N, 2)
-                    j_np = joints[0].cpu().numpy()
-                    for pair in [(0, 5), (1, 4), (2, 3), (8, 9)]:
-                        if pair[0] < j_np.shape[0] and pair[1] < j_np.shape[0]:
-                            coverage_options.append(
-                                min(j_np[pair[0], 1], j_np[pair[1], 1])
-                            )
-            if random.random() < 0.1:
-                base_y = 0
-            elif coverage_options:
-                base_y = random.choice(coverage_options)
-            else:
-                base_y = random.randint(int(h * 0.1), int(h * 0.7))
+            # We want to randomly place the blanket covering either:
+            # 1. Chest down (shoulders area)
+            # 2. Waist down (hips area)
+            # 3. Thighs/knees down (knees area)
+            coverage_choices = []
 
-        # Create wavy mask
+            if shoulders_y:
+                coverage_choices.append(min(shoulders_y))
+            if hips_y:
+                coverage_choices.append(min(hips_y))
+            if knees_y:
+                coverage_choices.append(min(knees_y))
+
+            if coverage_choices:
+                base_y = random.choice(coverage_choices)
+                base_y += random.randint(-15, 15)
+            else:
+                base_y = random.randint(int(h * 0.25), int(h * 0.7))
+
+            base_y = max(min_allowed_y, min(base_y, h - 20))
+
+        base_y = int(base_y)
+
+        # 2. Create wavy mask to simulate natural blanket edge
         mask = Image.new("L", img_pil.size, 0)
         draw = ImageDraw.Draw(mask)
-        points = []
+        wavy_points = []
         num_points = 20
-        freq = random.uniform(2, 5)
-        amp = random.uniform(5, 20)
+        freq = random.uniform(1.5, 3.5)
+        amp = random.uniform(4, 15)
         phase = random.uniform(0, 2 * np.pi)
 
         for i in range(num_points + 1):
             x = int(i * w / num_points)
             y = int(base_y + amp * np.sin(freq * (x / w) * 2 * np.pi + phase))
             y = max(0, min(h - 1, y))
-            points.append((x, y))
+            wavy_points.append((x, y))
 
-        points.append((w, h))
-        points.append((0, h))
-        draw.polygon(points, fill=255)
-        mask = mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(5, 10)))
+        polygon_points = list(wavy_points)
+        polygon_points.append((w, h))
+        polygon_points.append((0, h))
+        draw.polygon(polygon_points, fill=255)
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(3, 7)))
 
-        blur_radius = kwargs.get("blur_radius", random.uniform(4, 10))
-        blurred = img_pil.filter(ImageFilter.GaussianBlur(radius=blur_radius))
-
+        # 3. Get image as numpy and estimate ambient background temperature of the bed
         img_np = np.array(img_pil).astype(np.float32)
-        damp_factor = kwargs.get("damp_factor", random.uniform(0.4, 0.7))
-        dampened_np = img_np * damp_factor
-        noise = np.random.normal(0, 5, dampened_np.shape).astype(np.float32)
-        dampened_np = np.clip(dampened_np + noise, 0, 255)
+        ambient_est = np.percentile(img_np, 15)
 
-        if random.random() < 0.3:
-            grid_y, grid_x = np.mgrid[0:h, 0:w]
-            texture = 5 * np.sin(grid_x / 5) * np.cos(grid_y / 5)
-            if len(dampened_np.shape) == 3:
-                texture = texture[:, :, np.newaxis]
-            dampened_np = np.clip(dampened_np + texture, 0, 255)
+        # 4. Generate large-scale blanket drape mask (simulate large folds and valleys)
+        drape_mask = Image.new("L", img_pil.size, 255)
+        drape_draw = ImageDraw.Draw(drape_mask)
+        num_large_folds = random.randint(3, 6)
+        for _ in range(num_large_folds):
+            fx1 = random.randint(-40, w + 40)
+            fy1 = random.randint(base_y - 40, h + 40)
+            fx2 = random.randint(-40, w + 40)
+            fy2 = fy1 + random.randint(80, 250)
+            cx = random.randint(min(fx1, fx2) - 50, max(fx1, fx2) + 50)
+            cy = (fy1 + fy2) // 2 + random.randint(-20, 20)
 
-        dampened = Image.fromarray(dampened_np.astype(np.uint8))
-        blanket_layer = Image.composite(
-            dampened.filter(ImageFilter.GaussianBlur(radius=2)), blurred, mask
+            pts = []
+            for t in np.linspace(0, 1, 15):
+                px = int((1 - t) ** 2 * fx1 + 2 * (1 - t) * t * cx + t**2 * fx2)
+                py = int((1 - t) ** 2 * fy1 + 2 * (1 - t) * t * cy + t**2 * fy2)
+                pts.append((px, py))
+
+            fold_val = random.randint(40, 120)
+            fold_width = random.randint(25, 50)
+            drape_draw.line(pts, fill=fold_val, width=fold_width, joint="round")
+
+        drape_blur = drape_mask.filter(
+            ImageFilter.GaussianBlur(radius=random.uniform(10.0, 18.0))
         )
-        final_image = Image.composite(blanket_layer, img_pil, mask)
+        drape_np = np.array(drape_blur).astype(np.float32) / 255.0
+
+        # 4a. Generate small-scale wrinkles mask (simulate sharp fine folds)
+        wrinkle_mask = Image.new("L", img_pil.size, 255)
+        wrinkle_draw = ImageDraw.Draw(wrinkle_mask)
+        num_small_folds = random.randint(4, 8)
+        for _ in range(num_small_folds):
+            fx1 = random.randint(-40, w + 40)
+            fy1 = random.randint(base_y - 20, h + 40)
+            fx2 = fx1 + random.randint(-60, 60)
+            fy2 = fy1 + random.randint(40, 180)
+            cx = (fx1 + fx2) // 2 + random.randint(-15, 15)
+            cy = (fy1 + fy2) // 2 + random.randint(-10, 10)
+
+            pts = []
+            for t in np.linspace(0, 1, 10):
+                px = int((1 - t) ** 2 * fx1 + 2 * (1 - t) * t * cx + t**2 * fx2)
+                py = int((1 - t) ** 2 * fy1 + 2 * (1 - t) * t * cy + t**2 * fy2)
+                pts.append((px, py))
+
+            fold_val = random.randint(80, 160)
+            fold_width = random.randint(3, 7)
+            wrinkle_draw.line(pts, fill=fold_val, width=fold_width, joint="round")
+
+        wrinkle_blur = wrinkle_mask.filter(
+            ImageFilter.GaussianBlur(radius=random.uniform(2.0, 4.5))
+        )
+        wrinkle_np = np.array(wrinkle_blur).astype(np.float32) / 255.0
+
+        # Combine large-scale drapes and small-scale wrinkles
+        combined_drape_np = drape_np * wrinkle_np
+
+        # 5. Create blanket base fabric layer (dampened ambient with wrinkles and noise)
+        blanket_ambient = ambient_est + (combined_drape_np - 0.85) * 12.0
+        noise = np.random.normal(0, 1.5, img_np.shape).astype(np.float32)
+        blanket_base = blanket_ambient + noise
+
+        # 6. Simulate physical body heat transmission through blanket
+        body_heat = np.maximum(img_np - ambient_est, 0.0)
+
+        # Apply non-linear boost to emphasize hottest contact points
+        body_heat_norm = body_heat / (np.max(body_heat) + 1e-5)
+        body_heat_boosted = np.power(body_heat_norm, 1.3) * np.max(body_heat)
+        heat_pil = Image.fromarray(np.clip(body_heat_boosted, 0, 255).astype(np.uint8))
+
+        # Heat bloom and contact diffusion (scaled down to avoid the "too blurry" issue)
+        bloom_radius = random.uniform(8.0, 16.0)
+        contact_radius = random.uniform(2.5, 5.0)
+
+        bloom_img = heat_pil.filter(ImageFilter.GaussianBlur(radius=bloom_radius))
+        contact_img = heat_pil.filter(ImageFilter.GaussianBlur(radius=contact_radius))
+
+        bloom_np = np.array(bloom_img).astype(np.float32)
+        contact_np = np.array(contact_img).astype(np.float32)
+
+        # Mix bloom and contact based on the combined drape topology
+        mixed_heat_np = (
+            bloom_np * (1.0 - combined_drape_np) + contact_np * combined_drape_np
+        )
+
+        # 7. Apply dampening factors
+        if "damp_factor" in kwargs:
+            damp_factor = kwargs["damp_factor"]
+        else:
+            # We want slightly higher heat transmission so the body under the cover remains visible
+            damp_factor = random.uniform(0.18, 0.42)
+
+        # Valleys attenuate the heat more heavily
+        transmitted_heat = mixed_heat_np * damp_factor * combined_drape_np
+        dampened_np = blanket_base + transmitted_heat
+
+        # 8. Draw a soft drop-shadow crease along the blanket edge (top-line only!)
+        shadow_mask = Image.new("L", img_pil.size, 0)
+        shadow_draw = ImageDraw.Draw(shadow_mask)
+        shadow_draw.line(
+            wavy_points, fill=255, width=random.randint(4, 8), joint="round"
+        )
+        shadow_mask = shadow_mask.filter(
+            ImageFilter.GaussianBlur(radius=random.uniform(2, 5))
+        )
+        shadow_np = np.array(shadow_mask).astype(np.float32) / 255.0
+        dampened_np = dampened_np * (1.0 - shadow_np * random.uniform(0.03, 0.08))
+
+        # Convert back to PIL Image
+        dampened = Image.fromarray(np.clip(dampened_np, 0, 255).astype(np.uint8))
+
+        # Blanket layer: composite the blanket area with the original uncovered image using the wavy mask
+        final_image = Image.composite(dampened, img_pil, mask)
+
+        if original_mode != "L":
+            final_image = final_image.convert(original_mode)
 
         if is_tensor:
             return v2.functional.to_image(final_image).to(device)
