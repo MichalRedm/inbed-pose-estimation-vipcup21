@@ -23,7 +23,13 @@ def main():
 
     args = parser.parse_args()
 
-    uvicorn.run("src.api.main:app", host=args.host, port=args.port, reload=args.reload)
+    uvicorn.run(
+        "src.api.main:app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        reload_dirs=["src"] if args.reload else None,
+    )
 
 
 if __name__ == "__main__":

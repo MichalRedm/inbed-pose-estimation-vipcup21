@@ -229,6 +229,37 @@ def main():
                 (local_best, "best_model.pth"),
             ]:
                 if local_path.exists():
+                    # Verify integrity of local checkpoint to prevent uploading/overwriting with a corrupt file
+                    is_valid = False
+                    try:
+                        print(f"[resume] Verifying integrity of local {fname}...")
+                        if local_path.stat().st_size < 1000000:
+                            print(
+                                f"[resume] ERROR: local {fname} is too small ({local_path.stat().st_size} bytes)."
+                            )
+                        else:
+                            import torch
+
+                            torch.load(str(local_path), map_location="cpu")
+                            is_valid = True
+                            print(
+                                f"[resume] Local {fname} integrity verified successfully."
+                            )
+                    except Exception as integrity_err:
+                        print(
+                            f"[resume] ERROR: Local {fname} is corrupted: {integrity_err}"
+                        )
+
+                    if not is_valid:
+                        print(
+                            f"[resume] WARNING: Skipping upload of corrupted local {fname} to prevent remote corruption!"
+                        )
+                        if fname == "latest_model.pth":
+                            raise RuntimeError(
+                                f"Local {fname} is corrupted. Aborting resume upload to prevent overwriting healthy remote checkpoints."
+                            )
+                        continue
+
                     print(f"[resume] Uploading local {fname} to remote...")
                     try:
                         gpu.upload(
@@ -309,6 +340,7 @@ def main():
                             pass
 
                     local_path = local_ckpt_dir / fname
+                    temp_local_path = local_ckpt_dir / f"{fname}.tmp"
 
                     # Download with up to 3 retries and size verification
                     for attempt in range(1, 4):
@@ -316,38 +348,73 @@ def main():
                             f"\n[sync] Downloading {fname} (size={remote_size} bytes, attempt {attempt})..."
                         )
                         try:
-                            # Clean up old file if it exists to avoid partial write issues
-                            if local_path.exists():
+                            # Clean up old temp file if it exists to avoid partial write issues
+                            if temp_local_path.exists():
                                 try:
-                                    os.remove(local_path)
+                                    os.remove(temp_local_path)
                                 except OSError:
                                     pass
 
+                            # Download to temporary file path
                             session.download(
-                                remote_path, str(local_ckpt_dir), recursive=False
+                                remote_path, str(temp_local_path), recursive=False
                             )
 
-                            # Verify local file exists and matches remote size
-                            if local_path.exists():
-                                local_size = local_path.stat().st_size
+                            # Verify local temp file exists and matches remote size
+                            if temp_local_path.exists():
+                                local_size = temp_local_path.stat().st_size
                                 if remote_size is None or local_size == remote_size:
-                                    print(
-                                        f"[sync] {fname} successfully saved and verified! ({local_size} bytes)"
-                                    )
-                                    downloaded.add(fname)
-                                    break
+                                    # Verify checkpoint integrity for key model files
+                                    is_valid = True
+                                    if fname in ["best_model.pth", "latest_model.pth"]:
+                                        try:
+                                            import torch
+
+                                            torch.load(
+                                                str(temp_local_path), map_location="cpu"
+                                            )
+                                        except Exception as integrity_err:
+                                            print(
+                                                f"[sync] Warning: Downloaded {fname} failed integrity check: {integrity_err}"
+                                            )
+                                            is_valid = False
+
+                                    if is_valid:
+                                        # Rename temp file to actual file atomically
+                                        if local_path.exists():
+                                            try:
+                                                os.remove(local_path)
+                                            except OSError:
+                                                pass
+                                        os.rename(temp_local_path, local_path)
+                                        print(
+                                            f"[sync] {fname} successfully saved, verified, and renamed! ({local_size} bytes)"
+                                        )
+                                        downloaded.add(fname)
+                                        break
+                                    else:
+                                        print(
+                                            f"[sync] Warning: Checkpoint integrity check failed for {fname}."
+                                        )
                                 else:
                                     print(
                                         f"[sync] Warning: Size mismatch for {fname}! Remote: {remote_size}, Local: {local_size}"
                                     )
                             else:
                                 print(
-                                    f"[sync] Warning: Local file {fname} not found after download."
+                                    f"[sync] Warning: Local temp file {fname}.tmp not found after download."
                                 )
                         except Exception as dl_err:
                             print(
                                 f"[sync] Warning: Download failed for {fname}: {dl_err}"
                             )
+                        finally:
+                            # Clean up temp file if rename didn't happen (i.e. on error/mismatch)
+                            if temp_local_path.exists():
+                                try:
+                                    os.remove(temp_local_path)
+                                except OSError:
+                                    pass
 
                         time.sleep(2.0)
                     else:
