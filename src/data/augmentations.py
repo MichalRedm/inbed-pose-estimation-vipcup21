@@ -297,32 +297,83 @@ class ThermalDiffusionAugmenter:
 
         w, h = img_pil.size
 
-        if "base_y_ratio" in kwargs:
-            base_y = int(kwargs["base_y_ratio"] * h)
-        else:
-            coverage_options = []
-            if joints is not None:
+        # 1. Determine blanket Y start position (base_y)
+        # Head (index 13) and neck/thorax (index 12) should ALWAYS remain uncovered!
+        head_y = None
+        shoulders_y = []
+        hips_y = []
+        knees_y = []
+
+        if joints is not None:
+            # Handle keypoints tensor format
+            if torch.is_tensor(joints):
                 if len(joints.shape) == 3:  # (1, N, 2)
                     j_np = joints[0].cpu().numpy()
-                    for pair in [(0, 5), (1, 4), (2, 3), (8, 9)]:
-                        if pair[0] < j_np.shape[0] and pair[1] < j_np.shape[0]:
-                            coverage_options.append(
-                                min(j_np[pair[0], 1], j_np[pair[1], 1])
-                            )
-            if random.random() < 0.1:
-                base_y = 0
-            elif coverage_options:
-                base_y = random.choice(coverage_options)
+                elif len(joints.shape) == 2:  # (N, 2) or (3, N)
+                    if joints.shape[0] == 3:
+                        j_np = joints[:2, :].T.cpu().numpy()
+                    else:
+                        j_np = joints.cpu().numpy()
+                else:
+                    j_np = np.array(joints)
             else:
-                base_y = random.randint(int(h * 0.1), int(h * 0.7))
+                j_np = np.array(joints)
 
-        # Create wavy mask
+            if len(j_np.shape) == 2 and j_np.shape[0] >= 14:
+                if j_np[13, 0] > 0 or j_np[13, 1] > 0:
+                    head_y = j_np[13, 1]
+                
+                for s_idx in [8, 9]:
+                    if j_np[s_idx, 0] > 0 or j_np[s_idx, 1] > 0:
+                        shoulders_y.append(j_np[s_idx, 1])
+                
+                for h_idx in [2, 3]:
+                    if j_np[h_idx, 0] > 0 or j_np[h_idx, 1] > 0:
+                        hips_y.append(j_np[h_idx, 1])
+
+                for k_idx in [1, 4]:
+                    if j_np[k_idx, 0] > 0 or j_np[k_idx, 1] > 0:
+                        knees_y.append(j_np[k_idx, 1])
+
+        # Enforce minimum Y to protect the head
+        min_allowed_y = int(h * 0.15)
+        if head_y is not None:
+            min_allowed_y = max(min_allowed_y, int(head_y + 15))
+
+        if "base_y_ratio" in kwargs:
+            base_y = int(kwargs["base_y_ratio"] * h)
+            base_y = max(min_allowed_y, base_y)
+        else:
+            # We want to randomly place the blanket covering either:
+            # 1. Chest down (shoulders area)
+            # 2. Waist down (hips area)
+            # 3. Thighs/knees down (knees area)
+            coverage_choices = []
+            
+            if shoulders_y:
+                coverage_choices.append(min(shoulders_y))
+            if hips_y:
+                coverage_choices.append(min(hips_y))
+            if knees_y:
+                coverage_choices.append(min(knees_y))
+
+            if coverage_choices:
+                base_y = random.choice(coverage_choices)
+                base_y += random.randint(-15, 15)
+            else:
+                base_y = random.randint(int(h * 0.25), int(h * 0.7))
+
+            base_y = max(min_allowed_y, min(base_y, h - 20))
+
+        base_y = int(base_y)
+
+        # 2. Create wavy mask to simulate natural blanket edge
         mask = Image.new("L", img_pil.size, 0)
         draw = ImageDraw.Draw(mask)
         points = []
         num_points = 20
-        freq = random.uniform(2, 5)
-        amp = random.uniform(5, 20)
+        freq = random.uniform(1.5, 3.5)
+        amp = random.uniform(4, 15)
         phase = random.uniform(0, 2 * np.pi)
 
         for i in range(num_points + 1):
@@ -334,29 +385,65 @@ class ThermalDiffusionAugmenter:
         points.append((w, h))
         points.append((0, h))
         draw.polygon(points, fill=255)
-        mask = mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(5, 10)))
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(4, 8)))
 
-        blur_radius = kwargs.get("blur_radius", random.uniform(4, 10))
-        blurred = img_pil.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+        # 3. Simulate blanket thermal attenuation (damp_factor)
+        if "damp_factor" in kwargs:
+            damp_factor = kwargs["damp_factor"]
+        else:
+            damp_factor = random.uniform(0.08, 0.45)
 
         img_np = np.array(img_pil).astype(np.float32)
-        damp_factor = kwargs.get("damp_factor", random.uniform(0.4, 0.7))
         dampened_np = img_np * damp_factor
-        noise = np.random.normal(0, 5, dampened_np.shape).astype(np.float32)
+
+        # 4. Generate realistic blanket folds (creases and valleys)
+        if random.random() < 0.8:
+            fold_img = Image.new("L", img_pil.size, 128)
+            fold_draw = ImageDraw.Draw(fold_img)
+            num_folds = random.randint(2, 5)
+            
+            for _ in range(num_folds):
+                fx1 = random.randint(-20, w + 20)
+                fy1 = random.randint(base_y, h + 20)
+                fx2 = random.randint(-20, w + 20)
+                fy2 = random.randint(base_y, h + 20)
+                
+                cx = random.randint(min(fx1, fx2) - 30, max(fx1, fx2) + 30)
+                cy = random.randint(min(fy1, fy2) - 30, max(fy1, fy2) + 30)
+                
+                pts = []
+                for t in np.linspace(0, 1, 10):
+                    px = int((1-t)**2 * fx1 + 2*(1-t)*t * cx + t**2 * fx2)
+                    py = int((1-t)**2 * fy1 + 2*(1-t)*t * cy + t**2 * fy2)
+                    pts.append((px, py))
+                
+                fold_val = random.randint(90, 166)
+                fold_width = random.randint(4, 15)
+                
+                fold_draw.line(pts, fill=fold_val, width=fold_width, joint="round")
+            
+            fold_blur = fold_img.filter(ImageFilter.GaussianBlur(radius=random.uniform(8, 16)))
+            fold_np = np.array(fold_blur).astype(np.float32) - 128.0
+            dampened_np = np.clip(dampened_np + fold_np * random.uniform(0.6, 1.5), 0, 255)
+
+        # 5. Add small sensor readout noise specifically under the blanket
+        noise = np.random.normal(0, random.uniform(2, 6), dampened_np.shape).astype(np.float32)
         dampened_np = np.clip(dampened_np + noise, 0, 255)
 
-        if random.random() < 0.3:
-            grid_y, grid_x = np.mgrid[0:h, 0:w]
-            texture = 5 * np.sin(grid_x / 5) * np.cos(grid_y / 5)
-            if len(dampened_np.shape) == 3:
-                texture = texture[:, :, np.newaxis]
-            dampened_np = np.clip(dampened_np + texture, 0, 255)
-
+        # 6. Apply Heat Diffusion / Blur
+        if "blur_radius" in kwargs:
+            blur_radius = kwargs["blur_radius"]
+        else:
+            if damp_factor < 0.15:
+                blur_radius = random.uniform(8.0, 15.0)
+            else:
+                blur_radius = random.uniform(4.5, 9.0)
+        
+        blurred = img_pil.filter(ImageFilter.GaussianBlur(radius=blur_radius))
         dampened = Image.fromarray(dampened_np.astype(np.uint8))
-        blanket_layer = Image.composite(
-            dampened.filter(ImageFilter.GaussianBlur(radius=2)), blurred, mask
-        )
-        final_image = Image.composite(blanket_layer, img_pil, mask)
+        
+        # Blanket layer: composite dampened body heat with the blurred image
+        final_image = Image.composite(dampened, img_pil, mask)
 
         if is_tensor:
             return v2.functional.to_image(final_image).to(device)
