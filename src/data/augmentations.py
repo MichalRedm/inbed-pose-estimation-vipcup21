@@ -295,6 +295,10 @@ class ThermalDiffusionAugmenter:
         else:
             img_pil = image
 
+        original_mode = img_pil.mode
+        if original_mode != "L":
+            img_pil = img_pil.convert("L")
+
         w, h = img_pil.size
 
         # 1. Determine blanket Y start position (base_y)
@@ -495,6 +499,9 @@ class ThermalDiffusionAugmenter:
         
         # Blanket layer: composite the blanket area with the original uncovered image using the wavy mask
         final_image = Image.composite(dampened, img_pil, mask)
+
+        if original_mode != "L":
+            final_image = final_image.convert(original_mode)
 
         if is_tensor:
             return v2.functional.to_image(final_image).to(device)
