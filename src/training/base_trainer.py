@@ -217,18 +217,25 @@ class BaseTrainer(ABC):
             raw_model = (
                 self.model.module if hasattr(self.model, "module") else self.model
             )
-            outputs = raw_model(images)
 
-            if raw_model.output_type == "heatmap":
-                method = decode_method or self.config.get("training", {}).get(
-                    "decode_method", "argmax"
-                )
-                temp = self.config.get("training", {}).get("decode_temperature", 10.0)
-                preds = decode_heatmaps(
-                    outputs, image_size, method=method, temperature=temp
-                ).cpu()
+            if (
+                hasattr(raw_model, "forward")
+                and "return_refined" in raw_model.forward.__code__.co_varnames
+            ):
+                outputs, refined_coords = self.model(images, return_refined=True)
+                preds = refined_coords.cpu()
             else:
-                preds = outputs.cpu()
+                outputs = self.model(images)
+                if raw_model.output_type == "heatmap":
+                    method = decode_method or self.config.get("training", {}).get(
+                        "decode_method", "argmax"
+                    )
+                    temp = self.config.get("training", {}).get("decode_temperature", 10.0)
+                    preds = decode_heatmaps(
+                        outputs, image_size, method=method, temperature=temp
+                    ).cpu()
+                else:
+                    preds = outputs.cpu()
 
             gt_xy = joints[:, :2, :].permute(0, 2, 1).numpy()  # (B, 14, 2)
             vis = (joints[:, 2, :] <= 1).numpy()  # (B, 14) visible+occluded

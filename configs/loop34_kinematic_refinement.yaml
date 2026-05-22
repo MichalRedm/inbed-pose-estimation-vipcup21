@@ -1,0 +1,46 @@
+# Loop 34: Kinematic Bone-Vector Decomposition Configuration
+
+model:
+  name: kinematic_refined_hrnet
+  kinematic_refined_hrnet:
+    pretrained: true
+    architecture: w32
+    num_joints: 14
+    in_channels: 3                 # 3-channel input replication for SOTA backbone loading
+    heatmap_size: [64, 64]
+    sigma: 2                       # baseline sigma, dynamically adjusted
+    kinematic_hidden_dim: 128
+
+training:
+  epochs: 40
+  batch_size: 16
+  lr: 0.0001
+  weight_decay: 0.0001
+  sigma_start: 3.0                 # Wide Gaussian at start for curriculum learning
+  sigma_end: 1.5                   # Narrow Gaussian at end
+  
+  # Coordinate Regression Losses (supervises KinematicRefiner)
+  lambda_coord: 1.0
+  lambda_coord_occluded: 2.0
+  use_uncertainty_weighting: true
+
+  # Loop 31 Physical Blanket Drape Augmentation & Structured Cutout Curriculum
+  augmentation:
+    enabled: true
+    flip_prob: 0.5
+    rotation_range: [-30, 30]
+    scaling_range: [0.8, 1.2]
+    translation: [0.10, 0.10]
+    occlusion_prob: 0.5            # Physically realistic thermal blanket simulation
+    cutout_prob: 0.5               # Structured cutout for occlusion robustness
+    cutout_size_ratio: 0.35        # 35% of image dimension
+    intensity_jitter_prob: 0.5
+    intensity_jitter_range: [0.55, 1.15]
+    contrast_jitter_range: [0.5, 1.15]
+    sensor_noise_prob: 0.4
+    sensor_noise_sigma: [5, 12]
+
+dataset:
+  subjects_train: [1, 80]          # Train on subjects 1-80
+  subjects_val: [81, 90]           # Validate on subjects 81-90
+  image_size: [256, 256]

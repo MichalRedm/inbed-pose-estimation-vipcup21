@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from typing import Dict, Any
 import torch.nn.functional as F
+import numpy as np
 from .base_trainer import BaseTrainer
 from .losses import AnatomicalLoss, UncertaintyWeighting
 from ..models.layers import SoftArgmax2D
@@ -329,7 +330,91 @@ class StandardTrainer(BaseTrainer):
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         return {"optimizer_state_dict": self.optimizer.state_dict()}
 
+    def _compute_dataset_average_lengths(self, dataset) -> torch.Tensor:
+        """
+        Computes the average Euclidean bone length (in model coordinate space [256, 256])
+        across all training samples.
+        """
+        # Determine the image size (e.g. 256x256)
+        target_w, target_h = dataset.image_size
+
+        if len(dataset.samples) == 0:
+            return torch.ones(13) * 20.0
+
+        sample_img_path = list(dataset.samples[0]["image_paths"].values())[0]
+        from PIL import Image
+        with Image.open(sample_img_path) as img:
+            orig_w, orig_h = img.size
+
+        scale_x = target_w / orig_w
+        scale_y = target_h / orig_h
+
+        # LSP Kinematic Tree bones
+        BONES = [
+            (12, 13), # Neck_Head
+            (12, 8),  # Neck_RShoulder
+            (12, 9),  # Neck_LShoulder
+            (8, 7),   # RShoulder_RElbow
+            (7, 6),   # RElbow_RWrist
+            (9, 10),  # LShoulder_LElbow
+            (10, 11), # LElbow_LWrist
+            (8, 2),   # RShoulder_RHip
+            (9, 3),   # LShoulder_LHip
+            (2, 1),   # RHip_RKnee
+            (1, 0),   # RKnee_RAnkle
+            (3, 4),   # LHip_LKnee
+            (4, 5),   # LKnee_LAnkle
+        ]
+
+        bone_lengths_sum = np.zeros(13)
+        bone_counts = np.zeros(13)
+
+        for sample in dataset.samples:
+            joints = sample["joints"].get("IR")
+            if joints is None:
+                joints = sample["joints"].get("RGB")
+            if joints is None:
+                continue
+
+            for i, (parent, child) in enumerate(BONES):
+                if joints[2, parent] > 1 or joints[2, child] > 1:
+                    continue
+                if (joints[0, parent] == 0 and joints[1, parent] == 0) or (joints[0, child] == 0 and joints[1, child] == 0):
+                    continue
+
+                px, py = joints[0, parent], joints[1, parent]
+                cx, cy = joints[0, child], joints[1, child]
+
+                px_scaled, py_scaled = px * scale_x, py * scale_y
+                cx_scaled, cy_scaled = cx * scale_x, cy * scale_y
+
+                dist = np.sqrt((px_scaled - cx_scaled) ** 2 + (py_scaled - cy_scaled) ** 2)
+                bone_lengths_sum[i] += dist
+                bone_counts[i] += 1
+
+        avg_lengths = np.zeros(13)
+        for i in range(13):
+            if bone_counts[i] > 0:
+                avg_lengths[i] = bone_lengths_sum[i] / bone_counts[i]
+            else:
+                avg_lengths[i] = 20.0
+
+        return torch.tensor(avg_lengths, dtype=torch.float32)
+
     def fit(self, train_loader, val_loader=None):
+        # Compute and update average bone lengths for KinematicRefiner if model has average bone length buffer
+        raw_model = (
+            self.model.module if hasattr(self.model, "module") else self.model
+        )
+        if hasattr(raw_model, "refiner") and hasattr(raw_model.refiner, "avg_lengths"):
+            if self.is_main:
+                print("[Trainer] Computing dataset-specific average bone lengths...")
+            avg_lengths = self._compute_dataset_average_lengths(train_loader.dataset)
+            avg_lengths = avg_lengths.to(self.device)
+            raw_model.refiner.avg_lengths.copy_(avg_lengths)
+            if self.is_main:
+                print(f"[Trainer] Registered average bone lengths: {raw_model.refiner.avg_lengths.cpu().numpy().tolist()}")
+
         # Default to argmax for Heatmap models as it is more robust to background noise
         decode_method = "argmax"
         if self.is_main:
