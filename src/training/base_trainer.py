@@ -225,8 +225,8 @@ class BaseTrainer(ABC):
                 )
                 temp = self.config.get("training", {}).get("decode_temperature", 10.0)
                 preds = decode_heatmaps(
-                    outputs.cpu(), image_size, method=method, temperature=temp
-                )
+                    outputs, image_size, method=method, temperature=temp
+                ).cpu()
             else:
                 preds = outputs.cpu()
 
