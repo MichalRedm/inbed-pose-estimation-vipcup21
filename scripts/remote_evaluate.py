@@ -134,6 +134,19 @@ def main():
                 print(f"[sync] Results saved to {local_results_path}")
             except Exception as e:
                 print(f"[sync] Error downloading results: {e}")
+
+            # Also download the visual audit image if generated
+            checkpoint_stem = Path(args_cli.checkpoint_name).stem
+            remote_audit_path = f"/root/project/results/runs/{args_cli.run_id}/visual_audit_{checkpoint_stem}.png"
+            local_audit_path = local_results_dir / f"visual_audit_{checkpoint_stem}.png"
+            try:
+                print(f"[sync] Downloading visual audit to {local_audit_path}...")
+                gpu.download(
+                    remote_audit_path, str(local_audit_path), recursive=False
+                )
+                print(f"[sync] Visual audit saved to {local_audit_path}")
+            except Exception as e:
+                print(f"[sync] Warning: Could not download visual audit: {e}")
         else:
             print("\nEvaluation failed.")
             if result.stdout:

@@ -272,7 +272,7 @@ class GPUSession:
         if self._ssh.get_transport():
             self._ssh.get_transport().set_keepalive(30)
             if self._ssh.get_transport().sock:
-                self._ssh.get_transport().sock.settimeout(30.0)
+                self._ssh.get_transport().sock.settimeout(300.0)
         print(f"Connected to [{self.config.name}]")
 
     def disconnect(self):
