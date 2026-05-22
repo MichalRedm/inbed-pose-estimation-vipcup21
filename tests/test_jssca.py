@@ -3,22 +3,24 @@ import pytest
 from src.models import build_model
 from src.models.jssca_hrnet import JSSCAHRNet, JointSpatialChannelAttention
 
+
 def test_jssca_block_shape():
-    """Verify JointSpatialChannelAttention block processes heatmaps correctly."""
+    """Verify JointSpatialChannelAttention neck block processes backbone features correctly."""
     block = JointSpatialChannelAttention(
         num_joints=14,
-        heatmap_size=(64, 64),
-        embed_dim=256,
-        num_heads=4
+        in_channels=480,
+        embed_dim=32,
+        num_heads=4,
     )
     block.eval()
-    x = torch.zeros(2, 14, 64, 64)
+    x = torch.zeros(2, 480, 64, 64)
     with torch.no_grad():
         out = block(x)
-    assert out.shape == (2, 14, 64, 64), f"Expected (2, 14, 64, 64), got {out.shape}"
+    assert out.shape == (2, 480, 64, 64), f"Expected (2, 480, 64, 64), got {out.shape}"
+
 
 def test_jssca_hrnet_shape():
-    """Verify JSSCAHRNet processes input tensor correctly."""
+    """Verify JSSCAHRNet processes input image tensor correctly and outputs 14 heatmaps."""
     config = {
         "model": {
             "name": "jssca_hrnet",
@@ -28,9 +30,9 @@ def test_jssca_hrnet_shape():
                 "num_joints": 14,
                 "in_channels": 3,
                 "heatmap_size": [64, 64],
-                "jssca_embed_dim": 256,
-                "jssca_num_heads": 4
-            }
+                "jssca_embed_dim": 32,
+                "jssca_num_heads": 4,
+            },
         }
     }
     model = build_model(config)
@@ -41,7 +43,8 @@ def test_jssca_hrnet_shape():
         out = model(x)
     assert out.shape == (2, 14, 64, 64), f"Expected (2, 14, 64, 64), got {out.shape}"
 
+
 if __name__ == "__main__":
     test_jssca_block_shape()
     test_jssca_hrnet_shape()
-    print("All JSSCA tests passed successfully!")
+    print("All JSSCA-v2 unit tests passed successfully!")
