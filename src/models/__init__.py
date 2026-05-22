@@ -26,6 +26,7 @@ def build_model(config: Dict[str, Any]) -> nn.Module:
         # Import all modules in the package to ensure registration
         from . import hrnet  # noqa: F401
         from . import refined_hrnet  # noqa: F401
+        from . import jssca_hrnet  # noqa: F401
 
         if name not in MODEL_REGISTRY:
             raise ValueError(
