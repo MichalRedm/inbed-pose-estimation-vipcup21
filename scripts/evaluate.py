@@ -357,14 +357,6 @@ def evaluate(
                 using_refined = True
             else:
                 outputs = model(images)
-                import matplotlib.pyplot as plt
-
-                plt.imsave(
-                    "debug_heatmap_raw.png", outputs[0, 0].cpu().numpy(), cmap="hot"
-                )
-                print(
-                    f"DEBUG: Saved debug_heatmap_raw.png. Max={outputs.max().item():.4f}"
-                )
                 using_refined = False
 
             if targets is not None:
@@ -376,11 +368,11 @@ def evaluate(
                 raw_model = model.module if is_distributed else model
                 if raw_model.output_type == "heatmap":
                     preds = decode_heatmaps(
-                        outputs.cpu(),
+                        outputs,
                         image_size,
                         method=decode_method,
                         temperature=decode_temp,
-                    )
+                    ).cpu()
                 else:
                     preds = outputs.cpu()
 
