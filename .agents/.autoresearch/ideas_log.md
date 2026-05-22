@@ -17,7 +17,8 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 ### 2. Cross-Modality Feature Distillation (Aligned RGB → IR in Uncover Phase)
 *   **Hypothesis**: The SLP dataset provides perfectly aligned RGB and IR image pairs in the uncover phase. We can train a powerful RGB-only teacher model on clear color images. During student training on thermal IR, we apply a feature-imitation loss (e.g., Mean Squared Error or Cosine Similarity) between intermediate feature maps of the RGB teacher and the IR student. This transfers rich, occlusion-invariant human spatial priors into the thermal student network.
 *   **Implementation**: Train a standard HRNet on RGB uncover images to act as a frozen teacher. During student thermal training, pass aligned pairs and add MSE loss between parallel multi-resolution features.
-*   **ROI Status**: **MEDIUM-HIGH (ROI Rank 2)** — High theoretical ROI for bridging the domain gap, but moderate-to-high implementation complexity.
+*   **Status**: **UNDERPERFORMED (Loop 32)** — Peaked at ~58.7% PCK@0.2 (well below loop31's 64%). Post-mortem in Graveyard below.
+*   **ROI Status**: **PARTIALLY ARCHIVED** — The architecture is sound, the implementation is flawed. The improved version (Loop 33, below) is the next priority.
 
 ### 3. Structured Regional Cutout & Physically-Realistic Fabric Simulation
 *   **Hypothesis**: The previous thermal blanket augmentation only dimmed and blurred the lower body region without continuous sheet geometry, fabric drapes, fine wrinkles, proper shadow edge transitions, or structured limb occlusions. By implementing a high-fidelity continuous fabric draping simulation combined with sharp small-scale wrinkles, proper drop shadow edges along the top wavy fold line, and structured regional cutout (35% size ratio), we force the model to learn holistic spatial coordinates and body shape contours under heavy blanket occlusion.
@@ -25,15 +26,15 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 *   **Status**: **SUCCESS (Loop 31)** — Reached an all-time record **64.0% PCK@0.2** and **17.79 px MPJPE**. This represents the ultimate solution to the visual gap between synthetic and real blankets, and completely resolves occluded localization limits.
 *   **ROI Status**: **ARCHIVED** — Successful. Incorporated into baseline production champion.
 
-### 4. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
+### 3. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
 *   **Hypothesis**: Instead of training top-down HRNet from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` research initiative. Fine-tune them directly on the SLP dataset.
 *   **Implementation**: Load `yolo11n-pose.pt` using the `ultralytics` API, map keypoint labels, and fine-tune on the SLP training split.
-*   **ROI Status**: **MEDIUM (ROI Rank 3)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
+*   **ROI Status**: **HIGH (ROI Rank 1)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
 
-### 5. Kinematic Bone-Vector Decomposition (Decoupled Length and Direction)
+### 4. Kinematic Bone-Vector Decomposition (Decoupled Length and Direction)
 *   **Hypothesis**: Direct regression of absolute (x,y) coordinates under anatomical constraints often leads to "skeleton collapse" because minimizing bone lengths to 0 perfectly satisfies the Hinge loss. Decoupling the prediction into a root joint (pelvis) plus bone vectors (length and angle) prevents this. The length can be strongly regularized while angles vary freely.
 *   **Implementation**: Modify the model prediction head to regress root (x,y) and relative vectors for limbs, reconstructing the final pose via forward kinematics.
-*   **ROI Status**: **LOW-MEDIUM (ROI Rank 4)** — Strong theoretical guarantee against collapse, but requires heavy non-trivial architectural and loss restructuring.
+*   **ROI Status**: **MEDIUM (ROI Rank 2)** — Strong theoretical guarantee against collapse, but requires heavy non-trivial architectural and loss restructuring.
 
 ---
 
@@ -45,6 +46,8 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 *   **Preventing Skeleton Collapse**: Research indicates direct coordinate regression with structural penalties often leads to collapse. State-of-the-art methods decompose pose into root position + bone vectors (length/angle), applying length priors without compressing the skeleton.
 *   **Occlusion Handling**: Multi-modal fusion is best, but when restricted to IR, explicitly modeling visibility (e.g., through an auxiliary attention branch) helps the network switch from texture-reliance to prior-reliance.
 *   **Modality Pre-training & Grayscale COCO (2026-05-19 Web Research)**: In-depth survey of thermal/IR pose estimation literature (LLVIP-Pose, UCH-ThermalPose, OpenThermalPose) confirms that RGB-pretrained backbones undergo severe **feature washout** when the early 3-channel layers are averaged to 1-channel. The state-of-the-art recommendation is either **Channel Replication** ($R=G=B=IR$) or pre-training on grayscale-converted MS COCO to naturellement align weight statistics.
+*   **Cross-Modal Knowledge Distillation — Negative Transfer & Mitigations (2026-05-22 Web Research, post-Loop 32 post-mortem)**:
+    *   Even with output-level heatmap distillation (KL divergence) and linear decay, cross-modality distillation from RGB to IR fundamentally conflicts with physical occlusion augmentations (e.g., synthetic blankets). The RGB teacher models clear, uncovered pose distributions perfectly. When the student is fed heavily occluded IR images (simulated blankets) and forced to mimic the teacher's confident, clear-vision predictions, the student fails to learn the uncertainty and physical properties of the occlusion. It is effectively penalized for behaving like a thermal model under occlusion. SOTA cross-modal distillation is effective *only* when both modalities share similar occlusion states during training.
 
 ---
 
@@ -52,10 +55,11 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 
 This archive logs all completed experiments that failed to outperform our baseline or introduced regressions, detailing the exact root cause of their failure.
 
-### 1. Discriminative Learning Rates with Channel Replication (Loop 30)
-*   **Root Cause**: **BACKBONE UNDERFITTING**. The 0.1x backbone learning rate ($10^{-5}$) was too low to adapt the ImageNet-pretrained features to the thermal IR domain, even with channel replication. The model failed to converge to a precise state, resulting in a 20pp PCK drop compared to Loop 29 (uniform LR $10^{-4}$).
+### 1. Improved Cross-Modality Distillation — Output Heatmap Distillation (Loop 33)
+*   **Root Cause**: **SUPERVISION CONFLICT WITH OCCLUSION PHYSICS**. Distilling output heatmaps from an RGB teacher (trained on clear uncover images) to an IR student (trained on uncover images but heavily augmented with synthetic thermal blankets) actively hurts the student. The teacher confidently predicts joint locations based on RGB edges, but the student needs to learn the physical diffusion and blur of thermal energy through a blanket. Forcing the student to match the teacher's sharp RGB-based distributions prevents the student from learning the true thermal occlusion mapping. Result: 56.2% PCK@0.2 vs. 64.0% baseline.
 
-### 2. Stacking Two-Sided Anatomical Hinge Loss & Local-Masked Soft-Argmax (Loop 28)
+### 2. Discriminative Learning Rates with Channel Replication (Loop 30)
+*   **Root Cause**: **BACKBONE UNDERFITTING**. The 0.1x backbone learning rate ($10^{-5}$) was too low to adapt the ImageNet-pretrained features to the thermal IR domain, even with channel replication. The model failed to converge to a precise state, resulting in a 20pp PCK drop compared to Loop 29 (uniform LR $10^{-4}$).
 *   **Root Cause**: **SEVERE STRUCTURAL DEFORMATION**. In our visual audit on simple uncover IR poses, the model failed, introducing wrist double-prediction artifacts and diagonal crossed right-to-left ankle connections. Masking the soft-argmax coordinates to a tight $15 \times 15$ local window combined with anatomical bone constraints over-regularized the spatial tracking, leading to unnatural geometric shapes. Pure pixel-level heatmap MSE (Loop 27) remains significantly cleaner and more robust.
 
 ### 2. Progressive Unfreezing (Loop 25)
@@ -81,6 +85,11 @@ This archive logs all completed experiments that failed to outperform our baseli
 
 ### 9. Adversarial Unsupervised Domain Adaptation (Loop 5)
 *   **Root Cause**: **FEATURE WASHOUT**. Global domain-adversarial gradients destroyed the localization capacity of the features, leading to poor convergence.
+
+### 10. Cross-Modality Feature Distillation — Raw Feature MSE (Loop 32)
+*   **Root Cause**: **CROSS-MODAL NEGATIVE TRANSFER**. Distilling raw HRNet Stage 3 & Stage 4 feature maps (MSE) from an RGB teacher to an IR student forces the student to mimic texture statistics that are fundamentally different between the two modalities. RGB features are dominated by color edges, texture gradients, and surface reflectance; IR features are dominated by heat diffusion blobs and emissivity gradients. The uncertainty weighting mechanism (`sigma_distill`) correctly detected that the teacher signal was harmful from Epoch 22 onward — `w_distill` turned negative and kept growing in magnitude. Despite the automatic suppression, the distillation loss had already constrained the student's early-stage feature representations to partially conform to RGB-domain activations, creating a representational ceiling it could not escape. **Peak: ~58.7% PCK (Ep28) vs. record 64.0%.**
+*   **Key Diagnostic Signal**: `w_distill` sign-flip at Epoch 22 (55% into 40-epoch training). The student's pose loss kept improving (`loss_pose` 0.037→0.0012), confirming the student backbone was learning effectively — the ceiling was imposed purely by the conflicting distillation constraint.
+*   **Lessons for Loop 33**: (1) Use output heatmap distillation, not raw feature MSE; (2) apply a decaying distillation weight schedule; (3) consider two-phase training — stop distillation at epoch ~20.
 
 ---
 *Created and maintained under the Antigravity ML Autoresearch framework.*

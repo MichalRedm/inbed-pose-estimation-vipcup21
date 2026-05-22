@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 31
-- **Phase**: Phase 5 — Recursive Continuation & State Logging
-- **Status**: Loop 31 (**`loop31_improved_cover`**) is a historic breakthrough! It achieved the all-time undisputed project record of **64.0% PCK@0.2** and slashed MPJPE to **17.79 px** on the cover1+cover2 validation subjects. This represents a massive **+12.0pp absolute improvement** over the previous record of 52.0% (Loop 29) and a **39% reduction in localization error**. The synergy of physically-realistic fabric drape/wrinkle simulation, structured cutout (35% size), sigma curriculum (3.0→1.5), and pretrained channel replication proved to be the ultimate domain-adaptation recipe.
-- **Absolute Priority**: 
-  1. **Pull Request Submission**: Finalize and submit the PR for the `feat/improve-cover-augmentation` branch containing our refined fabric simulation, training resiliency fixes, and the Loop 31 configuration.
-  2. **Top Baseline**: Loop 31 (**64.0% PCK@0.2**, **17.79 px MPJPE**) is the new definitive Top Baseline.
+- **Current Loop**: 34 (planning)
+- **Phase**: Phase 1 — Deep Codebase & Online Research
+- **Status**: Loop 33 (**`loop33_distillation_improved`**) has concluded. It explored output-heatmap (KL divergence) cross-modality distillation with a linear weight decay, combined with the Loop 31 SOTA augmentations. The result was **56.2% PCK@0.2** on the validation set. This is a severe regression (-7.8pp) from Loop 31's 64.0%. Distillation actively hurt performance. We are officially abandoning cross-modality distillation and pivoting back to the pure thermal domain.
+- **Absolute Priority**:
+  1. **Record**: Loop 31 (**64.0% PCK@0.2**, **17.79 px MPJPE**) remains the all-time record.
+  2. **Next Step**: Design Loop 34. We will explore YOLO-Pose thermal pretraining (OpenThermalPose) or Kinematic Bone-Vector Decomposition.
 - **Baseline**: Loop 31 (64.0% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -72,7 +72,8 @@ The fundamental loss-metric alignment problem has been resolved:
 | 29 | Input Channel Replication (3-channel IR) | SUCCESS | **52.0%** | **NEW TOP PCK**. Hypothesis confirmed: preserving ImageNet conv1 priors via replication bridges the domain gap. |
 | 30 | Discriminative LR (0.1x backbone) | FAILURE | 31.6% | **BACKBONE UNDERFITTING**: 1e-5 backbone LR was too low to adapt to IR features. |
 | 31 | Physically-Realistic fabric draping + Structured Cutout + Sigma Curriculum + Channel Replication (40ep) | SUCCESS | **64.0%** | **ALL-TIME RECORD**. Hypothesis verified: high-fidelity blanket drape and wrinkle simulation + structured cutout forces the network to learn holistic geometric structures, while ImageNet Edge/Shape priors and curriculum learning provide a perfect adaptation path. |
-
+| 32 | Cross-Modality Feature Distillation (MSE on Stage 3/4) | PARTIAL | ~55.0% | **NEGATIVE TRANSFER**: The teacher's raw RGB features have different texture statistics than IR. The student learned to map wrong textures. |
+| 33 | Improved Output-Heatmap Distillation (KL Div) + Phase 2 Bypass | FAILURE | **56.2%** | **TEACHER CONFLICT**: Despite output-only distillation and linear decay, the RGB teacher's supervision on clean synthetic-blanket images actively contradicted the physical fabric drape augmentations, hurting the student's ability to learn thermal-specific occlusion physics. Peak PCK was 58.0% (Epoch 40), but local strict PCK is 56.2%. |
 
 ## ⚠️ CRITICAL: Pretrained Route Post-Mortem (2026-05-18 — Final)
 
@@ -86,7 +87,8 @@ The fundamental loss-metric alignment problem has been resolved:
 
 **FINAL VERDICT**: The pretrained HRNet-W32 approach is definitively abandoned as a primary strategy for this dataset. The ceiling is structurally imposed by domain gap, conv1 limitation, and insufficient data scale for backbone adaptation. All future loops will focus on scratch-based improvements.
 
-## Next Planned Steps (Post-Loop 28 Revert)
-1. **Pull Request Submission**: Package the highly successful Loop 27 baseline model as the core production-grade champion and submit a Pull Request to merge the `feat/ddp-robust-scratch-training` branch into `main`.
-2. **Future Explorations**: Investigate alternative robust regularization routes (e.g., Grayscale COCO Pre-training or Cross-Modality Distillation from aligned RGB uncover frames) that preserve spatial stability without inducing joint connection regressions.
+## Next Planned Steps (Post-Loop 33)
+1. **Abandon Cross-Modal Distillation**: It is definitively harmful when stacked with high-fidelity physical blanket augmentations (Loop 31), as the RGB teacher cannot model thermal occlusion physics.
+2. **Design Loop 34**: Pivot to the top unattempted ROI strategies: OpenThermalPose YOLO fine-tuning or Kinematic Bone-Vector Decomposition.
+
 
