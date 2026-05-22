@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 31
-- **Phase**: Phase 5 — Recursive Continuation & State Logging
-- **Status**: Loop 31 (**`loop31_improved_cover`**) is a historic breakthrough! It achieved the all-time undisputed project record of **64.0% PCK@0.2** and slashed MPJPE to **17.79 px** on the cover1+cover2 validation subjects. This represents a massive **+12.0pp absolute improvement** over the previous record of 52.0% (Loop 29) and a **39% reduction in localization error**. The synergy of physically-realistic fabric drape/wrinkle simulation, structured cutout (35% size), sigma curriculum (3.0→1.5), and pretrained channel replication proved to be the ultimate domain-adaptation recipe.
-- **Absolute Priority**: 
-  1. **Pull Request Submission**: Finalize and submit the PR for the `feat/improve-cover-augmentation` branch containing our refined fabric simulation, training resiliency fixes, and the Loop 31 configuration.
-  2. **Top Baseline**: Loop 31 (**64.0% PCK@0.2**, **17.79 px MPJPE**) is the new definitive Top Baseline.
+- **Current Loop**: 32 (in progress)
+- **Phase**: Phase 6 — Cross-Modality Distillation Experiment & Analysis
+- **Status**: Loop 32 (**`loop32_distillation`**) is nearing completion (Epoch 36/40 at last check). It explored RGB→IR cross-modality feature distillation using a frozen RGB teacher (83.0% PCK) and an IR student trained simultaneously on pose MSE loss + multi-stage feature imitation loss. The experiment **did not beat the record** — it peaked at **~58.7% PCK@0.2** (Epoch 28) and converged to ~55% in the final epochs. The approach is promising in the early phase but suffers from negative transfer in the second half of training. Detailed post-mortem documented in the Iteration Log below.
+- **Absolute Priority**:
+  1. **Record**: Loop 31 (**64.0% PCK@0.2**, **17.79 px MPJPE**) remains the all-time record.
+  2. **Next Step**: Design Loop 33 incorporating lessons from Loop 32's failure — specifically: distillation loss decay schedule, output heatmap distillation instead of (or alongside) intermediate feature distillation, and a two-phase training approach.
 - **Baseline**: Loop 31 (64.0% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -72,6 +72,7 @@ The fundamental loss-metric alignment problem has been resolved:
 | 29 | Input Channel Replication (3-channel IR) | SUCCESS | **52.0%** | **NEW TOP PCK**. Hypothesis confirmed: preserving ImageNet conv1 priors via replication bridges the domain gap. |
 | 30 | Discriminative LR (0.1x backbone) | FAILURE | 31.6% | **BACKBONE UNDERFITTING**: 1e-5 backbone LR was too low to adapt to IR features. |
 | 31 | Physically-Realistic fabric draping + Structured Cutout + Sigma Curriculum + Channel Replication (40ep) | SUCCESS | **64.0%** | **ALL-TIME RECORD**. Hypothesis verified: high-fidelity blanket drape and wrinkle simulation + structured cutout forces the network to learn holistic geometric structures, while ImageNet Edge/Shape priors and curriculum learning provide a perfect adaptation path. |
+| 32 | Cross-Modality Feature Distillation — frozen RGB teacher (83% PCK) → IR student (MSE pose loss + multi-stage MSE feature imitation, Stage 3+4 HRNet) with uncertainty weighting (40ep, on `feat/cross-modality-distillation` branch) | PARTIAL — did not beat record | **~58.7%** (peak Ep28); final ~55% | **NEGATIVE TRANSFER in late training**: The uncertainty weighting `w_distill` went negative from Epoch 22 onward, indicating the teacher features became harmful rather than helpful once the student found its own IR-specific representations. The feature-level MSE distillation (mimicking Stage 3/4 raw activations) forces structural similarity that is **too strict for cross-modal transfer** — RGB and IR intermediate features are fundamentally different in texture statistics even for the same scene. Approach needs: (1) decoupled/adaptive distillation scheduling, (2) output heatmap distillation instead of raw features, (3) two-phase training. See `ideas_log.md` for Loop 33 proposals. |
 
 
 ## ⚠️ CRITICAL: Pretrained Route Post-Mortem (2026-05-18 — Final)
@@ -86,7 +87,8 @@ The fundamental loss-metric alignment problem has been resolved:
 
 **FINAL VERDICT**: The pretrained HRNet-W32 approach is definitively abandoned as a primary strategy for this dataset. The ceiling is structurally imposed by domain gap, conv1 limitation, and insufficient data scale for backbone adaptation. All future loops will focus on scratch-based improvements.
 
-## Next Planned Steps (Post-Loop 28 Revert)
-1. **Pull Request Submission**: Package the highly successful Loop 27 baseline model as the core production-grade champion and submit a Pull Request to merge the `feat/ddp-robust-scratch-training` branch into `main`.
-2. **Future Explorations**: Investigate alternative robust regularization routes (e.g., Grayscale COCO Pre-training or Cross-Modality Distillation from aligned RGB uncover frames) that preserve spatial stability without inducing joint connection regressions.
+## Next Planned Steps (Post-Loop 32)
+1. **Evaluate Loop 32 final checkpoint**: Run `python scripts/remote_evaluate.py --run_id loop32_distillation` once training completes to get the official final PCK number.
+2. **Design Loop 33**: Implement the improved distillation approach (see `ideas_log.md` Loop 33 proposals): two-phase training, output heatmap distillation, decaying distillation weight, and stopping distillation at epoch ~20 when negative transfer begins.
+3. **Alternative**: If distillation improvements are unlikely to exceed 64%, pivot to other high-ROI ideas (e.g., OpenThermalPose YOLO fine-tuning, Kinematic Bone-Vector Decomposition).
 
