@@ -130,3 +130,39 @@ class UncertaintyWeighting(nn.Module):
             weighted_dict[f"sigma_{key}"] = torch.exp(0.5 * log_var).item()
 
         return total_loss, weighted_dict
+
+
+class FeatureDistillationLoss(nn.Module):
+    """
+    Computes feature distillation loss (MSE) between teacher and student feature maps.
+    Supports multi-stage alignment (e.g. Stage 3 + Stage 4).
+    If features have different channel counts, automatically applies a 1x1 conv projection.
+    """
+    def __init__(self, channels_student: list, channels_teacher: list):
+        super().__init__()
+        assert len(channels_student) == len(channels_teacher), "Must have same number of stages"
+        self.projections = nn.ModuleList()
+        for c_s, c_t in zip(channels_student, channels_teacher):
+            if c_s != c_t:
+                # 1x1 convolution to match channels from student to teacher
+                self.projections.append(nn.Conv2d(c_s, c_t, kernel_size=1, bias=False))
+            else:
+                self.projections.append(nn.Identity())
+
+    def forward(self, student_features: list, teacher_features: list) -> torch.Tensor:
+        """
+        student_features: List of feature tensors from student [stage3, stage4]
+        teacher_features: List of feature tensors from teacher [stage3, stage4]
+        """
+        loss = 0.0
+        for s_feat, t_feat, proj in zip(student_features, teacher_features, self.projections):
+            # Project student feature map if needed
+            s_proj = proj(s_feat)
+            
+            # Match spatial dimensions if they differ (using bilinear interpolation)
+            if s_proj.shape[2:] != t_feat.shape[2:]:
+                s_proj = F.interpolate(s_proj, size=t_feat.shape[2:], mode="bilinear", align_corners=True)
+                
+            loss += F.mse_loss(s_proj, t_feat)
+            
+        return loss / len(student_features)
