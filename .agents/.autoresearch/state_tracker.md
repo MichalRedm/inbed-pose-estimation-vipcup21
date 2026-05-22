@@ -1,12 +1,12 @@
 # State Tracker
 
-- **Current Loop**: 35 (planning)
-- **Phase**: Phase 1 — Deep Codebase & Online Research
-- **Status**: Loop 34 (**`loop34_kinematic_refinement`**) has concluded. It explored differentiable Kinematic Bone-Vector Decomposition (decoupling keypoint prediction into root position + bone directions and lengths recursively reconstructed via forward kinematics) combined with Loop 31 augmentations. Despite correcting a modality-dependent bone scaling bug, the model reached only **33.1% PCK@0.2** and **24.9 px MPJPE** on the validation set. This represents a severe regression (-30.9pp) compared to the Loop 31 champion baseline of 64.0%.
+- **Current Loop**: 36 (implementation)
+- **Phase**: Phase 3 — Implementation
+- **Status**: Loop 35 (**`loop35_jssca_attention`**) has concluded. It explored Joint-Symmetric Spatial-Channel Attention (JSSCA) to coordinate predicted keypoint heatmaps using an HRNet-W32 backbone with image replication. It achieved a peak validation of **66.56% PCK@0.2** and **17.60 px MPJPE**, beating the previous Loop 31 champion by +2.56pp and establishing a new SOTA record. However, spatial collapse inside the attention downsampling block was identified as a major bottleneck. We are proceeding to Loop 36 (JSSCA-v2 Option A: Backbone-Aware Joint-Spatial Neck Attention) to achieve >70% PCK.
 - **Absolute Priority**:
-  1. **Record**: Loop 31 (**64.0% PCK@0.2**, **17.79 px MPJPE**) remains the all-time record.
-  2. **Next Step**: Design Loop 35. We will explore YOLO-Pose thermal pretraining (OpenThermalPose) or other competitive heatmap-based refinement.
-- **Baseline**: Loop 31 (64.0% PCK@0.2).
+  1. **Record**: Loop 35 (**66.56% PCK@0.2**, **17.60 px MPJPE**) is the new all-time record.
+  2. **Next Step**: Design and implement Loop 36 (JSSCA-v2 Option A).
+- **Baseline**: Loop 35 (66.56% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -16,7 +16,8 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 
 | Run | Decoder | PCK@0.2 (strict) | MPJPE | Status |
 |-----|---------|--------------------|--------------------|--------|
-| **loop31_improved_cover** | argmax | **64.0%** | **17.79 px** | **NEW ALL-TIME RECORD** |
+| **loop35_jssca_attention** | argmax | **66.56%** | **17.60 px** | **NEW ALL-TIME RECORD** |
+| loop31_improved_cover | argmax | **64.0%** | **17.79 px** | PREVIOUS RECORD champion |
 | loop29_channel_replication | argmax | **52.0%** | 29.3 px | PREVIOUS TOP PCK |
 | loop27_clean_sigma_cutout | argmax | **50.3%** | 27.2 px | SUCCESS |
 | loop2_fixed_aug | argmax | **46.6%** | 29.6 px | Solid Scratch Baseline |
@@ -37,7 +38,7 @@ The loop16 `best_model.pth` was saved based on **combined val loss** (heatmap MS
 ## ⚠️ CRITICAL: Prerequisite Issue Resolved
 
 The fundamental loss-metric alignment problem has been resolved:
-- The `best_model.pth` saving criterion is now tied directly to **val PCK** (implemented in `base_trainer.py`).
+- The `best_model.pth` saving criterion is now tied directly to **val PCK`** (implemented in `base_trainer.py`).
 - Atomic checkpoint downloads and integrity checks are now fully functional, protecting the local and remote directories against corruption during active runs.
 - Uvicorn reload scope has been limited strictly to the `src/` directory, preventing accidental training stops during manual code/log audits.
 
@@ -50,6 +51,7 @@ The fundamental loss-metric alignment problem has been resolved:
 - **Remapping Fix**: Resolved a regression in `load_model_for_inference` where structural remapping (modules_list removal) failed for prefixed keys (e.g., `hrnet.`), which previously broke GCN-refined models like `loop18`.
 - **Environment**: Enforced `.venv\Scripts\python.exe` for all backend services.
 - **API & Remote Training Resiliency (2026-05-21)**: Restricted Uvicorn reload watcher scope strictly to the `src/` folder to prevent active runs from being interrupted by metadata or log writes. Implemented atomic checkpoint synchronization (writing to `.tmp` first, verifying PyTorch header/sizes, and renaming) to eliminate corrupt checkpoint risks completely.
+- **Automatic Connection Recovery (2026-05-22)**: Implemented robust SSH keep-alive check and auto-retry harness within `GPUSession` and `TrainingManager`. The pipeline now seamlessly survives transient Wi-Fi drops, Cloudflare tunnel resets, and WinError socket drop codes without terminating active runs.
 
 ## Iteration Log
 
@@ -76,21 +78,9 @@ The fundamental loss-metric alignment problem has been resolved:
 | 32 | Cross-Modality Feature Distillation (MSE on Stage 3/4) | PARTIAL | ~55.0% | **NEGATIVE TRANSFER**: The teacher's raw RGB features have different texture statistics than IR. The student learned to map wrong textures. |
 | 33 | Improved Output-Heatmap Distillation (KL Div) + Phase 2 Bypass | FAILURE | **56.2%** | **TEACHER CONFLICT**: Despite output-only distillation and linear decay, the RGB teacher's supervision on clean synthetic-blanket images actively contradicted the physical fabric drape augmentations, hurting the student's ability to learn thermal-specific occlusion physics. Peak PCK was 58.0% (Epoch 40), but local strict PCK is 56.2%. |
 | 34 | Kinematic Bone-Vector Decomposition | FAILURE | **33.1%** | **CUMULATIVE ERROR PROPAGATION**: Decoupling keypoint prediction into root position + bone directions and lengths recursively reconstructed via forward kinematics accumulates directional and length errors recursively. Extremities (ankles/wrists) reached extremely low PCKs (8-16%) due to error stacking over 3-4 steps, and soft-argmax input caused severe spatial smoothing. Heatmap-based peak detection remains vastly superior. |
+| 35 | Joint-Symmetric Spatial-Channel Attention (JSSCA) | SUCCESS | **66.56%** | **NEW ALL-TIME RECORD**. Hypothesis verified: spatial multi-head joint self-attention models limb dependencies and corrects extremity failures. However, average pooling the spatial features of heatmaps to $1\times 1$ tokens is highly lossy and limits localization accuracy. |
 
-## ⚠️ CRITICAL: Pretrained Route Post-Mortem (2026-05-18 — Final)
+## Next Planned Steps (Post-Loop 35)
 
-**Root causes for the confirmed structural ceiling at ~42% PCK:**
-
-1. **RGB→IR Domain Gap is fundamental, not addressable by scheduling**: ImageNet RGB features (texture, color, spatial gradients) have minimal overlap with thermal IR (heat diffusion, emissivity, body-mass heat signatures). The backbone, despite 50 epochs of fine-tuning, retains structural biases that are misaligned with the thermal domain. This is consistent with the literature: domain-specific pre-training (e.g., grayscale-COCO or thermal-dataset pre-training) is required to bridge this gap reliably.
-2. **1-channel conv1 adaptation is a known weak link**: HRNet-W32 conv1 is designed for 3-channel RGB. Averaging the 3 input channels to adapt to 1-channel IR means the network's very first layer is not pre-trained in any meaningful sense. The entire backbone's feature chain starts from a sub-optimal initialization.
-3. **Progressive unfreezing train-val divergence is the Phase 2 ceiling**: The train-val loss gap grew by 1731% during Phase 2 (from 0.00005 to 0.00101). This means fine-tuning the full backbone created overfitting pressure rather than domain adaptation. The 80-subject dataset (~1700 training images) is insufficient to fully adapt 915 backbone parameter groups.
-4. **Scratch models have an implicit advantage via initialization scale**: When training from scratch, all 1823 parameter tensors are Xavier/He initialized to be appropriate for small-scale spatial data (thermal IR). The pre-trained model starts all layers scaled for large, diverse ImageNet statistics — this requires the optimizer to do extra work to rescale distributions, consuming capacity that could otherwise improve localization.
-5. **Sigma curriculum (Loop 17) explains the scratch-model advantage**: Loop 17's 43.1% PCK uses a sigma curriculum (3.0→1.5), which progressively trains the model to make finer-grained predictions. Pretrained models (fixed sigma=2.0) have no equivalent mechanism to force progressive localization refinement.
-
-**FINAL VERDICT**: The pretrained HRNet-W32 approach is definitively abandoned as a primary strategy for this dataset. The ceiling is structurally imposed by domain gap, conv1 limitation, and insufficient data scale for backbone adaptation. All future loops will focus on scratch-based improvements.
-
-## Next Planned Steps (Post-Loop 34)
-1. **Abandon Kinematic Refinement**: Cumulative error propagation along the recursively reconstructed tree structure underperforms direct heatmap keypoint regression.
-2. **Design Loop 35**: Design and fine-tune a YOLO-pose based thermal keypoint estimator or explore alternative spatial self-attention/transformer-based keypoint tracking.e-Vector Decomposition.
-
-
+1. **Design and Implement JSSCA-v2 (Option A)**: Embed JSSCA *before* the output head, allowing it to act as a deep feature-refinement neck processing the multi-resolution features `(B, 480, 64, 64)` of HRNet-W32. Flatten joint-spatial dimensions to sequence tokens to perform spatial-joint co-attention directly in high-resolution coordinate space.
+2. **Train & Evaluate**: Run Loop 36 for 40 epochs on remote Kaggle dual T4 GPUs. Compare metrics against JSSCA-v1 (66.56%) to break through the 70% threshold.
