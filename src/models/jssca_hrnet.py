@@ -56,11 +56,11 @@ class JointSpatialChannelAttention(nn.Module):
         B, J, H, W = heatmaps.shape
 
         # 1. Reshape heatmaps to run through the joint-wise encoder
-        x = heatmaps.view(B * J, 1, H, W)  # (B*J, 1, H, W)
+        x = heatmaps.reshape(B * J, 1, H, W)  # (B*J, 1, H, W)
         embeddings = self.encoder(x)  # (B*J, embed_dim)
 
         # 2. Reshape back to batch and add joint positional embeddings
-        embeddings = embeddings.view(B, J, self.embed_dim)  # (B, J, embed_dim)
+        embeddings = embeddings.reshape(B, J, self.embed_dim)  # (B, J, embed_dim)
         embeddings_with_pos = embeddings + self.joint_pos_embed
 
         # 3. Apply Multi-Head Self-Attention across joints
@@ -70,11 +70,11 @@ class JointSpatialChannelAttention(nn.Module):
         )  # (B, J, embed_dim)
 
         # 4. Reshape and decode back to heatmaps
-        refined_embeddings = refined_embeddings.view(
+        refined_embeddings = refined_embeddings.reshape(
             B * J, self.embed_dim
         )  # (B*J, embed_dim)
         delta = self.decoder(refined_embeddings)  # (B*J, H*W)
-        delta = delta.view(B, J, H, W)  # (B, J, H, W)
+        delta = delta.reshape(B, J, H, W)  # (B, J, H, W)
 
         # 5. Residual link
         return heatmaps + delta
