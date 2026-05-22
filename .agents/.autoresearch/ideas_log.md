@@ -34,7 +34,8 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 ### 4. Kinematic Bone-Vector Decomposition (Decoupled Length and Direction)
 *   **Hypothesis**: Direct regression of absolute (x,y) coordinates under anatomical constraints often leads to "skeleton collapse" because minimizing bone lengths to 0 perfectly satisfies the Hinge loss. Decoupling the prediction into a root joint (pelvis) plus bone vectors (length and angle) prevents this. The length can be strongly regularized while angles vary freely.
 *   **Implementation**: Modify the model prediction head to regress root (x,y) and relative vectors for limbs, reconstructing the final pose via forward kinematics.
-*   **ROI Status**: **MEDIUM (ROI Rank 2)** — Strong theoretical guarantee against collapse, but requires heavy non-trivial architectural and loss restructuring.
+*   **Status**: **FAILURE (Loop 34)** — Peaked at **33.1% PCK@0.2** and **24.9 px MPJPE**. Post-mortem in Graveyard below.
+*   **ROI Status**: **ARCHIVED (FAILED)** — Failed to match or improve baseline. Severe error propagation.
 
 ---
 
@@ -55,7 +56,11 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 
 This archive logs all completed experiments that failed to outperform our baseline or introduced regressions, detailing the exact root cause of their failure.
 
-### 1. Improved Cross-Modality Distillation — Output Heatmap Distillation (Loop 33)
+### 1. Kinematic Bone-Vector Decomposition (Loop 34)
+*   **Root Cause**: **CUMULATIVE ERROR PROPAGATION**: Decoupling coordinates into a recursive kinematic tree propagates errors down the limbs. In coordinate space, the prediction of a distal leaf (wrist/ankle) depends on a long chain of limb direction and scaling offsets from the root (neck/pelvis). Angular and length errors accumulate at each bone junction, causing massive offset drift for wrists and ankles (PCK@0.2 drops to 8-16% on extremities).
+*   **Root Cause**: **COORDINATE SMOOTHING FROM SOFT-ARGMAX**: Kinematic reconstruction takes soft-argmax coordinates as input. Soft-argmax's mathematical expectation over heatmaps inherently acts as a spatial smoothing operator, which pulls joint predictions toward the body's centroid and dampens geometric variance, making it highly susceptible to systemic joint shift. High-resolution pixel-level heatmap argmax peak detection remains far more precise.
+
+### 2. Improved Cross-Modality Distillation — Output Heatmap Distillation (Loop 33)
 *   **Root Cause**: **SUPERVISION CONFLICT WITH OCCLUSION PHYSICS**. Distilling output heatmaps from an RGB teacher (trained on clear uncover images) to an IR student (trained on uncover images but heavily augmented with synthetic thermal blankets) actively hurts the student. The teacher confidently predicts joint locations based on RGB edges, but the student needs to learn the physical diffusion and blur of thermal energy through a blanket. Forcing the student to match the teacher's sharp RGB-based distributions prevents the student from learning the true thermal occlusion mapping. Result: 56.2% PCK@0.2 vs. 64.0% baseline.
 
 ### 2. Discriminative Learning Rates with Channel Replication (Loop 30)

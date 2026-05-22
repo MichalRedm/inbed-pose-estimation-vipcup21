@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 34 (planning)
+- **Current Loop**: 35 (planning)
 - **Phase**: Phase 1 — Deep Codebase & Online Research
-- **Status**: Loop 33 (**`loop33_distillation_improved`**) has concluded. It explored output-heatmap (KL divergence) cross-modality distillation with a linear weight decay, combined with the Loop 31 SOTA augmentations. The result was **56.2% PCK@0.2** on the validation set. This is a severe regression (-7.8pp) from Loop 31's 64.0%. Distillation actively hurt performance. We are officially abandoning cross-modality distillation and pivoting back to the pure thermal domain.
+- **Status**: Loop 34 (**`loop34_kinematic_refinement`**) has concluded. It explored differentiable Kinematic Bone-Vector Decomposition (decoupling keypoint prediction into root position + bone directions and lengths recursively reconstructed via forward kinematics) combined with Loop 31 augmentations. Despite correcting a modality-dependent bone scaling bug, the model reached only **33.1% PCK@0.2** and **24.9 px MPJPE** on the validation set. This represents a severe regression (-30.9pp) compared to the Loop 31 champion baseline of 64.0%.
 - **Absolute Priority**:
   1. **Record**: Loop 31 (**64.0% PCK@0.2**, **17.79 px MPJPE**) remains the all-time record.
-  2. **Next Step**: Design Loop 34. We will explore YOLO-Pose thermal pretraining (OpenThermalPose) or Kinematic Bone-Vector Decomposition.
+  2. **Next Step**: Design Loop 35. We will explore YOLO-Pose thermal pretraining (OpenThermalPose) or other competitive heatmap-based refinement.
 - **Baseline**: Loop 31 (64.0% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -28,6 +28,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 | loop4_uda_alignment | argmax | 35.6% | 40.3 px | UDA BASE |
 | loop23_stabilized_pretraining | argmax | **41.0%** | 37.0 px | FINE-TUNED |
 | loop18_gcn_final_v5 | soft-argmax | 33.4% | 26.6 px | SUCCESS |
+| loop34_kinematic_refinement | soft-argmax + Kinematic | 33.1% | 24.9 px | FAILURE |
 | loop26_sigma_cutout | soft-argmax | 44.4% | 30.3 px | COLLAPSED |
 | loop19 | soft-argmax | 12.7% | 66.7 px | COLLAPSED |
 
@@ -74,6 +75,7 @@ The fundamental loss-metric alignment problem has been resolved:
 | 31 | Physically-Realistic fabric draping + Structured Cutout + Sigma Curriculum + Channel Replication (40ep) | SUCCESS | **64.0%** | **ALL-TIME RECORD**. Hypothesis verified: high-fidelity blanket drape and wrinkle simulation + structured cutout forces the network to learn holistic geometric structures, while ImageNet Edge/Shape priors and curriculum learning provide a perfect adaptation path. |
 | 32 | Cross-Modality Feature Distillation (MSE on Stage 3/4) | PARTIAL | ~55.0% | **NEGATIVE TRANSFER**: The teacher's raw RGB features have different texture statistics than IR. The student learned to map wrong textures. |
 | 33 | Improved Output-Heatmap Distillation (KL Div) + Phase 2 Bypass | FAILURE | **56.2%** | **TEACHER CONFLICT**: Despite output-only distillation and linear decay, the RGB teacher's supervision on clean synthetic-blanket images actively contradicted the physical fabric drape augmentations, hurting the student's ability to learn thermal-specific occlusion physics. Peak PCK was 58.0% (Epoch 40), but local strict PCK is 56.2%. |
+| 34 | Kinematic Bone-Vector Decomposition | FAILURE | **33.1%** | **CUMULATIVE ERROR PROPAGATION**: Decoupling keypoint prediction into root position + bone directions and lengths recursively reconstructed via forward kinematics accumulates directional and length errors recursively. Extremities (ankles/wrists) reached extremely low PCKs (8-16%) due to error stacking over 3-4 steps, and soft-argmax input caused severe spatial smoothing. Heatmap-based peak detection remains vastly superior. |
 
 ## ⚠️ CRITICAL: Pretrained Route Post-Mortem (2026-05-18 — Final)
 
@@ -87,8 +89,8 @@ The fundamental loss-metric alignment problem has been resolved:
 
 **FINAL VERDICT**: The pretrained HRNet-W32 approach is definitively abandoned as a primary strategy for this dataset. The ceiling is structurally imposed by domain gap, conv1 limitation, and insufficient data scale for backbone adaptation. All future loops will focus on scratch-based improvements.
 
-## Next Planned Steps (Post-Loop 33)
-1. **Abandon Cross-Modal Distillation**: It is definitively harmful when stacked with high-fidelity physical blanket augmentations (Loop 31), as the RGB teacher cannot model thermal occlusion physics.
-2. **Design Loop 34**: Pivot to the top unattempted ROI strategies: OpenThermalPose YOLO fine-tuning or Kinematic Bone-Vector Decomposition.
+## Next Planned Steps (Post-Loop 34)
+1. **Abandon Kinematic Refinement**: Cumulative error propagation along the recursively reconstructed tree structure underperforms direct heatmap keypoint regression.
+2. **Design Loop 35**: Design and fine-tune a YOLO-pose based thermal keypoint estimator or explore alternative spatial self-attention/transformer-based keypoint tracking.e-Vector Decomposition.
 
 
