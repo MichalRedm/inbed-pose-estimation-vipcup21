@@ -357,81 +357,100 @@ class TrainingManager:
                 else:
                     is_remote = bool(remote_cfg)
 
-            if is_remote:
-                self.status_message = "Starting remote training..."
-                cmd = [
-                    sys.executable,
-                    "-u",
-                    str(project_root / "scripts" / "remote_train.py"),
-                ]
-            else:
-                self.status_message = "Starting local training..."
-                cmd = [sys.executable, "-u", str(project_root / "scripts" / "train.py")]
+            max_retries = 5
+            retry_count = 0
 
-            if self.current_run_id:
-                cmd.extend(["--run_id", self.current_run_id])
-
-            # Use the frozen config for the run
-            relative_config_path = self.frozen_config_path.relative_to(
-                project_root
-            ).as_posix()
-            cmd.extend(["--config", relative_config_path])
-            print(f"[TrainingManager] Using frozen config: {relative_config_path}")
-
-            self.log_history.append(
-                f"[{time.strftime('%H:%M:%S')}] [Manager] Executing: {' '.join(cmd)}"
-            )
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                cwd=str(project_root),
-            )
-            self.log_history.append(
-                f"[{time.strftime('%H:%M:%S')}] [Manager] Process started (PID: {process.pid})"
-            )
-
-            for line in process.stdout:
+            while retry_count <= max_retries:
                 if self._stop_event.is_set():
-                    process.terminate()
-                    self.status_message = "Stopping training..."
                     break
 
-                line = line.strip()
-                if line:
-                    # Robust JSON Metrics Stream (skip log history)
-                    if "[METRICS]" in line:
-                        self._handle_metrics_line(line)
-                        continue
+                if is_remote:
+                    if retry_count > 0:
+                        self.status_message = f"Reconnecting and resuming (attempt {retry_count}/{max_retries})..."
+                    else:
+                        self.status_message = "Starting remote training..."
+                    
+                    cmd = [
+                        sys.executable,
+                        "-u",
+                        str(project_root / "scripts" / "remote_train.py"),
+                    ]
+                else:
+                    self.status_message = "Starting local training..."
+                    cmd = [sys.executable, "-u", str(project_root / "scripts" / "train.py")]
 
-                    # Add to log history with timestamp
-                    timestamp = time.strftime("%H:%M:%S")
-                    log_line = f"[{timestamp}] {line}"
-                    print(f"[TrainingManager] {line}")  # For backend debugging
-                    self.log_history.append(log_line)
-                    if len(self.log_history) > 1000:
-                        self.log_history.pop(0)
+                if self.current_run_id:
+                    cmd.extend(["--run_id", self.current_run_id])
 
-                    # Persistence: Write to run-specific log file
-                    if self.current_run_id:
-                        log_dir = (
-                            project_root / "results" / "runs" / self.current_run_id
-                        )
-                        log_dir.mkdir(parents=True, exist_ok=True)
-                        with open(log_dir / "training.log", "a", encoding="utf-8") as f:
-                            f.write(log_line + "\n")
+                # Use the frozen config for the run
+                relative_config_path = self.frozen_config_path.relative_to(
+                    project_root
+                ).as_posix()
+                cmd.extend(["--config", relative_config_path])
+                
+                # If this is a retry, force `--resume` flag to ensure we resume training rather than clean start
+                if retry_count > 0 and "--resume" not in cmd:
+                    cmd.append("--resume")
 
-                    # --- Meaningful Status Extraction (Legacy Fallback) ---
-                    # We still keep some basic log parsing for scripts that don't use [METRICS] yet
-                    if "Epoch" in line and "/" in line and ":" not in line:
-                        self.status_message = line.strip()
-                    elif "Training complete" in line:
-                        self.status_message = "Training complete"
+                print(f"[TrainingManager] Using config: {relative_config_path} (Attempt {retry_count + 1})")
+                self.log_history.append(
+                    f"[{time.strftime('%H:%M:%S')}] [Manager] Executing: {' '.join(cmd)}"
+                )
+                
+                start_log_idx = len(self.log_history)
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    cwd=str(project_root),
+                )
+                self.log_history.append(
+                    f"[{time.strftime('%H:%M:%S')}] [Manager] Process started (PID: {process.pid}, Attempt: {retry_count + 1})"
+                )
 
-            process.wait()
-            if not self._stop_event.is_set():
+                for line in process.stdout:
+                    if self._stop_event.is_set():
+                        process.terminate()
+                        self.status_message = "Stopping training..."
+                        break
+
+                    line = line.strip()
+                    if line:
+                        # Robust JSON Metrics Stream (skip log history)
+                        if "[METRICS]" in line:
+                            self._handle_metrics_line(line)
+                            continue
+
+                        # Add to log history with timestamp
+                        timestamp = time.strftime("%H:%M:%S")
+                        log_line = f"[{timestamp}] {line}"
+                        print(f"[TrainingManager] {line}")  # For backend debugging
+                        self.log_history.append(log_line)
+                        if len(self.log_history) > 1000:
+                            self.log_history.pop(0)
+
+                        # Persistence: Write to run-specific log file
+                        if self.current_run_id:
+                            log_dir = (
+                                project_root / "results" / "runs" / self.current_run_id
+                            )
+                            log_dir.mkdir(parents=True, exist_ok=True)
+                            with open(log_dir / "training.log", "a", encoding="utf-8") as f:
+                                f.write(log_line + "\n")
+
+                        # --- Meaningful Status Extraction (Legacy Fallback) ---
+                        if "Epoch" in line and "/" in line and ":" not in line:
+                            self.status_message = line.strip()
+                        elif "Training complete" in line:
+                            self.status_message = "Training complete"
+
+                process.wait()
+                
+                if self._stop_event.is_set():
+                    break
+
                 if process.returncode == 0:
                     self.status_message = "Training complete. Starting evaluation..."
                     self.progress = 0.95  # Almost done
@@ -447,7 +466,6 @@ class TrainingManager:
                         self.progress = 1.0
 
                     # FINAL SYNC: Ensure in-memory history is perfect before is_running=False
-                    # This prevents the dashboard from seeing an empty state on the last poll
                     file_history_dict = self._load_history_dict()
                     if file_history_dict:
                         max_ep = max(file_history_dict.keys())
@@ -459,21 +477,56 @@ class TrainingManager:
                             if 0 <= idx < len(self.loss_history):
                                 self.loss_history[idx] = metrics["loss"]
                                 self.adv_loss_history[idx] = metrics["adv_loss"]
+                    
+                    # Successfully completed, so exit the retry loop
+                    break
                 else:
-                    # Find the last meaningful error in log history
+                    # Non-zero return code. Check for SSH/Paramiko connection drop keywords.
+                    is_conn_error = False
                     error_msg = f"Failed (exit {process.returncode})"
-                    for line in reversed(self.log_history):
-                        if (
-                            "Error:" in line
-                            or "Exception:" in line
-                            or "FileNotFoundError:" in line
-                        ):
-                            clean_err = (
-                                line.split("] ", 1)[-1] if "] " in line else line
-                            )
-                            error_msg = f"Error: {clean_err}"
-                            break
-                    self.status_message = error_msg
+                    
+                    connection_keywords = [
+                        "paramiko", "ssh", "connection", "banner", "pipe", 
+                        "10053", "10054", "tunnel", "eof", "reset by peer",
+                        "handshake", "timeout", "disconnected", "closed by", "dropped"
+                    ]
+                    
+                    found_keywords = []
+                    attempt_logs = self.log_history[start_log_idx:]
+                    for line in reversed(attempt_logs):
+                        line_lower = line.lower()
+                        # Capture the last traceback or error statement
+                        if "error:" in line_lower or "exception:" in line_lower or "filenotfounderror:" in line_lower:
+                            if "Failed (exit" in error_msg or error_msg.startswith("Failed (exit"):
+                                clean_err = line.split("] ", 1)[-1] if "] " in line else line
+                                error_msg = f"Error: {clean_err}"
+                        
+                        # Match connection issues
+                        for kw in connection_keywords:
+                            if kw in line_lower:
+                                is_conn_error = True
+                                found_keywords.append(kw)
+                    
+                    # Only attempt recovery if running on remote GPU and connection failed
+                    if is_remote and is_conn_error and retry_count < max_retries:
+                        retry_count += 1
+                        warn_msg = (
+                            f"[TrainingManager] Connection error detected (keywords: {list(set(found_keywords))}). "
+                            f"Retrying in 15 seconds... (Attempt {retry_count}/{max_retries})"
+                        )
+                        print(warn_msg)
+                        self.log_history.append(f"[{time.strftime('%H:%M:%S')}] {warn_msg}")
+                        self.status_message = f"Connection drop. Retrying {retry_count}/{max_retries} in 15s..."
+                        
+                        # Wait for 15 seconds, checking stop event occasionally
+                        for _ in range(15):
+                            if self._stop_event.is_set():
+                                break
+                            time.sleep(1)
+                    else:
+                        # Unrecoverable error (code bug, CUDA OOM, config error) or maximum retries exceeded
+                        self.status_message = error_msg
+                        break
 
         except Exception as e:
             self.status_message = f"Error: {str(e)}"

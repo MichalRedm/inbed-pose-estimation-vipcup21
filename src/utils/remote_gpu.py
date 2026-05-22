@@ -277,13 +277,86 @@ class GPUSession:
 
     def disconnect(self):
         if self._ssh:
-            self._ssh.close()
+            try:
+                self._ssh.close()
+            except Exception:
+                pass
             self._ssh = None
         if self._proxy:
-            self._proxy.stop()
+            try:
+                self._proxy.stop()
+            except Exception:
+                pass
             self._proxy = None
 
-    # ── Remote execution ──────────────────────────────────────────────────────
+    def ensure_connected(self):
+        """Ensure that the SSH connection is active, reconnecting if necessary."""
+        is_active = False
+        if self._ssh:
+            try:
+                transport = self._ssh.get_transport()
+                if transport and transport.is_active():
+                    # Quick check to see if socket/channel is responsive
+                    transport.send_ignore()
+                    is_active = True
+            except Exception:
+                is_active = False
+        
+        if not is_active:
+            print("[GPUSession] SSH connection is inactive or dropped. Reconnecting...")
+            try:
+                self.disconnect()
+            except Exception:
+                pass
+            self.connect()
+
+    def _execute_with_retry(self, operation_name: str, func, *args, **kwargs):
+        """
+        Executes a GPUSession operation with transparent automatic connection recovery.
+        """
+        import socket
+        import paramiko
+        
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(max_retries + 1):
+            try:
+                self.ensure_connected()
+                return func(*args, **kwargs)
+            except (paramiko.SSHException, socket.error, EOFError, OSError) as e:
+                err_str = str(e).lower()
+                is_conn_error = any(
+                    kw in err_str for kw in [
+                        "connection", "pipe", "10053", "10054", "tunnel", "eof",
+                        "reset by peer", "handshake", "timeout", "disconnected", "closed by", "dropped"
+                    ]
+                ) or isinstance(e, (paramiko.SSHException, socket.error, EOFError))
+                
+                if is_conn_error and attempt < max_retries:
+                    print(
+                        f"[GPUSession] Connection error in {operation_name}: {e}. "
+                        f"Attempting transparent reconnect and retry ({attempt + 1}/{max_retries}) in {retry_delay}s..."
+                    )
+                    try:
+                        self.disconnect()
+                    except Exception:
+                        pass
+                    time.sleep(retry_delay)
+                else:
+                    # Not a connection error or maximum retries exceeded
+                    raise
+
+    def open_sftp(self) -> paramiko.SFTPClient:
+        """Open an SFTP session with automatic connection check and retry."""
+        def _open():
+            return self._ssh.open_sftp()
+        return self._execute_with_retry("open_sftp", _open)
+
+    def exec_command(self, command: str, *args, **kwargs):
+        """Execute a command directly on the SSH client with automatic connection check."""
+        self.ensure_connected()
+        return self._ssh.exec_command(command, *args, **kwargs)
 
     # ── Remote execution ──────────────────────────────────────────────────────
 
@@ -307,69 +380,66 @@ class GPUSession:
             Commands are wrapped in ``bash -l -c '...'`` (a login shell) so that
             the remote ``~/.bash_profile`` is sourced automatically.
         """
-        import sys
-        import threading
+        def _run():
+            import sys
+            import threading
 
-        if not self._ssh:
-            raise RuntimeError("Not connected. Use GPUManager.use() context manager.")
+            # Wrap in a login shell so ~/.bash_profile is sourced
+            wrapped = f"bash -l -c {shlex.quote(command)}"
 
-        # Wrap in a login shell so ~/.bash_profile is sourced
-        wrapped = f"bash -l -c {shlex.quote(command)}"
+            _, stdout_f, stderr_f = self._ssh.exec_command(wrapped, timeout=timeout)
+            stdout_lines: list[str] = []
+            stderr_lines: list[str] = []
 
-        _, stdout_f, stderr_f = self._ssh.exec_command(wrapped, timeout=timeout)
-        stdout_lines: list[str] = []
-        stderr_lines: list[str] = []
+            if stream:
+                def _stream(channel_file, storage, prefix=""):
+                    while True:
+                        try:
+                            chunk = channel_file.read(8192)
+                            if not chunk:
+                                break
 
-        if stream:
+                            data = chunk.decode(sys.stdout.encoding, errors="replace")
+                            storage.append(data)
 
-            def _stream(channel_file, storage, prefix=""):
-                while True:
-                    # Read what's available (blocks until at least 1 byte is available or EOF)
-                    # Note: channel_file is a paramiko.ChannelFile
-                    try:
-                        chunk = channel_file.read(8192)
-                        if not chunk:
+                            if prefix:
+                                # For stderr, prefix each line
+                                for line in data.splitlines(keepends=True):
+                                    print(f"{prefix}{line}", end="", flush=True)
+                            else:
+                                # For stdout, print raw (to preserve tqdm/ \r)
+                                print(data, end="", flush=True)
+                        except Exception:
                             break
 
-                        data = chunk.decode(sys.stdout.encoding, errors="replace")
-                        storage.append(data)
+                t_out = threading.Thread(target=_stream, args=(stdout_f, stdout_lines, ""))
+                t_err = threading.Thread(
+                    target=_stream, args=(stderr_f, stderr_lines, "[stderr] ")
+                )
+                t_out.start()
+                t_err.start()
+                t_out.join()
+                t_err.join()
+            else:
+                stdout_lines = stdout_f.readlines()
+                stderr_lines = stderr_f.readlines()
 
-                        if prefix:
-                            # For stderr, prefix each line
-                            for line in data.splitlines(keepends=True):
-                                print(f"{prefix}{line}", end="", flush=True)
-                        else:
-                            # For stdout, print raw (to preserve tqdm/ \r)
-                            print(data, end="", flush=True)
-                    except Exception:
-                        break
+            exit_code = stdout_f.channel.recv_exit_status()
 
-            t_out = threading.Thread(target=_stream, args=(stdout_f, stdout_lines, ""))
-            t_err = threading.Thread(
-                target=_stream, args=(stderr_f, stderr_lines, "[stderr] ")
-            )
-            t_out.start()
-            t_err.start()
-            t_out.join()
-            t_err.join()
-        else:
-            stdout_lines = stdout_f.readlines()
-            stderr_lines = stderr_f.readlines()
-
-        exit_code = stdout_f.channel.recv_exit_status()
-
-        result = RunResult(
-            stdout="".join(stdout_lines),
-            stderr="".join(stderr_lines),
-            exit_code=exit_code,
-        )
-
-        if check and exit_code != 0:
-            raise RuntimeError(
-                f"Command failed with exit code {exit_code}: {command}\nStderr: {result.stderr}"
+            result = RunResult(
+                stdout="".join(stdout_lines),
+                stderr="".join(stderr_lines),
+                exit_code=exit_code,
             )
 
-        return result
+            if check and exit_code != 0:
+                raise RuntimeError(
+                    f"Command failed with exit code {exit_code}: {command}\nStderr: {result.stderr}"
+                )
+
+            return result
+
+        return self._execute_with_retry(f"run({command[:30]})", _run)
 
     def run_python(self, script: str, timeout: int = 3600) -> RunResult:
         """Run an inline Python script on the remote GPU."""
@@ -384,20 +454,26 @@ class GPUSession:
         Upload a local file or directory to the remote GPU.
         Uses SCP under the hood.
         """
-        with SCPClient(self._ssh.get_transport()) as scp:
-            scp.put(local_path, remote_path=remote_path, recursive=recursive)
-        print(f"Uploaded {local_path!r} -> {remote_path!r}")
+        def _upload():
+            with SCPClient(self._ssh.get_transport()) as scp:
+                scp.put(local_path, remote_path=remote_path, recursive=recursive)
+            print(f"Uploaded {local_path!r} -> {remote_path!r}")
+
+        return self._execute_with_retry("upload", _upload)
 
     def download(self, remote_path: str, local_path: str, recursive: bool = True):
         """Download a file or directory from the remote GPU."""
-        # Fix: Only create parent directory, not the local_path itself!
-        # Otherwise scp always treats local_path as a destination directory.
-        parent = os.path.dirname(local_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        with SCPClient(self._ssh.get_transport()) as scp:
-            scp.get(remote_path, local_path=local_path, recursive=recursive)
-        print(f"Downloaded {remote_path!r} -> {local_path!r}")
+        def _download():
+            # Fix: Only create parent directory, not the local_path itself!
+            # Otherwise scp always treats local_path as a destination directory.
+            parent = os.path.dirname(local_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with SCPClient(self._ssh.get_transport()) as scp:
+                scp.get(remote_path, local_path=local_path, recursive=recursive)
+            print(f"Downloaded {remote_path!r} -> {local_path!r}")
+
+        return self._execute_with_retry("download", _download)
 
     def sync_project(
         self,
@@ -477,18 +553,24 @@ class GPUSession:
 
     def write_file(self, remote_path: str, content: str):
         """Write a text string directly to a file on the remote GPU."""
-        sftp = self._ssh.open_sftp()
-        with sftp.open(remote_path, "w") as f:
-            f.write(content)
-        sftp.close()
+        def _write():
+            sftp = self.open_sftp()
+            with sftp.open(remote_path, "w") as f:
+                f.write(content)
+            sftp.close()
+
+        return self._execute_with_retry("write_file", _write)
 
     def read_file(self, remote_path: str) -> str:
         """Read a text file from the remote GPU."""
-        sftp = self._ssh.open_sftp()
-        with sftp.open(remote_path, "r") as f:
-            content = f.read()
-        sftp.close()
-        return content.decode() if isinstance(content, bytes) else content
+        def _read():
+            sftp = self.open_sftp()
+            with sftp.open(remote_path, "r") as f:
+                content = f.read()
+            sftp.close()
+            return content.decode() if isinstance(content, bytes) else content
+
+        return self._execute_with_retry("read_file", _read)
 
     def gpu_info(self) -> str:
         """Return nvidia-smi output from the remote machine."""

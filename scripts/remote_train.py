@@ -320,7 +320,7 @@ def main():
 
             sftp = None
             try:
-                sftp = session._ssh.open_sftp()
+                sftp = session.open_sftp()
             except Exception as sftp_err:
                 print(
                     f"[sync] Warning: Could not open SFTP connection for verification: {sftp_err}"
@@ -487,7 +487,6 @@ def main():
             while training_thread.is_alive():
                 try:
                     with mgr.use(backend_name) as stream_session:
-                        ssh = stream_session._ssh
                         # Run a python script on the remote to emulate tail -F but with explicit flushing.
                         # This avoids all pipe block-buffering issues inherent to `tail` over SSH without a PTY.
                         cmd = (
@@ -501,7 +500,7 @@ def main():
                             f"    else: time.sleep(0.5)\n"
                             f"'"
                         )
-                        _, stdout, _ = ssh.exec_command(cmd, get_pty=False)
+                        _, stdout, _ = stream_session.exec_command(cmd, get_pty=False)
 
                         # Set a timeout for reading to allow heartbeat/alive checks
                         stdout.channel.settimeout(10.0)
