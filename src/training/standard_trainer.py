@@ -333,21 +333,12 @@ class StandardTrainer(BaseTrainer):
     def _compute_dataset_average_lengths(self, dataset) -> torch.Tensor:
         """
         Computes the average Euclidean bone length (in model coordinate space [256, 256])
-        across all training samples.
+        across all training samples using correct modality scaling.
         """
-        # Determine the image size (e.g. 256x256)
         target_w, target_h = dataset.image_size
 
         if len(dataset.samples) == 0:
             return torch.ones(13) * 20.0
-
-        sample_img_path = list(dataset.samples[0]["image_paths"].values())[0]
-        from PIL import Image
-        with Image.open(sample_img_path) as img:
-            orig_w, orig_h = img.size
-
-        scale_x = target_w / orig_w
-        scale_y = target_h / orig_h
 
         # LSP Kinematic Tree bones
         BONES = [
@@ -369,12 +360,24 @@ class StandardTrainer(BaseTrainer):
         bone_lengths_sum = np.zeros(13)
         bone_counts = np.zeros(13)
 
+        from PIL import Image
         for sample in dataset.samples:
-            joints = sample["joints"].get("IR")
-            if joints is None:
-                joints = sample["joints"].get("RGB")
+            target_mod = (
+                "IR"
+                if "IR" in sample["image_paths"]
+                else list(sample["image_paths"].keys())[0]
+            )
+            joints = sample["joints"].get(target_mod)
             if joints is None:
                 continue
+
+            # Load actual image size for target modality to scale joints correctly
+            sample_img_path = sample["image_paths"][target_mod]
+            with Image.open(sample_img_path) as img:
+                orig_w, orig_h = img.size
+
+            scale_x = target_w / orig_w
+            scale_y = target_h / orig_h
 
             for i, (parent, child) in enumerate(BONES):
                 if joints[2, parent] > 1 or joints[2, child] > 1:
