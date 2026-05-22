@@ -448,7 +448,7 @@ class HRNet(BaseModel):
                 result.append(layer(x_list[-1]))
         return result
 
-    def forward(self, x, return_features=False):
+    def forward(self, x, return_features=False, return_stages=False):
         # Stem
         x = self.relu(self.bn1(self.conv1(x)))
         x = self.relu(self.bn2(self.conv2(x)))
@@ -464,6 +464,16 @@ class HRNet(BaseModel):
         x = self._apply_transition(self.transition2, x)
         x = self.stage3(x)
 
+        # Upsample and concatenate Stage 3 features if requested
+        stage3_features = None
+        if return_stages:
+            stage3_target_size = x[0].shape[2:]
+            stage3_upsampled = [
+                F.interpolate(xi, size=stage3_target_size, mode="bilinear", align_corners=True)
+                for xi in x
+            ]
+            stage3_features = torch.cat(stage3_upsampled, dim=1)
+
         # Transition 3 → Stage 4
         x = self._apply_transition(self.transition3, x)
         x = self.stage4(x)
@@ -477,6 +487,8 @@ class HRNet(BaseModel):
         features = torch.cat(upsampled, dim=1)
         heatmaps = self.head(features)
 
+        if return_stages:
+            return heatmaps, stage3_features, features
         if return_features:
             return heatmaps, features
         return heatmaps
