@@ -127,6 +127,33 @@ def main():
         # 2. Sync local code and configs to remote
         gpu.sync_project(remote_dir="/root/project")
 
+        # Proactively upload teacher checkpoint for distillation runs
+        if config_path and os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    if config_path.endswith(".json"):
+                        import json
+                        cfg = json.load(f)
+                    else:
+                        import yaml
+                        cfg = yaml.safe_load(f)
+                
+                teacher_ckpt = cfg.get("distillation", {}).get("teacher_checkpoint", None)
+                if teacher_ckpt:
+                    local_teacher_path = Path(teacher_ckpt)
+                    if local_teacher_path.exists():
+                        remote_teacher_path = f"/root/project/{teacher_ckpt}"
+                        remote_teacher_dir = os.path.dirname(remote_teacher_path)
+                        print(f"[distill] Creating remote directory {remote_teacher_dir}...")
+                        gpu.run(f"mkdir -p {remote_teacher_dir}", stream=False)
+                        print(f"[distill] Uploading teacher checkpoint {local_teacher_path} -> {remote_teacher_path}...")
+                        gpu.upload(str(local_teacher_path), remote_teacher_path, recursive=False)
+                        print("[distill] Teacher checkpoint uploaded successfully.")
+                    else:
+                        print(f"[distill] Warning: local teacher checkpoint not found at {local_teacher_path}")
+            except Exception as e:
+                print(f"[distill] Warning: failed to upload teacher checkpoint: {e}")
+
         # 3. Only pass project-specific env vars; PATH/CUDA come from login shell
         k_user = os.getenv("KAGGLE_USERNAME", "")
         k_key = os.getenv("KAGGLE_API_TOKEN", os.getenv("KAGGLE_KEY", ""))
