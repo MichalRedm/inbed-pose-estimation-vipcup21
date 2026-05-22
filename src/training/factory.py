@@ -88,8 +88,9 @@ def create_trainer(
     criterion = nn.MSELoss()
 
     # 4. Decide Trainer Type
-    # Check if UDA is enabled in config
-    use_uda = config.get("training_type") == "uda" or uda_cfg.get("enabled", False)
+    training_type = config.get("training_type")
+    use_uda = training_type == "uda" or uda_cfg.get("enabled", False)
+    use_distillation = training_type == "distillation"
 
     if use_uda:
         # UDA Setup
@@ -109,6 +110,20 @@ def create_trainer(
             rank=rank,
             world_size=world_size,
         )
+    elif use_distillation:
+        # Distillation Setup
+        from src.training.distillation_trainer import DistillationTrainer
+        trainer = DistillationTrainer(
+            model=model,
+            optimizer=None,  # Will set below
+            criterion=criterion,
+            config=config,
+            device=device,
+            rank=rank,
+            world_size=world_size,
+        )
+        if hasattr(trainer, "uncertainty_loss") and rank == 0:
+            print("[Factory] Added uncertainty weighting parameters to optimizer for distillation")
     else:
         # Standard Setup
         trainer = StandardTrainer(
@@ -131,6 +146,8 @@ def create_trainer(
         print(
             f"[Factory] Created UDATrainer (Lambda Adv: {uda_cfg.get('lambda_adv', 0.001)})"
         )
+    elif use_distillation and rank == 0:
+        print("[Factory] Created DistillationTrainer")
     elif not use_uda and rank == 0:
         print("[Factory] Created StandardTrainer")
 

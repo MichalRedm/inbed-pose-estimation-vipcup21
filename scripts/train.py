@@ -169,6 +169,7 @@ def train():
         augmenter=augmenter,
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
         in_channels=in_channels,
+        return_aligned=dataset_cfg.get("return_aligned", False),
     )
     val_dataset = VIPCupDataset(
         root=args.data_root,
@@ -178,6 +179,7 @@ def train():
         split="valid",
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
         in_channels=in_channels,
+        return_aligned=dataset_cfg.get("return_aligned", False),
     )
 
     train_sampler = (

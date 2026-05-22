@@ -4,9 +4,11 @@ model:
     pretrained: true
     architecture: w32
     num_joints: 14
-    in_channels: 3
+    in_channels: 1                 # Student runs on single-channel IR
     heatmap_size: [64, 64]
     sigma: 2                      # default; overridden by curriculum
+
+training_type: "distillation"      # Activate our feature distillation trainer
 
 training:
   epochs: 40
@@ -31,9 +33,12 @@ training:
     sensor_noise_sigma: [5, 12]    # Gaussian noise sigma range
 
 dataset:
-  root: "data/raw"
-  modalities: ["RGB"]             # Train teacher on RGB
-  covers: ["uncover"]             # RGB is only annotated for uncover
-  subjects_train: [1, 24]         # Train on subjects 1-24
-  subjects_val: [25, 30]          # Validate on subjects 25-30
+  subjects_train: [1, 80]         # Full 80-subject training set
+  subjects_val: [81, 90]          # Validate on covers 1 and 2
   image_size: [256, 256]
+  return_aligned: true            # Crucial: enables loading warped RGB alongside IR
+
+distillation:
+  teacher_checkpoint: "results/runs/rgb_teacher/checkpoints/best_model.pth"
+  use_uncertainty_weighting: true
+  lambda_distill: 1.0             # Dynamically balanced by uncertainty weighting
