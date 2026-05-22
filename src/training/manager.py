@@ -369,7 +369,7 @@ class TrainingManager:
                         self.status_message = f"Reconnecting and resuming (attempt {retry_count}/{max_retries})..."
                     else:
                         self.status_message = "Starting remote training..."
-                    
+
                     cmd = [
                         sys.executable,
                         "-u",
@@ -377,7 +377,11 @@ class TrainingManager:
                     ]
                 else:
                     self.status_message = "Starting local training..."
-                    cmd = [sys.executable, "-u", str(project_root / "scripts" / "train.py")]
+                    cmd = [
+                        sys.executable,
+                        "-u",
+                        str(project_root / "scripts" / "train.py"),
+                    ]
 
                 if self.current_run_id:
                     cmd.extend(["--run_id", self.current_run_id])
@@ -387,16 +391,18 @@ class TrainingManager:
                     project_root
                 ).as_posix()
                 cmd.extend(["--config", relative_config_path])
-                
+
                 # If this is a retry, force `--resume` flag to ensure we resume training rather than clean start
                 if retry_count > 0 and "--resume" not in cmd:
                     cmd.append("--resume")
 
-                print(f"[TrainingManager] Using config: {relative_config_path} (Attempt {retry_count + 1})")
+                print(
+                    f"[TrainingManager] Using config: {relative_config_path} (Attempt {retry_count + 1})"
+                )
                 self.log_history.append(
                     f"[{time.strftime('%H:%M:%S')}] [Manager] Executing: {' '.join(cmd)}"
                 )
-                
+
                 start_log_idx = len(self.log_history)
                 process = subprocess.Popen(
                     cmd,
@@ -437,7 +443,9 @@ class TrainingManager:
                                 project_root / "results" / "runs" / self.current_run_id
                             )
                             log_dir.mkdir(parents=True, exist_ok=True)
-                            with open(log_dir / "training.log", "a", encoding="utf-8") as f:
+                            with open(
+                                log_dir / "training.log", "a", encoding="utf-8"
+                            ) as f:
                                 f.write(log_line + "\n")
 
                         # --- Meaningful Status Extraction (Legacy Fallback) ---
@@ -447,7 +455,7 @@ class TrainingManager:
                             self.status_message = "Training complete"
 
                 process.wait()
-                
+
                 if self._stop_event.is_set():
                     break
 
@@ -477,36 +485,56 @@ class TrainingManager:
                             if 0 <= idx < len(self.loss_history):
                                 self.loss_history[idx] = metrics["loss"]
                                 self.adv_loss_history[idx] = metrics["adv_loss"]
-                    
+
                     # Successfully completed, so exit the retry loop
                     break
                 else:
                     # Non-zero return code. Check for SSH/Paramiko connection drop keywords.
                     is_conn_error = False
                     error_msg = f"Failed (exit {process.returncode})"
-                    
+
                     connection_keywords = [
-                        "paramiko", "ssh", "connection", "banner", "pipe", 
-                        "10053", "10054", "tunnel", "eof", "reset by peer",
-                        "handshake", "timeout", "disconnected", "closed by", "dropped"
+                        "paramiko",
+                        "ssh",
+                        "connection",
+                        "banner",
+                        "pipe",
+                        "10053",
+                        "10054",
+                        "tunnel",
+                        "eof",
+                        "reset by peer",
+                        "handshake",
+                        "timeout",
+                        "disconnected",
+                        "closed by",
+                        "dropped",
                     ]
-                    
+
                     found_keywords = []
                     attempt_logs = self.log_history[start_log_idx:]
                     for line in reversed(attempt_logs):
                         line_lower = line.lower()
                         # Capture the last traceback or error statement
-                        if "error:" in line_lower or "exception:" in line_lower or "filenotfounderror:" in line_lower:
-                            if "Failed (exit" in error_msg or error_msg.startswith("Failed (exit"):
-                                clean_err = line.split("] ", 1)[-1] if "] " in line else line
+                        if (
+                            "error:" in line_lower
+                            or "exception:" in line_lower
+                            or "filenotfounderror:" in line_lower
+                        ):
+                            if "Failed (exit" in error_msg or error_msg.startswith(
+                                "Failed (exit"
+                            ):
+                                clean_err = (
+                                    line.split("] ", 1)[-1] if "] " in line else line
+                                )
                                 error_msg = f"Error: {clean_err}"
-                        
+
                         # Match connection issues
                         for kw in connection_keywords:
                             if kw in line_lower:
                                 is_conn_error = True
                                 found_keywords.append(kw)
-                    
+
                     # Only attempt recovery if running on remote GPU and connection failed
                     if is_remote and is_conn_error and retry_count < max_retries:
                         retry_count += 1
@@ -515,9 +543,11 @@ class TrainingManager:
                             f"Retrying in 15 seconds... (Attempt {retry_count}/{max_retries})"
                         )
                         print(warn_msg)
-                        self.log_history.append(f"[{time.strftime('%H:%M:%S')}] {warn_msg}")
+                        self.log_history.append(
+                            f"[{time.strftime('%H:%M:%S')}] {warn_msg}"
+                        )
                         self.status_message = f"Connection drop. Retrying {retry_count}/{max_retries} in 15s..."
-                        
+
                         # Wait for 15 seconds, checking stop event occasionally
                         for _ in range(15):
                             if self._stop_event.is_set():

@@ -13,9 +13,7 @@ class JointSpatialChannelAttention(nn.Module):
     and upsamples back to the original backbone feature shape.
     """
 
-    def __init__(
-        self, num_joints=14, in_channels=480, embed_dim=32, num_heads=4
-    ):
+    def __init__(self, num_joints=14, in_channels=480, embed_dim=32, num_heads=4):
         super().__init__()
         self.num_joints = num_joints
         self.in_channels = in_channels
@@ -37,7 +35,9 @@ class JointSpatialChannelAttention(nn.Module):
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
             # Downsample 16x16 -> 8x8
-            nn.Conv2d(128, self.joint_channels, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.Conv2d(
+                128, self.joint_channels, kernel_size=3, stride=2, padding=1, bias=False
+            ),
             nn.BatchNorm2d(self.joint_channels),
             nn.ReLU(inplace=True),
         )
@@ -62,15 +62,21 @@ class JointSpatialChannelAttention(nn.Module):
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
             # Upsample 8x8 -> 16x16
-            nn.ConvTranspose2d(256, 256, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.ConvTranspose2d(
+                256, 256, kernel_size=4, stride=2, padding=1, bias=False
+            ),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
             # Upsample 16x16 -> 32x32
-            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.ConvTranspose2d(
+                256, 128, kernel_size=4, stride=2, padding=1, bias=False
+            ),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
             # Upsample 32x32 -> 64x64
-            nn.ConvTranspose2d(128, in_channels, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.ConvTranspose2d(
+                128, in_channels, kernel_size=4, stride=2, padding=1, bias=False
+            ),
             nn.BatchNorm2d(in_channels),
         )
 

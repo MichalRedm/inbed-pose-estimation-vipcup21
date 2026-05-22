@@ -1,5 +1,4 @@
 import torch
-import pytest
 from src.models import build_model
 from src.models.jssca_hrnet import JSSCAHRNet, JointSpatialChannelAttention
 

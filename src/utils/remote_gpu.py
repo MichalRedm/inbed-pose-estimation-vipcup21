@@ -301,7 +301,7 @@ class GPUSession:
                     is_active = True
             except Exception:
                 is_active = False
-        
+
         if not is_active:
             print("[GPUSession] SSH connection is inactive or dropped. Reconnecting...")
             try:
@@ -316,10 +316,10 @@ class GPUSession:
         """
         import socket
         import paramiko
-        
+
         max_retries = 3
         retry_delay = 5
-        
+
         for attempt in range(max_retries + 1):
             try:
                 self.ensure_connected()
@@ -327,12 +327,23 @@ class GPUSession:
             except (paramiko.SSHException, socket.error, EOFError, OSError) as e:
                 err_str = str(e).lower()
                 is_conn_error = any(
-                    kw in err_str for kw in [
-                        "connection", "pipe", "10053", "10054", "tunnel", "eof",
-                        "reset by peer", "handshake", "timeout", "disconnected", "closed by", "dropped"
+                    kw in err_str
+                    for kw in [
+                        "connection",
+                        "pipe",
+                        "10053",
+                        "10054",
+                        "tunnel",
+                        "eof",
+                        "reset by peer",
+                        "handshake",
+                        "timeout",
+                        "disconnected",
+                        "closed by",
+                        "dropped",
                     ]
                 ) or isinstance(e, (paramiko.SSHException, socket.error, EOFError))
-                
+
                 if is_conn_error and attempt < max_retries:
                     print(
                         f"[GPUSession] Connection error in {operation_name}: {e}. "
@@ -349,8 +360,10 @@ class GPUSession:
 
     def open_sftp(self) -> paramiko.SFTPClient:
         """Open an SFTP session with automatic connection check and retry."""
+
         def _open():
             return self._ssh.open_sftp()
+
         return self._execute_with_retry("open_sftp", _open)
 
     def exec_command(self, command: str, *args, **kwargs):
@@ -380,6 +393,7 @@ class GPUSession:
             Commands are wrapped in ``bash -l -c '...'`` (a login shell) so that
             the remote ``~/.bash_profile`` is sourced automatically.
         """
+
         def _run():
             import sys
             import threading
@@ -392,6 +406,7 @@ class GPUSession:
             stderr_lines: list[str] = []
 
             if stream:
+
                 def _stream(channel_file, storage, prefix=""):
                     while True:
                         try:
@@ -412,7 +427,9 @@ class GPUSession:
                         except Exception:
                             break
 
-                t_out = threading.Thread(target=_stream, args=(stdout_f, stdout_lines, ""))
+                t_out = threading.Thread(
+                    target=_stream, args=(stdout_f, stdout_lines, "")
+                )
                 t_err = threading.Thread(
                     target=_stream, args=(stderr_f, stderr_lines, "[stderr] ")
                 )
@@ -454,6 +471,7 @@ class GPUSession:
         Upload a local file or directory to the remote GPU.
         Uses SCP under the hood.
         """
+
         def _upload():
             with SCPClient(self._ssh.get_transport()) as scp:
                 scp.put(local_path, remote_path=remote_path, recursive=recursive)
@@ -463,6 +481,7 @@ class GPUSession:
 
     def download(self, remote_path: str, local_path: str, recursive: bool = True):
         """Download a file or directory from the remote GPU."""
+
         def _download():
             # Fix: Only create parent directory, not the local_path itself!
             # Otherwise scp always treats local_path as a destination directory.
@@ -553,6 +572,7 @@ class GPUSession:
 
     def write_file(self, remote_path: str, content: str):
         """Write a text string directly to a file on the remote GPU."""
+
         def _write():
             sftp = self.open_sftp()
             with sftp.open(remote_path, "w") as f:
@@ -563,6 +583,7 @@ class GPUSession:
 
     def read_file(self, remote_path: str) -> str:
         """Read a text file from the remote GPU."""
+
         def _read():
             sftp = self.open_sftp()
             with sftp.open(remote_path, "r") as f:
