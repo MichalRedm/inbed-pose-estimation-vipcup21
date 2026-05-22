@@ -27,15 +27,19 @@ class HorizontalFlipAugmentation:
     def __init__(self, probability: float = 0.5):
         self.probability = probability
 
-    def __call__(self, image, joints=None, **kwargs):
+    def __call__(self, image, joints=None, image_aligned=None, **kwargs):
         prob = kwargs.get("probability", self.probability)
         force = kwargs.get("force_apply", False)
 
         if not force and random.random() > prob:
+            if image_aligned is not None:
+                return image, joints, image_aligned
             return image, joints
 
         # 1. Image Flip
         image = v2.functional.hflip(image)
+        if image_aligned is not None:
+            image_aligned = v2.functional.hflip(image_aligned)
 
         # 2. Joints Flip & Reorder
         if joints is not None:
@@ -46,6 +50,8 @@ class HorizontalFlipAugmentation:
                 kpts = tv_tensors.KeyPoints(
                     kpts[:, flip_indices, :], canvas_size=kpts.canvas_size
                 )
+                if image_aligned is not None:
+                    return image, kpts, image_aligned
                 return image, kpts
 
             # Manual reorder for numpy/raw tensor (3, 14)
@@ -55,6 +61,8 @@ class HorizontalFlipAugmentation:
             flip_indices = [5, 4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 12, 13]
             joints = joints[:, flip_indices]
 
+        if image_aligned is not None:
+            return image, joints, image_aligned
         return image, joints
 
 
@@ -89,13 +97,39 @@ class AffineAugmentation:
             interpolation=v2.InterpolationMode.BILINEAR,
         )
 
-    def __call__(self, image, joints=None, **kwargs):
+    def __call__(self, image, joints=None, image_aligned=None, **kwargs):
         is_random = kwargs.get("random", True)
 
         if is_random:
+            img_w, img_h = (
+                (image.width, image.height)
+                if hasattr(image, "width")
+                else (image.shape[-1], image.shape[-2])
+            )
+            # Get random params
+            angle, translations, scale, shear = self.transform.get_params(
+                self.transform.degrees,
+                self.transform.translate,
+                self.transform.scale,
+                self.transform.shear,
+                img_size=[img_h, img_w],
+            )
+            
+            image = v2.functional.affine(
+                image, angle=angle, translate=translations, scale=scale, shear=shear, interpolation=v2.InterpolationMode.BILINEAR
+            )
+            if image_aligned is not None:
+                image_aligned = v2.functional.affine(
+                    image_aligned, angle=angle, translate=translations, scale=scale, shear=shear, interpolation=v2.InterpolationMode.BILINEAR
+                )
             if joints is not None:
-                return self.transform(image, joints)
-            return self.transform(image), None
+                joints = v2.functional.affine(
+                    joints, angle=angle, translate=translations, scale=scale, shear=shear
+                )
+            
+            if image_aligned is not None:
+                return image, joints, image_aligned
+            return image, joints
 
         # Fixed parameters
         rotation = kwargs.get("rotation", 0.0)
@@ -110,10 +144,14 @@ class AffineAugmentation:
         )
         translations = (tx * img_w, ty * img_h)
 
-        if joints is not None:
-            image = v2.functional.affine(
-                image, angle=rotation, translate=translations, scale=scale, shear=[0, 0]
+        image = v2.functional.affine(
+            image, angle=rotation, translate=translations, scale=scale, shear=[0, 0]
+        )
+        if image_aligned is not None:
+            image_aligned = v2.functional.affine(
+                image_aligned, angle=rotation, translate=translations, scale=scale, shear=[0, 0]
             )
+        if joints is not None:
             joints = v2.functional.affine(
                 joints,
                 angle=rotation,
@@ -121,14 +159,13 @@ class AffineAugmentation:
                 scale=scale,
                 shear=[0, 0],
             )
+            if image_aligned is not None:
+                return image, joints, image_aligned
             return image, joints
 
-        return (
-            v2.functional.affine(
-                image, angle=rotation, translate=translations, scale=scale, shear=[0, 0]
-            ),
-            None,
-        )
+        if image_aligned is not None:
+            return image, None, image_aligned
+        return image, None
 
 
 class ThermalIntensityJitter:
@@ -615,10 +652,15 @@ class DataAugmenter:
         joints: Optional[np.ndarray],
         is_ir: bool = False,
         return_pair: bool = False,
+        image_aligned: Optional[Union[Image.Image, torch.Tensor]] = None,
     ) -> Any:
         if not self.enabled:
             if return_pair:
+                if image_aligned is not None:
+                    return image, image, joints, image_aligned
                 return image, image, joints
+            if image_aligned is not None:
+                return image, joints, image_aligned
             return image, joints
 
         # 1. Prepare Keypoints
@@ -637,12 +679,21 @@ class DataAugmenter:
 
         # 2. Sequential Application
         if self.is_training:
-            image, kpts = self.flip(image, kpts)
+            if image_aligned is not None:
+                image, kpts, image_aligned = self.flip(image, kpts, image_aligned)
+            else:
+                image, kpts = self.flip(image, kpts)
 
         if kpts is not None:
-            image, kpts = self.affine(image, kpts)
+            if image_aligned is not None:
+                image, kpts, image_aligned = self.affine(image, kpts, image_aligned)
+            else:
+                image, kpts = self.affine(image, kpts)
         else:
-            image, _ = self.affine(image)
+            if image_aligned is not None:
+                image, _, image_aligned = self.affine(image, image_aligned=image_aligned)
+            else:
+                image, _ = self.affine(image)
 
         image = self.intensity_jitter(image)
         image = self.sensor_noise(image)
@@ -663,7 +714,12 @@ class DataAugmenter:
             final_joints = None
 
         if return_pair:
+            if image_aligned is not None:
+                return image, source_image, final_joints, image_aligned
             return image, source_image, final_joints
+        
+        if image_aligned is not None:
+            return image, final_joints, image_aligned
         return image, final_joints
 
 
