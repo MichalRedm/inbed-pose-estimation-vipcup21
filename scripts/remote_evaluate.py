@@ -141,9 +141,7 @@ def main():
             local_audit_path = local_results_dir / f"visual_audit_{checkpoint_stem}.png"
             try:
                 print(f"[sync] Downloading visual audit to {local_audit_path}...")
-                gpu.download(
-                    remote_audit_path, str(local_audit_path), recursive=False
-                )
+                gpu.download(remote_audit_path, str(local_audit_path), recursive=False)
                 print(f"[sync] Visual audit saved to {local_audit_path}")
             except Exception as e:
                 print(f"[sync] Warning: Could not download visual audit: {e}")
