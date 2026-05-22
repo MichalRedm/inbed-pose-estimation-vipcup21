@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from typing import Dict, Any
 from .standard_trainer import StandardTrainer, generate_pytorch_heatmaps
-from .losses import FeatureDistillationLoss, UncertaintyWeighting
+from .losses import FeatureDistillationLoss, UncertaintyWeighting, HeatmapDistillationLoss
 from ..models import build_model
 import copy
 
@@ -73,12 +73,36 @@ class DistillationTrainer(StandardTrainer):
         for param in self.teacher.parameters():
             param.requires_grad = False
             
-        # Setup multi-stage feature distillation loss
-        # Channels for HRNet Stage 3 & Stage 4 are 224 and 480 respectively
-        self.distill_loss_fn = FeatureDistillationLoss(
-            channels_student=[224, 480],
-            channels_teacher=[224, 480]
-        ).to(device)
+        # Setup multi-stage feature and output heatmap distillation losses
+        self.distill_types = distill_cfg.get("types", ["feature"])
+        self.decay_epochs = distill_cfg.get("decay_epochs", None)
+        
+        # Initialize Feature Distillation Loss if needed
+        if "feature" in self.distill_types:
+            self.distill_loss_fn = FeatureDistillationLoss(
+                channels_student=[224, 480],
+                channels_teacher=[224, 480]
+            ).to(device)
+            self.feature_weight = distill_cfg.get("feature", {}).get("weight", 1.0)
+        else:
+            self.distill_loss_fn = None
+            self.feature_weight = 0.0
+            
+        # Initialize Heatmap Distillation Loss if needed
+        if "heatmap" in self.distill_types:
+            heatmap_cfg = distill_cfg.get("heatmap", {})
+            h_mode = heatmap_cfg.get("mode", "kl")
+            h_temp = heatmap_cfg.get("temperature", 2.0)
+            self.heatmap_distill_loss_fn = HeatmapDistillationLoss(
+                mode=h_mode,
+                temperature=h_temp
+            ).to(device)
+            self.heatmap_weight = heatmap_cfg.get("weight", 1.0)
+            if self.is_main:
+                print(f"[DistillationTrainer] Setup Heatmap Distillation: mode={h_mode}, temp={h_temp}, weight={self.heatmap_weight}")
+        else:
+            self.heatmap_distill_loss_fn = None
+            self.heatmap_weight = 0.0
         
         # Loss balance and dynamic uncertainty weighting parameters
         self.lambda_distill = distill_cfg.get("lambda_distill", 1.0)
@@ -103,56 +127,107 @@ class DistillationTrainer(StandardTrainer):
             joints=joints, heatmap_size=(64, 64), image_size=(256, 256), sigma=sigma
         )
         
-        # 1. Forward Student (IR modality)
-        # We request intermediate Stage 3 and 4 feature maps using return_stages=True
-        student_outputs, s_stage3, s_stage4 = self.model(images, return_stages=True)
-        
-        # Compute standard heatmap pose loss
-        loss_pose = self.criterion(student_outputs, targets)
-        
-        # 2. Forward Teacher (Aligned RGB modality)
-        # Teacher is evaluated in eval mode and doesn't calculate gradients
+        # Calculate distillation decay factor (linear decay)
+        if self.decay_epochs is not None and self.decay_epochs > 0:
+            decay_factor = max(0.0, 1.0 - (self.current_epoch / self.decay_epochs))
+        else:
+            decay_factor = 1.0
+            
+        loss_pose = torch.tensor(0.0, device=self.device)
         loss_distill = torch.tensor(0.0, device=self.device)
+        loss_heatmap_distill = torch.tensor(0.0, device=self.device)
+        loss_feature_distill = torch.tensor(0.0, device=self.device)
         
-        if "image_aligned" in batch:
-            images_aligned = batch["image_aligned"].to(self.device)
-            
-            with torch.no_grad():
-                _, t_stage3, t_stage4 = self.teacher(images_aligned, return_stages=True)
+        if decay_factor > 0.0:
+            # --- Phase 1: Guided Distillation ---
+            # Forward Student (IR modality)
+            if "feature" in self.distill_types:
+                student_outputs, s_stage3, s_stage4 = self.model(images, return_stages=True)
+            else:
+                student_outputs = self.model(images)
+                s_stage3, s_stage4 = None, None
                 
-            # Compute distillation loss between student and teacher stages
-            loss_distill = self.distill_loss_fn(
-                student_features=[s_stage3, s_stage4],
-                teacher_features=[t_stage3, t_stage4]
-            )
+            loss_pose = self.criterion(student_outputs, targets)
             
+            # Forward Teacher (Aligned RGB modality)
+            if "image_aligned" in batch:
+                images_aligned = batch["image_aligned"].to(self.device)
+                
+                with torch.no_grad():
+                    if "feature" in self.distill_types:
+                        teacher_outputs, t_stage3, t_stage4 = self.teacher(images_aligned, return_stages=True)
+                    else:
+                        teacher_outputs = self.teacher(images_aligned)
+                        t_stage3, t_stage4 = None, None
+                        
+                # Compute distillation losses
+                if "heatmap" in self.distill_types:
+                    loss_heatmap_distill = self.heatmap_distill_loss_fn(student_outputs, teacher_outputs)
+                if "feature" in self.distill_types:
+                    loss_feature_distill = self.distill_loss_fn(
+                        student_features=[s_stage3, s_stage4],
+                        teacher_features=[t_stage3, t_stage4]
+                    )
+                    
+                # Combine distillation losses
+                loss_distill = (
+                    self.heatmap_weight * loss_heatmap_distill +
+                    self.feature_weight * loss_feature_distill
+                )
+        else:
+            # --- Phase 2: Pure Self-Training Fine-tuning ---
+            # Bypassing teacher forward to save substantial VRAM and avoid negative transfer
+            student_outputs = self.model(images)
+            loss_pose = self.criterion(student_outputs, targets)
+            loss_distill = torch.tensor(0.0, device=self.device)
+            
+        loss_distill_effective = loss_distill * decay_factor
+        
         # 3. Combine losses
         if self.use_uncertainty:
-            losses_dict = {
-                "pose": loss_pose,
-                "distill": loss_distill
-            }
-            # Balance automatically using learned log-variances
-            total_loss, weighted_dict = self.uncertainty_loss(losses_dict)
-            
-            # Extract weighted loss values for monitoring
-            metrics = {
-                "loss": total_loss.item(),
-                "loss_pose": loss_pose.item(),
-                "loss_distill": loss_distill.item(),
-                "w_pose": weighted_dict.get("w_pose", 0.0),
-                "w_distill": weighted_dict.get("w_distill", 0.0),
-                "sigma_pose": weighted_dict.get("sigma_pose", 1.0),
-                "sigma_distill": weighted_dict.get("sigma_distill", 1.0),
-                "sigma": sigma
-            }
+            if decay_factor > 0.0:
+                losses_dict = {
+                    "pose": loss_pose,
+                    "distill": loss_distill_effective
+                }
+                total_loss, weighted_dict = self.uncertainty_loss(losses_dict)
+                
+                metrics = {
+                    "loss": total_loss.item(),
+                    "loss_pose": loss_pose.item(),
+                    "loss_distill": loss_distill.item(),
+                    "loss_distill_effective": loss_distill_effective.item(),
+                    "w_pose": weighted_dict.get("w_pose", 0.0),
+                    "w_distill": weighted_dict.get("w_distill", 0.0),
+                    "sigma_pose": weighted_dict.get("sigma_pose", 1.0),
+                    "sigma_distill": weighted_dict.get("sigma_distill", 1.0),
+                    "decay_factor": decay_factor,
+                    "sigma": sigma
+                }
+            else:
+                # Phase 2 uncertainty fallback: only pose loss is active
+                total_loss = loss_pose
+                metrics = {
+                    "loss": total_loss.item(),
+                    "loss_pose": loss_pose.item(),
+                    "loss_distill": 0.0,
+                    "loss_distill_effective": 0.0,
+                    "w_pose": 1.0,
+                    "w_distill": 0.0,
+                    "sigma_pose": 1.0,
+                    "sigma_distill": 1.0,
+                    "decay_factor": decay_factor,
+                    "sigma": sigma
+                }
         else:
-            # Fixed weighting
-            total_loss = loss_pose + self.lambda_distill * loss_distill
+            # Fixed Weighting
+            total_loss = loss_pose + self.lambda_distill * loss_distill_effective
             metrics = {
                 "loss": total_loss.item(),
                 "loss_pose": loss_pose.item(),
                 "loss_distill": loss_distill.item(),
+                "loss_distill_effective": loss_distill_effective.item(),
+                "decay_factor": decay_factor,
                 "sigma": sigma
             }
             

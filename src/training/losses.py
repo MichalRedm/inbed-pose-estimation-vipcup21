@@ -166,3 +166,37 @@ class FeatureDistillationLoss(nn.Module):
             loss += F.mse_loss(s_proj, t_feat)
             
         return loss / len(student_features)
+
+
+class HeatmapDistillationLoss(nn.Module):
+    """
+    Computes spatial-level knowledge distillation loss between student and teacher heatmaps.
+    Supports:
+    - 'mse': Direct Mean Squared Error.
+    - 'sigmoid_mse': MSE after applying Sigmoid to logits.
+    - 'kl': Spatial Kullback-Leibler (KL) divergence with temperature scaling.
+    """
+    def __init__(self, mode: str = "kl", temperature: float = 2.0):
+        super().__init__()
+        self.mode = mode
+        self.temperature = temperature
+
+    def forward(self, student_heatmaps: torch.Tensor, teacher_heatmaps: torch.Tensor) -> torch.Tensor:
+        if self.mode == "mse":
+            return F.mse_loss(student_heatmaps, teacher_heatmaps)
+        elif self.mode == "sigmoid_mse":
+            return F.mse_loss(torch.sigmoid(student_heatmaps), torch.sigmoid(teacher_heatmaps))
+        elif self.mode == "kl":
+            B, C, H, W = student_heatmaps.shape
+            s_flat = student_heatmaps.view(B, C, -1)
+            t_flat = teacher_heatmaps.view(B, C, -1)
+
+            # Spatial softmax with temperature scaling
+            s_log_prob = F.log_softmax(s_flat / self.temperature, dim=-1)
+            t_prob = F.softmax(t_flat / self.temperature, dim=-1)
+
+            # Compute KL divergence across pixels for each joint channel, then average
+            kl = F.kl_div(s_log_prob, t_prob, reduction="batchmean") * (self.temperature ** 2)
+            return kl
+        else:
+            raise ValueError(f"Unknown heatmap distillation mode: {self.mode}")
