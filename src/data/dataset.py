@@ -37,11 +37,18 @@ class VIPCupDataset(Dataset):
         augmenter: Optional[DataAugmenter] = None,
         image_size=(256, 256),
         in_channels: int = 1,
+        return_aligned: bool = False,
     ):
         self.root = Path(root)
         self.split = split  # "train" or "valid"
         self.subjects = subjects
-        self.modalities = modalities
+        self.modalities = list(modalities)
+        self.return_aligned = return_aligned
+        if self.return_aligned:
+            if "RGB" not in self.modalities:
+                self.modalities.append("RGB")
+            if "IR" not in self.modalities:
+                self.modalities.append("IR")
         if covers is None:
             self.covers = ["uncover", "cover1", "cover2"]
         else:
@@ -138,6 +145,7 @@ class VIPCupDataset(Dataset):
                             mod: paths[i] for mod, paths in mod_paths.items()
                         },
                         "joints": {},
+                        "subj_dir": str(subj_dir),
                     }
 
                     # Store joints for each modality if available
@@ -177,27 +185,44 @@ class VIPCupDataset(Dataset):
         else:
             image = Image.open(image_path).convert("RGB")
 
+        orig_w, orig_h = image.size
         joints = sample["joints"].get(target_mod)
+
+        # Load aligned RGB image if return_aligned is True
+        image_aligned = None
+        if self.return_aligned:
+            image_aligned = self._load_aligned_rgb(sample, orig_w, orig_h)
 
         # Apply data augmentation if provided (affects both image and joints)
         image_source = None
         if self.augmenter and self.split == "train":
             # For UDA, we want both the occluded (target) and clean (source) versions
-            image, image_source, joints = self.augmenter(
-                image, joints, is_ir=(target_mod == "IR"), return_pair=True
-            )
+            if image_aligned is not None:
+                image, image_source, joints, image_aligned = self.augmenter(
+                    image, joints, is_ir=(target_mod == "IR"), return_pair=True, image_aligned=image_aligned
+                )
+            else:
+                image, image_source, joints = self.augmenter(
+                    image, joints, is_ir=(target_mod == "IR"), return_pair=True
+                )
         elif self.augmenter:
-            image, joints = self.augmenter(image, joints, is_ir=(target_mod == "IR"))
+            if image_aligned is not None:
+                image, joints, image_aligned = self.augmenter(
+                    image, joints, is_ir=(target_mod == "IR"), image_aligned=image_aligned
+                )
+            else:
+                image, joints = self.augmenter(image, joints, is_ir=(target_mod == "IR"))
 
         # Resize to standard size if not already handled by augmentation
         if image.size != self.image_size:
             image = image.resize(self.image_size)
             if image_source:
                 image_source = image_source.resize(self.image_size)
+            if image_aligned:
+                image_aligned = image_aligned.resize(self.image_size)
 
         if joints is not None:
             # Need to scale joints if image was resized
-            orig_w, orig_h = Image.open(image_path).size
             scale_x = self.image_size[0] / orig_w
             scale_y = self.image_size[1] / orig_h
 
@@ -216,10 +241,18 @@ class VIPCupDataset(Dataset):
         if image_source is not None and not torch.is_tensor(image_source):
             image_source = v2.functional.to_image(image_source).float() / 255.0
 
+        if image_aligned is not None and not torch.is_tensor(image_aligned):
+            image_aligned = v2.functional.to_image(image_aligned).float() / 255.0
+
         if self.transform:
             image = self.transform(image)
             if image_source:
                 image_source = self.transform(image_source)
+            if image_aligned:
+                try:
+                    image_aligned = self.transform(image_aligned)
+                except Exception:
+                    pass
 
         target_heatmaps = None
         if joints is not None:
@@ -236,7 +269,51 @@ class VIPCupDataset(Dataset):
         }
         if image_source is not None:
             res["image_source"] = image_source
+        if image_aligned is not None:
+            res["image_aligned"] = image_aligned
         return res
+
+    def _load_aligned_rgb(self, sample, ir_w, ir_h):
+        import cv2
+        subj_dir = Path(sample["subj_dir"])
+        rgb_path_str = sample["image_paths"].get("RGB")
+        
+        # Fallback image (black image)
+        fallback = Image.new("RGB", (ir_w, ir_h), color=0)
+        
+        if rgb_path_str is None or sample["cover"] != "uncover":
+            return fallback
+            
+        rgb_path = Path(rgb_path_str)
+        if not rgb_path.exists():
+            return fallback
+            
+        H_ir_path = subj_dir / "align_PTr_IR.npy"
+        H_rgb_path = subj_dir / "align_PTr_RGB.npy"
+        
+        if not (H_ir_path.exists() and H_rgb_path.exists()):
+            return fallback
+            
+        try:
+            # Load homographies
+            H_ir = np.load(H_ir_path)
+            H_rgb = np.load(H_rgb_path)
+            
+            # Compute homography mapping RGB to IR coordinate space
+            H_rgb_to_ir = np.linalg.inv(H_ir) @ H_rgb
+            
+            # Load RGB image
+            rgb_img = Image.open(rgb_path).convert("RGB")
+            rgb_np = np.array(rgb_img)
+            
+            # Warp RGB image to IR space
+            rgb_warped_np = cv2.warpPerspective(rgb_np, H_rgb_to_ir, (ir_w, ir_h))
+            
+            # Convert back to PIL
+            return Image.fromarray(rgb_warped_np)
+        except Exception:
+            # Soft fallback
+            return fallback
 
     def _generate_heatmaps(self, joints):
         """
