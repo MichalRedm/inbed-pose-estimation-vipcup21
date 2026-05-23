@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 40 (post-mortem & planning)
+- **Current Loop**: 41 (post-mortem & planning)
 - **Phase**: Phase 5 — State Logging & Continuation
-- **Status**: Loop 40 (**`loop40_jssca_v5`**) successfully completed 40 epochs on remote 2-GPU session. PCK underperformed at **55.3% PCK@0.2** and **19.2 px MPJPE** using standard argmax decoding. Post-mortem diagnostic confirmed **Coordinate Anchor Pollution under Extreme Occlusion**—noisy soft-argmax on blurred/flat extremity heatmaps (ankles/wrists) generated chaotic coordinate anchors, polluting joint tokens in the self-attention layer and confusing physical geometric reasoning. We will proceed to Loop 41 with **Confidence-Gated Spatially-Anchored Attention**, utilizing peak confidence gating to completely isolate and suppress noisy coordinate anchors of occluded joints.
+- **Status**: Loop 41 (**`loop41_jssca_v6`**) successfully completed 40 epochs. PCK restored to **63.56%** and **18.44 px MPJPE** using argmax decoding. Post-mortem diagnostic confirmed that confidence gating effectively isolated spatial noise (knees/ankles recovered to baseline levels), but the spatially-anchored grid shifting model hits a physical ceiling because shifting a flat heatmap ($conf \approx 0$) is a no-op, forcing the model to generate the peak via a limited MLP decoder without spatial skip-connections, which collapses occluded extremities to global training centroids. We will pivot away from post-processing coordinate regression to new representational paradigms.
 - **Absolute Priority**:
   1. **Record**: Loop 35 (**64.3% PCK@0.2**, **17.63 px MPJPE**) remains the all-time record.
-  2. **Next Step**: Design and implement JSSCA-v6 (Confidence-Gated Coordinate Anchors).
+  2. **Next Step**: Pivot to either dense spatial neck attention or pre-training on grayscale/thermal modality.
 - **Baseline**: Loop 35 (64.3% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -19,6 +19,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 | **loop35_jssca_attention** | argmax | **64.3%** | **17.63 px** | **NEW ALL-TIME RECORD** |
 | loop39_jssca_v4_no_skips | argmax | **63.94%** | **19.08 px** | Solid baseline |
 | loop31_improved_cover | argmax | **64.0%** | **17.79 px** | PREVIOUS RECORD champion |
+| **loop41_jssca_v6** | argmax | **63.56%** | **18.44 px** | STABLE (Gating works; occlusion capped) |
 | loop40_jssca_v5 | argmax | **55.3%** | 19.2 px | UNDERPERFORMED (pollution) |
 | loop29_channel_replication | argmax | **52.0%** | 29.3 px | PREVIOUS TOP PCK |
 | loop27_clean_sigma_cutout | argmax | **50.3%** | 27.2 px | SUCCESS |
@@ -80,15 +81,16 @@ The fundamental loss-metric alignment problem has been resolved:
 | 32 | Cross-Modality Feature Distillation (MSE on Stage 3/4) | PARTIAL | ~55.0% | **NEGATIVE TRANSFER**: The teacher's raw RGB features have different texture statistics than IR. The student learned to map wrong textures. |
 | 33 | Improved Output-Heatmap Distillation (KL Div) + Phase 2 Bypass | FAILURE | **56.2%** | **TEACHER CONFLICT**: Despite output-only distillation and linear decay, the RGB teacher's supervision on clean synthetic-blanket images actively contradicted the physical fabric drape augmentations, hurting the student's ability to learn thermal-specific occlusion physics. Peak PCK was 58.0% (Epoch 40), but local strict PCK is 56.2%. |
 | 34 | Kinematic Bone-Vector Decomposition | FAILURE | **33.1%** | **CUMULATIVE ERROR PROPAGATION**: Decoupling keypoint prediction into root position + bone directions and lengths recursively reconstructed via forward kinematics accumulates directional and length errors recursively. Extremities (ankles/wrists) reached extremely low PCKs (8-16%) due to error stacking over 3-4 steps, and soft-argmax input caused severe spatial smoothing. Heatmap-based peak detection remains vastly superior. |
-| 35 | Joint-Symmetric Spatial-Channel Attention (JSSCA) | SUCCESS | **66.56%** | **NEW ALL-TIME RECORD**. Hypothesis verified: spatial multi-head joint self-attention models limb dependencies and corrects extremity failures. However, average pooling the spatial features of heatmaps to $1\times 1$ tokens is highly lossy and limits localization accuracy. |
+| 35 | Joint-Symmetric Spatial-Channel Attention (JSSCA) | SUCCESS | **64.3%** | **NEW ALL-TIME RECORD**. Hypothesis verified: spatial multi-head joint self-attention models limb dependencies and corrects extremity failures. However, average pooling the spatial features of heatmaps to $1\times 1$ tokens is highly lossy and limits localization accuracy. |
 | 36 | JSSCA-v2 Neck Attention (Option A) | FAILURE | 63.3% | **ACTIVATION EXPLOSION**: Inserting raw `MultiheadAttention` without Pre-LN LayerNorm or FFN paths caused severe validation loss explosion (`378263.28` at Epoch 40) and skeleton drift, degrading PCK to 63.3%. |
 | 37 | JSSCA-v2 Stabilized Neck Attention | FAILURE | 63.6% | **STABILIZED BUT BLURRED**: Pre-LN and FFN successfully stabilized convergence (loss hit `0.0009` Epoch 40), but performing attention in the dense 480-channel feature space without explicit joint coordinate anchors caused semantic dilution, while downsampling to $8\times 8$ and upsampling back caused spatial blur, capping PCK at 63.6%. |
 | 38 | JSSCA-v3 Spatial Tokenization Post-Processor | FAILURE | 26.8% | **VISUAL TOKEN DILUTION**: Downsampling each joint's heatmap to an 8x8 grid created a sequence of 896 tokens. This flooded the Self-Attention layer with empty background tokens, washing out joint semantic identity and causing a catastrophic coordinate collapse. |
 | 39 | JSSCA-v4 with intermediate U-Net skips | COLLAPSED | 2.1% | **DEGENERATE GRADIENT SHORTCUT**: Intermediate skip connections created a shallow joint-wise CNN path that bypassed the attention bottleneck. Gradients flowed entirely through this shortcut, learning degenerate identity noise that washed out the backbone's features in the first epochs. Terminated at Epoch 11. |
 | 39 rerun | JSSCA-v4 No Skips (upsampling decoder) | SUCCESS | **63.94%** | Removed degenerate skip connections to force information through attention bottleneck. Reconstructed heatmaps via progressive deconv decoder. Cap imposed by spatial coordinate blur from autoencoder upsampling. |
 | 40 | JSSCA-v5 Spatially-Anchored Attention Post-Processor | UNDERPERFORMED | **55.3%** | **COORDINATE ANCHOR POLLUTION**: Differentiable soft-argmax on blurred extremity heatmaps (ankles/wrists) produced chaotic coordinates, polluting the self-attention joint tokens. Regularized grid translation bypassed autoencoder blur perfectly (loss 2x lower), but extreme occlusions confused physical geometric reasoning. |
+| 41 | JSSCA-v6 (Confidence-Gated Spatially-Anchored Attention) | SUCCESS | **63.56%** | **STABLE POST-PROCESSOR**: Peak confidence gating completely suppressed coordinate anchor noise of occluded joints (knees/ankles fully recovered), but the grid translation was a no-op on flat heatmaps ($conf \approx 0$), forcing the limited MLP decoder to fallback to global training centroids (visual arm collapse). |
 
-## Next Planned Steps (Post-Loop 40 Run)
+## Next Planned Steps (Post-Loop 41 Run)
 
-1. **Implement JSSCA-v6 (Confidence-Gated Spatially-Anchored Attention)**: Incorporate peak confidence scores as soft-gating weights or extra input channels to the coordinate encoder, completely suppressing chaotic coordinate anchors of heavily occluded extremity joints.
-2. **Local Sanity Checks & Testing**: Add tests for confidence gating, verify gradients, and launch training `loop41_jssca_v6`.
+1. **Pivot to Modality-Aligned Pre-training**: Survey and fine-tune external grayscale-pretrained checkpoints or a thermal-pretrained YOLO-pose model (e.g., `OpenThermalPose` or grayscale COCO pre-training) to resolve low-level early feature washout.
+2. **Dense Spatial Neck Attention**: If continuing with HRNet, design a stabilized Transformer Neck (FFN + Pre-LN) operating directly on multi-resolution dense feature maps (Stage 4) without spatial downsampling, bypassing the lossy 1D coordinate bottleneck entirely.
