@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 39 (rerun & execution)
-- **Phase**: Phase 3 — Implementation
-- **Status**: Loop 39 (**`loop39_jssca_v4`**) was terminated prematurely at Epoch 11 due to a catastrophic collapse (PCK dropped to 2%). Post-mortem analysis confirmed that the intermediate U-Net skip connections (`d1 = d1 + h3`, `d2 = d2 + h2`) created a degenerate joint-wise gradient shortcut that completely bypassed the self-attention bottleneck. This shallow CNN shortcut backpropagated chaotic gradients, washing out the pre-trained HRNet backbone features and flooding output heatmaps with noise. We are immediately rerunning Loop 39 as **`loop39_jssca_v4_no_skips`**, removing all intermediate skip connections to force 100% of the information through the 14-joint self-attention bottleneck.
+- **Current Loop**: 40 (post-mortem & planning)
+- **Phase**: Phase 5 — State Logging & Continuation
+- **Status**: Loop 40 (**`loop40_jssca_v5`**) successfully completed 40 epochs on remote 2-GPU session. PCK underperformed at **55.3% PCK@0.2** and **19.2 px MPJPE** using standard argmax decoding. Post-mortem diagnostic confirmed **Coordinate Anchor Pollution under Extreme Occlusion**—noisy soft-argmax on blurred/flat extremity heatmaps (ankles/wrists) generated chaotic coordinate anchors, polluting joint tokens in the self-attention layer and confusing physical geometric reasoning. We will proceed to Loop 41 with **Confidence-Gated Spatially-Anchored Attention**, utilizing peak confidence gating to completely isolate and suppress noisy coordinate anchors of occluded joints.
 - **Absolute Priority**:
   1. **Record**: Loop 35 (**66.56% PCK@0.2**, **17.60 px MPJPE**) remains the all-time record.
-  2. **Next Step**: Implement and train JSSCA-v4 No Skips (`loop39_jssca_v4_no_skips`).
+  2. **Next Step**: Design and implement JSSCA-v6 (Confidence-Gated Coordinate Anchors).
 - **Baseline**: Loop 35 (66.56% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -17,7 +17,9 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 | Run | Decoder | PCK@0.2 (strict) | MPJPE | Status |
 |-----|---------|--------------------|--------------------|--------|
 | **loop35_jssca_attention** | argmax | **66.56%** | **17.60 px** | **NEW ALL-TIME RECORD** |
+| loop39_jssca_v4_no_skips | argmax | **63.94%** | **19.08 px** | Solid baseline |
 | loop31_improved_cover | argmax | **64.0%** | **17.79 px** | PREVIOUS RECORD champion |
+| loop40_jssca_v5 | argmax | **55.3%** | 19.2 px | UNDERPERFORMED (pollution) |
 | loop29_channel_replication | argmax | **52.0%** | 29.3 px | PREVIOUS TOP PCK |
 | loop27_clean_sigma_cutout | argmax | **50.3%** | 27.2 px | SUCCESS |
 | loop2_fixed_aug | argmax | **46.6%** | 29.6 px | Solid Scratch Baseline |
@@ -50,7 +52,7 @@ The fundamental loss-metric alignment problem has been resolved:
 - **Corruption Recovery**: Restored `loop19` and `loop20` by recovering weights from `latest_model.pth` after `best_model.pth` was corrupted during save.
 - **Remapping Fix**: Resolved a regression in `load_model_for_inference` where structural remapping (modules_list removal) failed for prefixed keys (e.g., `hrnet.`), which previously broke GCN-refined models like `loop18`.
 - **Environment**: Enforced `.venv\Scripts\python.exe` for all backend services.
-- **API & Remote Training Resiliency (2026-05-21)**: Restricted Uvicorn reload watcher scope strictly to the `src/` folder to prevent active runs from being interrupted by metadata or log writes. Implemented atomic checkpoint synchronization (writing to `.tmp` first, verifying PyTorch header/sizes, and renaming) to eliminate corrupt checkpoint risks completely.
+- **API & Remote Training Resiliency (2026-05-21)**: Restricted Uvicorn reload watcher scope strictly to the `src/` folder to prevent active runs from being interrupted by manual code/log audits. Implemented atomic checkpoint synchronization (writing to `.tmp` first, verifying PyTorch header/sizes, and renaming) to eliminate corrupt checkpoint risks completely.
 - **Automatic Connection Recovery (2026-05-22)**: Implemented robust SSH keep-alive check and auto-retry harness within `GPUSession` and `TrainingManager`. The pipeline now seamlessly survives transient Wi-Fi drops, Cloudflare tunnel resets, and WinError socket drop codes without terminating active runs.
 
 ## Iteration Log
@@ -82,9 +84,11 @@ The fundamental loss-metric alignment problem has been resolved:
 | 36 | JSSCA-v2 Neck Attention (Option A) | FAILURE | 63.3% | **ACTIVATION EXPLOSION**: Inserting raw `MultiheadAttention` without Pre-LN LayerNorm or FFN paths caused severe validation loss explosion (`378263.28` at Epoch 40) and skeleton drift, degrading PCK to 63.3%. |
 | 37 | JSSCA-v2 Stabilized Neck Attention | FAILURE | 63.6% | **STABILIZED BUT BLURRED**: Pre-LN and FFN successfully stabilized convergence (loss hit `0.0009` Epoch 40), but performing attention in the dense 480-channel feature space without explicit joint coordinate anchors caused semantic dilution, while downsampling to $8\times 8$ and upsampling back caused spatial blur, capping PCK at 63.6%. |
 | 38 | JSSCA-v3 Spatial Tokenization Post-Processor | FAILURE | 26.8% | **VISUAL TOKEN DILUTION**: Downsampling each joint's heatmap to an 8x8 grid created a sequence of 896 tokens. This flooded the Self-Attention layer with empty background tokens, washing out joint semantic identity and causing a catastrophic coordinate collapse. |
-| 39 (failed) | JSSCA-v4 with intermediate U-Net skips | COLLAPSED | 2.1% | **DEGENERATE GRADIENT SHORTCUT**: Intermediate skip connections created a shallow joint-wise CNN path that bypassed the attention bottleneck. Gradients flowed entirely through this shortcut, learning degenerate identity noise that washed out the backbone's features in the first epochs. Terminated at Epoch 11. |
+| 39 | JSSCA-v4 with intermediate U-Net skips | COLLAPSED | 2.1% | **DEGENERATE GRADIENT SHORTCUT**: Intermediate skip connections created a shallow joint-wise CNN path that bypassed the attention bottleneck. Gradients flowed entirely through this shortcut, learning degenerate identity noise that washed out the backbone's features in the first epochs. Terminated at Epoch 11. |
+| 39 rerun | JSSCA-v4 No Skips (upsampling decoder) | SUCCESS | **63.94%** | Removed degenerate skip connections to force information through attention bottleneck. Reconstructed heatmaps via progressive deconv decoder. Cap imposed by spatial coordinate blur from autoencoder upsampling. |
+| 40 | JSSCA-v5 Spatially-Anchored Attention Post-Processor | UNDERPERFORMED | **55.3%** | **COORDINATE ANCHOR POLLUTION**: Differentiable soft-argmax on blurred extremity heatmaps (ankles/wrists) produced chaotic coordinates, polluting the self-attention joint tokens. Regularized grid translation bypassed autoencoder blur perfectly (loss 2x lower), but extreme occlusions confused physical geometric reasoning. |
 
-## Next Planned Steps (Post-Loop 39 Failed Run)
+## Next Planned Steps (Post-Loop 40 Run)
 
-1. **Implement JSSCA-v4 No Skips (Loop 39 Rerun)**: Remove all intermediate skip connections from `JointSpatialChannelAttention`. Project the coordinated embeddings `(B * 14, embed_dim)` directly to `(B * 14, 64, 8, 8)` and upsample progressively using pure `ConvTranspose2d` layers to reconstruct refined heatmaps.
-2. **Local Sanity Checks & Testing**: Verify shape compliance and restart remote training for `loop39_jssca_v4_no_skips`.
+1. **Implement JSSCA-v6 (Confidence-Gated Spatially-Anchored Attention)**: Incorporate peak confidence scores as soft-gating weights or extra input channels to the coordinate encoder, completely suppressing chaotic coordinate anchors of heavily occluded extremity joints.
+2. **Local Sanity Checks & Testing**: Add tests for confidence gating, verify gradients, and launch training `loop41_jssca_v6`.
