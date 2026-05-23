@@ -8,33 +8,16 @@ This log tracks our prioritized queue of future improvement hypotheses, synthesi
 
 Below is our prioritized queue of strictly **future** improvement hypotheses, ranked by Return on Investment (ROI)—defined as the combined probability of accuracy gains versus simplicity of implementation.
 
-### 1. Loop 36: JSSCA-v2 Option A (Backbone-Aware Neck Attention)
-*   **Hypothesis**: JSSCA-v1 is placed after the 1x1 heatmap head and averages spatial heatmaps `(64, 64) -> (1, 1)` to form tokens, discarding fine-grained coordinates. By placing the joint-symmetric attention block *before* the output head, we can process the backbone's multi-resolution representations `(B, 480, 64, 64)` directly. Applying dual-branch attention over a flattened joint-spatial grid (sequence length $14 \times 64 = 896$ tokens) allows spatial-joint co-attention directly in high-resolution space, preserving precise coordinate alignments.
-*   **Implementation**: Embed JSSCA in `src/models/jssca_hrnet.py` before the output head. Downsample backbone features via stride convs to an $8\times 8$ grid, flatten to sequence tokens, run Multi-Head Attention, upsample/reshape back, and feed to the heatmap head.
-*   **ROI Status**: **HIGH (ROI Rank 1)** — Extremely high chance of breaking the 70% threshold by integrating rich backbone contour/edge features and performing co-attention without spatial collapse.
+### 1. Loop 37: JSSCA-v2 Stabilized (Transformer-Neck with Pre-LN & FFN)
+*   **Hypothesis**: Loop 36 JSSCA-v2 failed due to severe gradient/activation explosion (val loss peaked at `378263.28`) and skeleton collapse because raw PyTorch `MultiheadAttention` has no normalizations or residual links. By wrapping the neck attention block in a standard **Pre-LN Transformer Layer** (LayerNorm before attention, residual link around attention, LayerNorm before FFN, and a 2-layer FFN with GELU activation and its own residual link), we can fully stabilize the high-dimensional 480-channel feature neck refinement, guarantee smooth mathematical convergence, and surpass the 70% PCK threshold.
+*   **Implementation**: Refactor `JointSpatialChannelAttention` in `src/models/jssca_hrnet.py` to incorporate pre-LayerNorm layers and an FFN block.
+*   **ROI Status**: **HIGH (ROI Rank 1)** — Extremely high potential. Directly corrects the training instability of the neck attention architecture while preserving the rich representations of the HRNet-W32 stage-4 neck features.
 
-### 2. Input Channel Replication with Pristine Pretrained Backbone (ImageNet HRNet-W32)
-*   **Hypothesis**: Averaging the 3-channel weights of the first convolution (`conv1`) to accept 1-channel thermal IR inputs wipes out pre-trained Edge/Shape detection priors, breaking the feature extraction chain. By setting `in_channels=3` and replicating the 1-channel thermal input three times ($R=G=B=IR$), we preserve 100% of the ImageNet edge/texture spatial priors in `conv1`, preventing initial feature washout.
-*   **Implementation**: Keep `in_channels=3` and `pretrained=True` in HRNet config. Modify `VIPCupDataset` to output `[3, H, W]` tensors by repeating the single thermal channel.
-*   **Status**: **SUCCESS (Loop 29)** — Reached **52.0% PCK@0.2** and **29.3 px MPJPE**. Hypothesis confirmed: preserving ImageNet conv1 priors via replication bridges the domain gap.
-*   **ROI Status**: **ARCHIVED** — Successful. Now the new project baseline.
-
-### 3. Loop 35: Joint-Symmetric Spatial-Channel Attention (JSSCA-v1)
-*   **Hypothesis**: Pose estimation in occluded thermal domains is limited by independent joint prediction. Introducing a post-processing self-attention layer across joints (with learnable joint positional embeddings) allows inter-joint anatomical reasoning and coordinate refinement.
-*   **Implementation**: Implement a modular self-attention plug-in over predicted heatmaps in `src/models/jssca_hrnet.py`.
-*   **Status**: **SUCCESS (Loop 35)** — Reached **66.56% PCK@0.2** and **17.60 px MPJPE**.
-*   **ROI Status**: **ARCHIVED (SUCCESS)** — Beat the Loop 31 champion by +2.56pp. Set the new project baseline, but bottlenecked by spatial pooling collapse.
-
-### 4. Structured Regional Cutout & Physically-Realistic Fabric Simulation
-*   **Hypothesis**: The previous thermal blanket augmentation only dimmed and blurred the lower body region without continuous sheet geometry, fabric drapes, fine wrinkles, proper shadow edge transitions, or structured limb occlusions. By implementing a high-fidelity continuous fabric draping simulation combined with sharp small-scale wrinkles, proper drop shadow edges along the top wavy fold line, and structured regional cutout (35% size ratio), we force the model to learn holistic spatial coordinates and body shape contours under heavy blanket occlusion.
-*   **Implementation**: Fully implemented continuous blanket sheets, drop-shadow creases, multi-scale drapery (high/low frequency folds) in `src/data/augmentations.py` along with dynamic GPU-based dataloading and a 35% cutout.
-*   **Status**: **SUCCESS (Loop 31)** — Reached an all-time record **64.0% PCK@0.2** and **17.79 px MPJPE**. This represents the ultimate solution to the visual gap between synthetic and real blankets, and completely resolves occluded localization limits.
-*   **ROI Status**: **ARCHIVED** — Successful. Incorporated into baseline production champion.
-
-### 5. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
+### 2. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
 *   **Hypothesis**: Instead of training top-down HRNet from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` research initiative. Fine-tune them directly on the SLP dataset.
 *   **Implementation**: Load `yolo11n-pose.pt` using the `ultralytics` API, map keypoint labels, and fine-tune on the SLP training split.
-*   **ROI Status**: **HIGH (ROI Rank 2)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
+*   **ROI Status**: **MEDIUM (ROI Rank 2)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
+
 
 ---
 
@@ -55,7 +38,13 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 
 This archive logs all completed experiments that failed to outperform our baseline or introduced regressions, detailing the exact root cause of their failure.
 
-### 1. Kinematic Bone-Vector Decomposition (Loop 34)
+### 1. JSSCA-v2 Neck Attention without Normalization or FFN (Loop 36)
+*   **Root Cause**: **SEVERE GRADIENT & ACTIVATION EXPLOSION**: The raw `MultiheadAttention` layer was inserted in `JointSpatialChannelAttention` without pre-LayerNorm, post-attention LayerNorm, FFN blocks, or proper residual paths. During training, backpropagated features blew up exponentially, driving validation loss from `0.0013` up to `11.35` (Epoch 37) and finally `378263.28` (Epoch 40).
+*   **Root Cause**: **MODEL COLLAPSE & SKELETON DRIFT**: The numerical instability caused extreme coordinate predictions and skeleton drift. PCK@0.2 degraded from an intermediate `65.5%` peak (Epoch 30) down to a final `63.3%` PCK@0.2, failing to match our baseline `66.56%`.
+*   **Lesson**: Transformer layers must always incorporate robust Pre-LN normalization paths and Feed-Forward Network blocks to stabilize backpropagation and feature refinement, especially when training complex multi-resolution architectures.
+
+### 2. Kinematic Bone-Vector Decomposition (Loop 34)
+
 *   **Root Cause**: **CUMULATIVE ERROR PROPAGATION**: Decoupling coordinates into a recursive kinematic tree propagates errors down the limbs. In coordinate space, the prediction of a distal leaf (wrist/ankle) depends on a long chain of limb direction and scaling offsets from the root (neck/pelvis). Angular and length errors accumulate at each bone junction, causing massive offset drift for wrists and ankles (PCK@0.2 drops to 8-16% on extremities).
 *   **Root Cause**: **COORDINATE SMOOTHING FROM SOFT-ARGMAX**: Kinematic reconstruction takes soft-argmax coordinates as input. Soft-argmax's mathematical expectation over heatmaps inherently acts as a spatial smoothing operator, which pulls joint predictions toward the body's centroid and dampens geometric variance, making it highly susceptible to systemic joint shift. High-resolution pixel-level heatmap argmax peak detection remains far more precise.
 

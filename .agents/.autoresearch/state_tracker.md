@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 36 (implementation)
-- **Phase**: Phase 3 — Implementation
-- **Status**: Loop 35 (**`loop35_jssca_attention`**) has concluded. It explored Joint-Symmetric Spatial-Channel Attention (JSSCA) to coordinate predicted keypoint heatmaps using an HRNet-W32 backbone with image replication. It achieved a peak validation of **66.56% PCK@0.2** and **17.60 px MPJPE**, beating the previous Loop 31 champion by +2.56pp and establishing a new SOTA record. However, spatial collapse inside the attention downsampling block was identified as a major bottleneck. We are proceeding to Loop 36 (JSSCA-v2 Option A: Backbone-Aware Joint-Spatial Neck Attention) to achieve >70% PCK.
+- **Current Loop**: 37 (research & design)
+- **Phase**: Phase 1 — Deep Codebase & Online Research
+- **Status**: Loop 36 (**`loop36_jssca_v2`**) has concluded. It evaluated a Backbone-Aware Joint-Spatial Neck Attention (JSSCA-v2 Option A) placed directly before the prediction head. It suffered from extreme numerical instability and activation explosion (validation loss peaked at `378263.28` at Epoch 40) due to raw `MultiheadAttention` lacking Pre-LN normalization and FFN stabilization. This led to coordinate drift and a lower final performance of **63.3% PCK@0.2** and **18.7px MPJPE**, failing to beat our Loop 35 baseline (**66.56%**). We are proceeding to Loop 37 to design and implement JSSCA-v2 Stabilized (using Pre-LN Transformer layers).
 - **Absolute Priority**:
-  1. **Record**: Loop 35 (**66.56% PCK@0.2**, **17.60 px MPJPE**) is the new all-time record.
-  2. **Next Step**: Design and implement Loop 36 (JSSCA-v2 Option A).
+  1. **Record**: Loop 35 (**66.56% PCK@0.2**, **17.60 px MPJPE**) remains the all-time record.
+  2. **Next Step**: Refactor JSSCA-v2 to include Pre-LN and FFN blocks, and launch Loop 37 training.
 - **Baseline**: Loop 35 (66.56% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -79,8 +79,10 @@ The fundamental loss-metric alignment problem has been resolved:
 | 33 | Improved Output-Heatmap Distillation (KL Div) + Phase 2 Bypass | FAILURE | **56.2%** | **TEACHER CONFLICT**: Despite output-only distillation and linear decay, the RGB teacher's supervision on clean synthetic-blanket images actively contradicted the physical fabric drape augmentations, hurting the student's ability to learn thermal-specific occlusion physics. Peak PCK was 58.0% (Epoch 40), but local strict PCK is 56.2%. |
 | 34 | Kinematic Bone-Vector Decomposition | FAILURE | **33.1%** | **CUMULATIVE ERROR PROPAGATION**: Decoupling keypoint prediction into root position + bone directions and lengths recursively reconstructed via forward kinematics accumulates directional and length errors recursively. Extremities (ankles/wrists) reached extremely low PCKs (8-16%) due to error stacking over 3-4 steps, and soft-argmax input caused severe spatial smoothing. Heatmap-based peak detection remains vastly superior. |
 | 35 | Joint-Symmetric Spatial-Channel Attention (JSSCA) | SUCCESS | **66.56%** | **NEW ALL-TIME RECORD**. Hypothesis verified: spatial multi-head joint self-attention models limb dependencies and corrects extremity failures. However, average pooling the spatial features of heatmaps to $1\times 1$ tokens is highly lossy and limits localization accuracy. |
+| 36 | JSSCA-v2 Neck Attention (Option A) | FAILURE | 63.3% | **ACTIVATION EXPLOSION**: Inserting raw `MultiheadAttention` without Pre-LN LayerNorm or FFN paths caused severe validation loss explosion (`378263.28` at Epoch 40) and skeleton drift, degrading PCK to 63.3%. |
 
-## Next Planned Steps (Post-Loop 35)
+## Next Planned Steps (Post-Loop 36)
 
-1. **Design and Implement JSSCA-v2 (Option A)**: Embed JSSCA *before* the output head, allowing it to act as a deep feature-refinement neck processing the multi-resolution features `(B, 480, 64, 64)` of HRNet-W32. Flatten joint-spatial dimensions to sequence tokens to perform spatial-joint co-attention directly in high-resolution coordinate space.
-2. **Train & Evaluate**: Run Loop 36 for 40 epochs on remote Kaggle dual T4 GPUs. Compare metrics against JSSCA-v1 (66.56%) to break through the 70% threshold.
+1. **Design and Implement JSSCA-v2 Stabilized (Loop 37)**: Stabilize the neck attention block by converting it into a proper **Pre-LN Transformer Layer** with pre-LayerNorm layers and a Feed-Forward Network (FFN) block.
+2. **Train & Monitor via API CLI**: Run training under the API server to stream real-time dashboard stats and evaluate final strict PCK.
+
