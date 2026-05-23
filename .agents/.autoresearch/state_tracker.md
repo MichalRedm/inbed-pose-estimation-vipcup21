@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 39 (research & design)
-- **Phase**: Phase 1 — Deep Codebase & Online Research
-- **Status**: Loop 38 (**`loop38_jssca_v3`**) has concluded. It evaluated a JSSCA-v3 post-processing attention model with $8\times 8$ spatial tokenization. While training and validation loss converged smoothly (reaching `0.0016` at Epoch 40), the model suffered a severe coordinate collapse and massive accuracy regression, achieving a final validation accuracy of only **26.8% PCK@0.2** and **54.5 px MPJPE**. Detailed diagnostic audit confirmed that partitioning each joint's heatmap into a spatial token grid dilutes joint semantic identity and floods the Self-Attention layer with empty background tokens (sequence length 896), causing representational washout. We are proceeding to Loop 39 to design and implement JSSCA-v4, which uses a 14-Joint Semantic Attention Bottleneck combined with Multi-Scale Skip Connections to coordinate joints cleanly without spatial collapse.
+- **Current Loop**: 39 (rerun & execution)
+- **Phase**: Phase 3 — Implementation
+- **Status**: Loop 39 (**`loop39_jssca_v4`**) was terminated prematurely at Epoch 11 due to a catastrophic collapse (PCK dropped to 2%). Post-mortem analysis confirmed that the intermediate U-Net skip connections (`d1 = d1 + h3`, `d2 = d2 + h2`) created a degenerate joint-wise gradient shortcut that completely bypassed the self-attention bottleneck. This shallow CNN shortcut backpropagated chaotic gradients, washing out the pre-trained HRNet backbone features and flooding output heatmaps with noise. We are immediately rerunning Loop 39 as **`loop39_jssca_v4_no_skips`**, removing all intermediate skip connections to force 100% of the information through the 14-joint self-attention bottleneck.
 - **Absolute Priority**:
   1. **Record**: Loop 35 (**66.56% PCK@0.2**, **17.60 px MPJPE**) remains the all-time record.
-  2. **Next Step**: Design and implement JSSCA-v4 (14-Joint Semantic Bottleneck with Skip Connections).
+  2. **Next Step**: Implement and train JSSCA-v4 No Skips (`loop39_jssca_v4_no_skips`).
 - **Baseline**: Loop 35 (66.56% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -82,8 +82,9 @@ The fundamental loss-metric alignment problem has been resolved:
 | 36 | JSSCA-v2 Neck Attention (Option A) | FAILURE | 63.3% | **ACTIVATION EXPLOSION**: Inserting raw `MultiheadAttention` without Pre-LN LayerNorm or FFN paths caused severe validation loss explosion (`378263.28` at Epoch 40) and skeleton drift, degrading PCK to 63.3%. |
 | 37 | JSSCA-v2 Stabilized Neck Attention | FAILURE | 63.6% | **STABILIZED BUT BLURRED**: Pre-LN and FFN successfully stabilized convergence (loss hit `0.0009` Epoch 40), but performing attention in the dense 480-channel feature space without explicit joint coordinate anchors caused semantic dilution, while downsampling to $8\times 8$ and upsampling back caused spatial blur, capping PCK at 63.6%. |
 | 38 | JSSCA-v3 Spatial Tokenization Post-Processor | FAILURE | 26.8% | **VISUAL TOKEN DILUTION**: Downsampling each joint's heatmap to an 8x8 grid created a sequence of 896 tokens. This flooded the Self-Attention layer with empty background tokens, washing out joint semantic identity and causing a catastrophic coordinate collapse. |
+| 39 (failed) | JSSCA-v4 with intermediate U-Net skips | COLLAPSED | 2.1% | **DEGENERATE GRADIENT SHORTCUT**: Intermediate skip connections created a shallow joint-wise CNN path that bypassed the attention bottleneck. Gradients flowed entirely through this shortcut, learning degenerate identity noise that washed out the backbone's features in the first epochs. Terminated at Epoch 11. |
 
-## Next Planned Steps (Post-Loop 38)
+## Next Planned Steps (Post-Loop 39 Failed Run)
 
-1. **Design and Implement JSSCA-v4 (Loop 39)**: Design a post-processing JSSCA block that operates with sequence length 14 (one token per joint via average pooling) to keep attention highly focused, but incorporates multi-scale U-Net skip connections from the encoder directly to a progressive deconvolutional decoder to preserve fine-grained sub-pixel coordinates and prevent spatial collapse.
-2. **Local Sanity Checks & Testing**: Verify output tensor shapes and compile local unit tests.
+1. **Implement JSSCA-v4 No Skips (Loop 39 Rerun)**: Remove all intermediate skip connections from `JointSpatialChannelAttention`. Project the coordinated embeddings `(B * 14, embed_dim)` directly to `(B * 14, 64, 8, 8)` and upsample progressively using pure `ConvTranspose2d` layers to reconstruct refined heatmaps.
+2. **Local Sanity Checks & Testing**: Verify shape compliance and restart remote training for `loop39_jssca_v4_no_skips`.
