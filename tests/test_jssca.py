@@ -4,18 +4,17 @@ from src.models.jssca_hrnet import JSSCAHRNet, JointSpatialChannelAttention
 
 
 def test_jssca_block_shape():
-    """Verify JointSpatialChannelAttention neck block processes backbone features correctly."""
+    """Verify JointSpatialChannelAttention post-processing block processes heatmaps correctly."""
     block = JointSpatialChannelAttention(
         num_joints=14,
-        in_channels=480,
-        embed_dim=32,
+        embed_dim=256,
         num_heads=4,
     )
     block.eval()
-    x = torch.zeros(2, 480, 64, 64)
+    x = torch.zeros(2, 14, 64, 64)
     with torch.no_grad():
         out = block(x)
-    assert out.shape == (2, 480, 64, 64), f"Expected (2, 480, 64, 64), got {out.shape}"
+    assert out.shape == (2, 14, 64, 64), f"Expected (2, 14, 64, 64), got {out.shape}"
 
 
 def test_jssca_hrnet_shape():
@@ -29,7 +28,7 @@ def test_jssca_hrnet_shape():
                 "num_joints": 14,
                 "in_channels": 3,
                 "heatmap_size": [64, 64],
-                "jssca_embed_dim": 32,
+                "jssca_embed_dim": 256,
                 "jssca_num_heads": 4,
             },
         }
@@ -46,4 +45,4 @@ def test_jssca_hrnet_shape():
 if __name__ == "__main__":
     test_jssca_block_shape()
     test_jssca_hrnet_shape()
-    print("All JSSCA-v2 unit tests passed successfully!")
+    print("All JSSCA-v4 unit tests passed successfully!")
