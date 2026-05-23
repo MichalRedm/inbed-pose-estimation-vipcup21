@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 37 (research & design)
+- **Current Loop**: 38 (research & design)
 - **Phase**: Phase 1 — Deep Codebase & Online Research
-- **Status**: Loop 36 (**`loop36_jssca_v2`**) has concluded. It evaluated a Backbone-Aware Joint-Spatial Neck Attention (JSSCA-v2 Option A) placed directly before the prediction head. It suffered from extreme numerical instability and activation explosion (validation loss peaked at `378263.28` at Epoch 40) due to raw `MultiheadAttention` lacking Pre-LN normalization and FFN stabilization. This led to coordinate drift and a lower final performance of **63.3% PCK@0.2** and **18.7px MPJPE**, failing to beat our Loop 35 baseline (**66.56%**). We are proceeding to Loop 37 to design and implement JSSCA-v2 Stabilized (using Pre-LN Transformer layers).
+- **Status**: Loop 37 (**`loop37_jssca_v2_stabilized`**) has concluded. It evaluated a JSSCA-v2 model stabilized with Pre-LN Transformer layers. While the Pre-LN successfully stabilized backpropagation and completely prevented validation loss explosion (stabilizing loss down to `0.0009` at Epoch 40), the model achieved a final local PCK of **63.6% PCK@0.2** and **19.7 px MPJPE**, failing to beat the post-processing SOTA baseline of **66.56%**. Post-mortem analysis confirmed that performing joint attention in the dense feature space before the output head dilutes joint semantic identity and introduces spatial blur. We are proceeding to Loop 38 to implement a highly refined spatial tokenization and deconvolutional post-processing block (JSSCA-v3) that operates in explicit coordinate space.
 - **Absolute Priority**:
   1. **Record**: Loop 35 (**66.56% PCK@0.2**, **17.60 px MPJPE**) remains the all-time record.
-  2. **Next Step**: Refactor JSSCA-v2 to include Pre-LN and FFN blocks, and launch Loop 37 training.
+  2. **Next Step**: Design and implement JSSCA-v3 (Spatial Tokenization & Progressive Deconv Post-Processor).
 - **Baseline**: Loop 35 (66.56% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -80,9 +80,9 @@ The fundamental loss-metric alignment problem has been resolved:
 | 34 | Kinematic Bone-Vector Decomposition | FAILURE | **33.1%** | **CUMULATIVE ERROR PROPAGATION**: Decoupling keypoint prediction into root position + bone directions and lengths recursively reconstructed via forward kinematics accumulates directional and length errors recursively. Extremities (ankles/wrists) reached extremely low PCKs (8-16%) due to error stacking over 3-4 steps, and soft-argmax input caused severe spatial smoothing. Heatmap-based peak detection remains vastly superior. |
 | 35 | Joint-Symmetric Spatial-Channel Attention (JSSCA) | SUCCESS | **66.56%** | **NEW ALL-TIME RECORD**. Hypothesis verified: spatial multi-head joint self-attention models limb dependencies and corrects extremity failures. However, average pooling the spatial features of heatmaps to $1\times 1$ tokens is highly lossy and limits localization accuracy. |
 | 36 | JSSCA-v2 Neck Attention (Option A) | FAILURE | 63.3% | **ACTIVATION EXPLOSION**: Inserting raw `MultiheadAttention` without Pre-LN LayerNorm or FFN paths caused severe validation loss explosion (`378263.28` at Epoch 40) and skeleton drift, degrading PCK to 63.3%. |
+| 37 | JSSCA-v2 Stabilized Neck Attention | FAILURE | 63.6% | **STABILIZED BUT BLURRED**: Pre-LN and FFN successfully stabilized convergence (loss hit `0.0009` Epoch 40), but performing attention in the dense 480-channel feature space without explicit joint coordinate anchors caused semantic dilution, while downsampling to $8\times 8$ and upsampling back caused spatial blur, capping PCK at 63.6%. |
 
-## Next Planned Steps (Post-Loop 36)
+## Next Planned Steps (Post-Loop 37)
 
-1. **Design and Implement JSSCA-v2 Stabilized (Loop 37)**: Stabilize the neck attention block by converting it into a proper **Pre-LN Transformer Layer** with pre-LayerNorm layers and a Feed-Forward Network (FFN) block.
-2. **Train & Monitor via API CLI**: Run training under the API server to stream real-time dashboard stats and evaluate final strict PCK.
-
+1. **Design and Implement JSSCA-v3 (Loop 38)**: Design a post-processing JSSCA block that operates directly in coordinate/heatmap space (preserving joint identity anchors), but incorporates $8\times 8$ spatial tokenization, Pre-LN Transformer stabilization, progressive deconvolution upscaling (`ConvTranspose2d` layers), and skip connections.
+2. **Local Sanity Checks & Testing**: Verify output tensor dimensions and compile local unit tests.
