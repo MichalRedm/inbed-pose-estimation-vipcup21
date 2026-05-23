@@ -4,9 +4,9 @@
 - **Phase**: Phase 5 — State Logging & Continuation
 - **Status**: Loop 40 (**`loop40_jssca_v5`**) successfully completed 40 epochs on remote 2-GPU session. PCK underperformed at **55.3% PCK@0.2** and **19.2 px MPJPE** using standard argmax decoding. Post-mortem diagnostic confirmed **Coordinate Anchor Pollution under Extreme Occlusion**—noisy soft-argmax on blurred/flat extremity heatmaps (ankles/wrists) generated chaotic coordinate anchors, polluting joint tokens in the self-attention layer and confusing physical geometric reasoning. We will proceed to Loop 41 with **Confidence-Gated Spatially-Anchored Attention**, utilizing peak confidence gating to completely isolate and suppress noisy coordinate anchors of occluded joints.
 - **Absolute Priority**:
-  1. **Record**: Loop 35 (**66.56% PCK@0.2**, **17.60 px MPJPE**) remains the all-time record.
+  1. **Record**: Loop 35 (**64.3% PCK@0.2**, **17.63 px MPJPE**) remains the all-time record.
   2. **Next Step**: Design and implement JSSCA-v6 (Confidence-Gated Coordinate Anchors).
-- **Baseline**: Loop 35 (66.56% PCK@0.2).
+- **Baseline**: Loop 35 (64.3% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -16,7 +16,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 
 | Run | Decoder | PCK@0.2 (strict) | MPJPE | Status |
 |-----|---------|--------------------|--------------------|--------|
-| **loop35_jssca_attention** | argmax | **66.56%** | **17.60 px** | **NEW ALL-TIME RECORD** |
+| **loop35_jssca_attention** | argmax | **64.3%** | **17.63 px** | **NEW ALL-TIME RECORD** |
 | loop39_jssca_v4_no_skips | argmax | **63.94%** | **19.08 px** | Solid baseline |
 | loop31_improved_cover | argmax | **64.0%** | **17.79 px** | PREVIOUS RECORD champion |
 | loop40_jssca_v5 | argmax | **55.3%** | 19.2 px | UNDERPERFORMED (pollution) |
