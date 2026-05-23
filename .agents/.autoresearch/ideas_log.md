@@ -8,10 +8,10 @@ This log tracks our prioritized queue of future improvement hypotheses, synthesi
 
 Below is our prioritized queue of strictly **future** improvement hypotheses, ranked by Return on Investment (ROI)—defined as the combined probability of accuracy gains versus simplicity of implementation.
 
-### 1. Loop 39: JSSCA-v4 (14-Joint Semantic Attention Bottleneck with Multi-Scale Skip Connections)
-*   **Hypothesis**: The failure of JSSCA-v3 (26.8% PCK) proved that spatial tokenization is highly counter-productive for joint attention blocks. It dilutes the unique semantic identity of each keypoint and floods the self-attention layer with empty background tokens. To coordinate joints accurately, we must return to a sequence length of exactly 14 joints (one token per joint via average pooling, which represents global keypoint presence and activation signature) to keep self-attention 100% focused on anatomical relations. However, to eliminate the spatial coordinate collapse and the lossy projection limit of JSSCA-v1 (66.56%), we introduce a **Multi-Scale Skip Connection Scheme** (U-Net structure) that routes the intermediate, pixel-perfect downsampled features from the joint-wise encoder directly to corresponding progressive deconvolutional upsampling layers in the decoder, preserving fine-grained coordinate details.
-*   **Implementation**: Modify `JointSpatialChannelAttention` in `src/models/jssca_hrnet.py` to implement the U-Net skip-connected joint-wise encoder/decoder with a 14-joint self-attention bottleneck.
-*   **ROI Status**: **EXTREMELY HIGH (ROI Rank 1)** — Direct solution to both JSSCA-v1's lossy reconstruction bottleneck and JSSCA-v3's spatial token dilution.
+### 1. Loop 39: JSSCA-v4 (14-Joint Semantic Attention Bottleneck with Progressive Deconv, No Skips)
+*   **Hypothesis**: By removing the intermediate U-Net skip connections from JSSCA-v4, we eliminate the degenerate joint-wise gradient shortcuts that bypassed the 14-joint self-attention bottleneck. This forces 100% of the gradient information to flow through the self-attention layer, preserving joint semantic coordination. The progressive deconvolutional decoder will reconstruct refined, sharp sub-pixel heatmaps purely from the coordinated joint embeddings, utilizing translation-invariant upscaling without introducing noisy coordinate bypasses.
+*   **Implementation**: Modify `JointSpatialChannelAttention` in `src/models/jssca_hrnet.py` to remove all intermediate skip connections, projecting coordinated embeddings directly to `(64, 8, 8)` and upsampling using pure ConvTranspose2d layers.
+*   **ROI Status**: **EXTREMELY HIGH (ROI Rank 1)** — Directly restores the robust bottleneck of JSSCA-v1 (66.56%) while keeping the smooth progressive deconvolutional decoder.
 
 ### 2. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
 *   **Hypothesis**: Instead of training top-down HRNet from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` research initiative. Fine-tune them directly on the SLP dataset.
@@ -38,7 +38,11 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 
 This archive logs all completed experiments that failed to outperform our baseline or introduced regressions, detailing the exact root cause of their failure.
 
-### 1. JSSCA-v3 Spatial Tokenization Post-Processor (Loop 38)
+### 1. JSSCA-v4 with intermediate U-Net Skips (Loop 39 - collapsed run)
+*   **Root Cause**: **DEGENERATE GRADIENT SHORTCUT / BYPASS OF ATTENTION BOTTLENECK**: Adding intermediate skip connections (`d1 = d1 + h3`, `d2 = d2 + h2`) directly from the joint-wise encoder to the progressive deconvolutional decoder created a shallow CNN shortcut. Gradients flowed completely through this shortcut, bypassing the 14-joint self-attention bottleneck. Since the shortcut was joint-wise (lacking geometric context), the network learned a degenerate noisy identity mapping. This flooded the output heatmaps with high-frequency noise, washing out the pre-trained backbone features in the first epochs and collapsing PCK to 2.1%.
+*   **Lesson**: Avoid intermediate skip connections in post-processing attention blocks. To preserve sub-pixel peaks without creating degenerate shortcuts, project the coordinated tokens directly to 8x8 space and upsample progressively using a pure convolutional decoder without skips.
+
+### 2. JSSCA-v3 Spatial Tokenization Post-Processor (Loop 38)
 *   **Root Cause**: **VISUAL/SPATIAL TOKEN DILUTION & SPARSE BACKGROUND FLOODDING**: Partitioning each joint's heatmap into an $8\times 8$ spatial token grid yielded a sequence length of `14 * 64 = 896` tokens. Because keypoint heatmaps are extremely sparse (almost entirely zero except for a tiny Gaussian peak), 99% of these tokens represent empty background space. The Self-Attention layer was completely flooded with background noise, diluting the joint semantic identity and washing out the local peak features. Furthermore, downsampling sparse heatmaps through three consecutive strided convolutions with `stride=2` caused local activations to vanish before reaching the attention bottleneck, causing a catastrophic coordinate collapse down to **26.8% PCK@0.2**.
 *   **Lesson**: Joint self-attention must operate on a highly compact representation (sequence length equal to the 14 joint identities) to prevent token dilution. Precise coordinates should be preserved via multi-scale skip connections rather than spatial token sequences.
 
