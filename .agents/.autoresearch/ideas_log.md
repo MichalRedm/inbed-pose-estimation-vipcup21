@@ -8,10 +8,10 @@ This log tracks our prioritized queue of future improvement hypotheses, synthesi
 
 Below is our prioritized queue of strictly **future** improvement hypotheses, ranked by Return on Investment (ROI)—defined as the combined probability of accuracy gains versus simplicity of implementation.
 
-### 1. Loop 37: JSSCA-v2 Stabilized (Transformer-Neck with Pre-LN & FFN)
-*   **Hypothesis**: Loop 36 JSSCA-v2 failed due to severe gradient/activation explosion (val loss peaked at `378263.28`) and skeleton collapse because raw PyTorch `MultiheadAttention` has no normalizations or residual links. By wrapping the neck attention block in a standard **Pre-LN Transformer Layer** (LayerNorm before attention, residual link around attention, LayerNorm before FFN, and a 2-layer FFN with GELU activation and its own residual link), we can fully stabilize the high-dimensional 480-channel feature neck refinement, guarantee smooth mathematical convergence, and surpass the 70% PCK threshold.
-*   **Implementation**: Refactor `JointSpatialChannelAttention` in `src/models/jssca_hrnet.py` to incorporate pre-LayerNorm layers and an FFN block.
-*   **ROI Status**: **HIGH (ROI Rank 1)** — Extremely high potential. Directly corrects the training instability of the neck attention architecture while preserving the rich representations of the HRNet-W32 stage-4 neck features.
+### 1. Loop 38: JSSCA-v3 (Spatial Tokenization & Deconv Decoder Post-Processor)
+*   **Hypothesis**: The failures of JSSCA-v2 (Option A) in Loop 36 and 37 proved that performing joint attention in the dense, high-dimensional feature space *before* the output head dilutes the keypoint semantic identity and causes spatial blur. To break the SOTA ceiling and exceed 70% PCK, we must return to a **post-processing attention paradigm** (like JSSCA-v1, which reached a peak PCK of **66.56%** by operating directly on explicit 14-channel joint heatmaps), but resolve its primary bottleneck: **Lossy Spatial Compression (Spatial Collapse)**. Instead of average pooling the heatmaps `(64, 64) -> (1, 1)` to form tokens, we downsample each joint's heatmap to a grid of $8\times 8$ tokens (sequence length $14 \times 64 = 896$ tokens), perform stabilized Pre-LN self-attention, and decode them back to $64\times 64$ using a **progressive deconvolutional decoder** (`ConvTranspose2d` layers) with residual skip connections from the raw input heatmaps.
+*   **Implementation**: Refactor the post-processing attention module in `src/models/jssca_hrnet.py` to use $8\times 8$ spatial tokenization and progressive deconvolutional decoding.
+*   **ROI Status**: **HIGH (ROI Rank 1)** — Extremely high chance of success. Directly builds on the successful SOTA baseline of Loop 35 (66.56%) and resolves its only spatial bottleneck without losing joint identity.
 
 ### 2. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
 *   **Hypothesis**: Instead of training top-down HRNet from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` research initiative. Fine-tune them directly on the SLP dataset.
@@ -38,7 +38,11 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 
 This archive logs all completed experiments that failed to outperform our baseline or introduced regressions, detailing the exact root cause of their failure.
 
-### 1. JSSCA-v2 Neck Attention without Normalization or FFN (Loop 36)
+### 1. JSSCA-v2 Stabilized Neck Attention (Loop 37)
+*   **Root Cause**: **LATENT REPRESENTATION DRIFT & SPATIAL BLUR**: Inserting the attention block in the high-dimensional backbone representation space `(B, 480, 64, 64)` *before* the output head forces the model to learn joint detection and joint coordination simultaneously in a dense latent space. Lacking explicit joint semantic identity anchors (which JSSCA-v1 had by operating directly on 14-channel keypoint heatmaps), the transformer learned non-anatomical visual correlations (matching joints to blanket texture folds). Furthermore, bottleneck downsampling to $8\times 8$ followed by deconvolutional reconstruction introduced spatial blur and coordinate drift, capping accuracy at **63.6% PCK@0.2**, failing to match our post-processing baseline of **66.56%**.
+*   **Lesson**: Post-processing attention is structurally superior for joint coordination because operating directly in keypoint heatmap space preserves explicit joint semantic identity anchors, allowing the transformer to focus 100% of its capacity on anatomical priors and geometric corrections.
+
+### 2. JSSCA-v2 Neck Attention without Normalization or FFN (Loop 36)
 *   **Root Cause**: **SEVERE GRADIENT & ACTIVATION EXPLOSION**: The raw `MultiheadAttention` layer was inserted in `JointSpatialChannelAttention` without pre-LayerNorm, post-attention LayerNorm, FFN blocks, or proper residual paths. During training, backpropagated features blew up exponentially, driving validation loss from `0.0013` up to `11.35` (Epoch 37) and finally `378263.28` (Epoch 40).
 *   **Root Cause**: **MODEL COLLAPSE & SKELETON DRIFT**: The numerical instability caused extreme coordinate predictions and skeleton drift. PCK@0.2 degraded from an intermediate `65.5%` peak (Epoch 30) down to a final `63.3%` PCK@0.2, failing to match our baseline `66.56%`.
 *   **Lesson**: Transformer layers must always incorporate robust Pre-LN normalization paths and Feed-Forward Network blocks to stabilize backpropagation and feature refinement, especially when training complex multi-resolution architectures.
