@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 38 (research & design)
+- **Current Loop**: 39 (research & design)
 - **Phase**: Phase 1 — Deep Codebase & Online Research
-- **Status**: Loop 37 (**`loop37_jssca_v2_stabilized`**) has concluded. It evaluated a JSSCA-v2 model stabilized with Pre-LN Transformer layers. While the Pre-LN successfully stabilized backpropagation and completely prevented validation loss explosion (stabilizing loss down to `0.0009` at Epoch 40), the model achieved a final local PCK of **63.6% PCK@0.2** and **19.7 px MPJPE**, failing to beat the post-processing SOTA baseline of **66.56%**. Post-mortem analysis confirmed that performing joint attention in the dense feature space before the output head dilutes joint semantic identity and introduces spatial blur. We are proceeding to Loop 38 to implement a highly refined spatial tokenization and deconvolutional post-processing block (JSSCA-v3) that operates in explicit coordinate space.
+- **Status**: Loop 38 (**`loop38_jssca_v3`**) has concluded. It evaluated a JSSCA-v3 post-processing attention model with $8\times 8$ spatial tokenization. While training and validation loss converged smoothly (reaching `0.0016` at Epoch 40), the model suffered a severe coordinate collapse and massive accuracy regression, achieving a final validation accuracy of only **26.8% PCK@0.2** and **54.5 px MPJPE**. Detailed diagnostic audit confirmed that partitioning each joint's heatmap into a spatial token grid dilutes joint semantic identity and floods the Self-Attention layer with empty background tokens (sequence length 896), causing representational washout. We are proceeding to Loop 39 to design and implement JSSCA-v4, which uses a 14-Joint Semantic Attention Bottleneck combined with Multi-Scale Skip Connections to coordinate joints cleanly without spatial collapse.
 - **Absolute Priority**:
   1. **Record**: Loop 35 (**66.56% PCK@0.2**, **17.60 px MPJPE**) remains the all-time record.
-  2. **Next Step**: Design and implement JSSCA-v3 (Spatial Tokenization & Progressive Deconv Post-Processor).
+  2. **Next Step**: Design and implement JSSCA-v4 (14-Joint Semantic Bottleneck with Skip Connections).
 - **Baseline**: Loop 35 (66.56% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -81,8 +81,9 @@ The fundamental loss-metric alignment problem has been resolved:
 | 35 | Joint-Symmetric Spatial-Channel Attention (JSSCA) | SUCCESS | **66.56%** | **NEW ALL-TIME RECORD**. Hypothesis verified: spatial multi-head joint self-attention models limb dependencies and corrects extremity failures. However, average pooling the spatial features of heatmaps to $1\times 1$ tokens is highly lossy and limits localization accuracy. |
 | 36 | JSSCA-v2 Neck Attention (Option A) | FAILURE | 63.3% | **ACTIVATION EXPLOSION**: Inserting raw `MultiheadAttention` without Pre-LN LayerNorm or FFN paths caused severe validation loss explosion (`378263.28` at Epoch 40) and skeleton drift, degrading PCK to 63.3%. |
 | 37 | JSSCA-v2 Stabilized Neck Attention | FAILURE | 63.6% | **STABILIZED BUT BLURRED**: Pre-LN and FFN successfully stabilized convergence (loss hit `0.0009` Epoch 40), but performing attention in the dense 480-channel feature space without explicit joint coordinate anchors caused semantic dilution, while downsampling to $8\times 8$ and upsampling back caused spatial blur, capping PCK at 63.6%. |
+| 38 | JSSCA-v3 Spatial Tokenization Post-Processor | FAILURE | 26.8% | **VISUAL TOKEN DILUTION**: Downsampling each joint's heatmap to an 8x8 grid created a sequence of 896 tokens. This flooded the Self-Attention layer with empty background tokens, washing out joint semantic identity and causing a catastrophic coordinate collapse. |
 
-## Next Planned Steps (Post-Loop 37)
+## Next Planned Steps (Post-Loop 38)
 
-1. **Design and Implement JSSCA-v3 (Loop 38)**: Design a post-processing JSSCA block that operates directly in coordinate/heatmap space (preserving joint identity anchors), but incorporates $8\times 8$ spatial tokenization, Pre-LN Transformer stabilization, progressive deconvolution upscaling (`ConvTranspose2d` layers), and skip connections.
-2. **Local Sanity Checks & Testing**: Verify output tensor dimensions and compile local unit tests.
+1. **Design and Implement JSSCA-v4 (Loop 39)**: Design a post-processing JSSCA block that operates with sequence length 14 (one token per joint via average pooling) to keep attention highly focused, but incorporates multi-scale U-Net skip connections from the encoder directly to a progressive deconvolutional decoder to preserve fine-grained sub-pixel coordinates and prevent spatial collapse.
+2. **Local Sanity Checks & Testing**: Verify output tensor shapes and compile local unit tests.
