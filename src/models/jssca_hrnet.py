@@ -6,39 +6,40 @@ from .registry import register_model
 
 class JointSpatialChannelAttention(nn.Module):
     """
-    Backbone-Aware Joint-Spatial Neck Attention (JSSCA-v2 Option A).
-    Downsamples the 480-channel backbone features to a compact 8x8 spatial grid,
+    Joint-Symmetric Spatial-Channel Attention (JSSCA-v3 Post-Processor).
+    Downsamples the predicted heatmaps (14 channels) to a compact 8x8 spatial grid,
     projects them to joint-specific spatial tokens, performs inter-joint and spatial
     co-attention across joints with learnable joint and spatial positional embeddings,
-    and upsamples back to the original backbone feature shape.
+    and upsamples back to 64x64 using a progressive deconvolutional decoder
+    with multi-scale residual skip connections to preserve coordinate anchors.
     """
 
-    def __init__(self, num_joints=14, in_channels=480, embed_dim=32, num_heads=4):
+    def __init__(self, num_joints=14, embed_dim=32, num_heads=4):
         super().__init__()
         self.num_joints = num_joints
-        self.in_channels = in_channels
         self.embed_dim = embed_dim  # Dimension per joint token (e.g. 32)
         self.joint_channels = num_joints * embed_dim  # e.g. 14 * 32 = 448
 
-        # 1. Joint-Spatial Encoder
-        # Maps (B, in_channels, 64, 64) -> (B, joint_channels, 8, 8)
-        self.encoder = nn.Sequential(
-            nn.Conv2d(in_channels, 256, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(256),
+        # 1. Joint-wise U-Net Encoder
+        # We process each joint's (1, 64, 64) heatmap independently down to (embed_dim, 8, 8)
+        self.enc_conv = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(16),
             nn.ReLU(inplace=True),
-            # Downsample 64x64 -> 32x32
-            nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(256),
+        )
+        self.enc_down1 = nn.Sequential(
+            nn.Conv2d(16, 16, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(16),
             nn.ReLU(inplace=True),
-            # Downsample 32x32 -> 16x16
-            nn.Conv2d(256, 128, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(128),
+        )
+        self.enc_down2 = nn.Sequential(
+            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
-            # Downsample 16x16 -> 8x8
-            nn.Conv2d(
-                128, self.joint_channels, kernel_size=3, stride=2, padding=1, bias=False
-            ),
-            nn.BatchNorm2d(self.joint_channels),
+        )
+        self.enc_down3 = nn.Sequential(
+            nn.Conv2d(32, embed_dim, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(embed_dim),
             nn.ReLU(inplace=True),
         )
 
@@ -64,46 +65,41 @@ class JointSpatialChannelAttention(nn.Module):
         )
         self.norm2 = nn.LayerNorm(embed_dim)
 
-        # 2. Progressive Deconvolutional Decoder
-        # Maps (B, joint_channels, 8, 8) -> (B, in_channels, 64, 64)
-        self.decoder = nn.Sequential(
-            nn.Conv2d(self.joint_channels, 256, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(256),
+        # 2. Progressive Deconvolutional Decoder with skip connections
+        # Maps (B*J, embed_dim, 8, 8) -> (B*J, 1, 64, 64)
+        self.dec_up1 = nn.Sequential(
+            nn.ConvTranspose2d(embed_dim, 32, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
-            # Upsample 8x8 -> 16x16
-            nn.ConvTranspose2d(
-                256, 256, kernel_size=4, stride=2, padding=1, bias=False
-            ),
-            nn.BatchNorm2d(256),
+        )
+        self.dec_up2 = nn.Sequential(
+            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(16),
             nn.ReLU(inplace=True),
-            # Upsample 16x16 -> 32x32
-            nn.ConvTranspose2d(
-                256, 128, kernel_size=4, stride=2, padding=1, bias=False
-            ),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            # Upsample 32x32 -> 64x64
-            nn.ConvTranspose2d(
-                128, in_channels, kernel_size=4, stride=2, padding=1, bias=False
-            ),
-            nn.BatchNorm2d(in_channels),
+        )
+        self.dec_up3 = nn.Sequential(
+            nn.ConvTranspose2d(16, 1, kernel_size=4, stride=2, padding=1, bias=False),
         )
 
-    def forward(self, features):
-        # features: (B, in_channels, 64, 64)
-        B, C, H, W = features.shape
+    def forward(self, heatmaps):
+        # heatmaps: (B, num_joints, 64, 64)
+        B, J, H, W = heatmaps.shape
 
-        # 1. Project and downsample features to joint representation
-        # proj: (B, num_joints * embed_dim, 8, 8)
-        proj = self.encoder(features)
+        # 1. Reshape to process each joint's heatmap independently through the encoder
+        h0 = heatmaps.reshape(B * J, 1, H, W)
+
+        h1 = self.enc_conv(h0)      # (B*J, 16, 64, 64)
+        h2 = self.enc_down1(h1)     # (B*J, 16, 32, 32)
+        h3 = self.enc_down2(h2)     # (B*J, 32, 16, 16)
+        proj = self.enc_down3(h3)   # (B*J, embed_dim, 8, 8)
 
         # 2. Reshape to joint-spatial tokens: (B, num_joints, 64, embed_dim)
         x = proj.reshape(B, self.num_joints, self.embed_dim, 8 * 8)
         x = x.permute(0, 1, 3, 2)  # (B, num_joints, 64, embed_dim)
 
         # 3. Add positional embeddings
-        x = x + self.joint_pos_embed  # Broadcasts across spatial dimensions
-        x = x + self.spatial_pos_embed  # Broadcasts across joints
+        x = x + self.joint_pos_embed  # Broadcasts across spatial dimensions (64)
+        x = x + self.spatial_pos_embed  # Broadcasts across joints (14)
 
         # 4. Flatten joint-spatial dimension for self-attention: (B, num_joints * 64, embed_dim)
         x_flat = x.reshape(B, self.num_joints * 64, self.embed_dim)
@@ -118,22 +114,30 @@ class JointSpatialChannelAttention(nn.Module):
         ffn_out = self.ffn(x_norm2)
         refined_flat = x_flat + ffn_out
 
-        # 5. Reshape back and decode
+        # 5. Reshape back for decoding: (B*J, embed_dim, 8, 8)
         refined = refined_flat.reshape(B, self.num_joints, 8, 8, self.embed_dim)
         refined = refined.permute(0, 1, 4, 2, 3)  # (B, num_joints, embed_dim, 8, 8)
-        refined = refined.reshape(B, self.joint_channels, 8, 8)
+        refined = refined.reshape(B * self.num_joints, self.embed_dim, 8, 8)
 
-        # Upsample back to feature space
-        delta = self.decoder(refined)
+        # 6. Progressive upsampling with multi-scale skip connections
+        d1 = self.dec_up1(refined)  # (B*J, 32, 16, 16)
+        d1 = d1 + h3                # Skip connection at 16x16
 
-        # Residual link
-        return features + delta
+        d2 = self.dec_up2(d1)       # (B*J, 16, 32, 32)
+        d2 = d2 + h2                # Skip connection at 32x32
+
+        delta = self.dec_up3(d2)    # (B*J, 1, 64, 64)
+
+        # 7. Global residual skip connection
+        out = h0 + delta            # (B*J, 1, 64, 64)
+        
+        return out.reshape(B, J, H, W)
 
 
 @register_model("jssca_hrnet")
 class JSSCAHRNet(nn.Module):
     """
-    HRNet-W32 backbone refined with a Joint-Symmetric Spatial-Channel Attention (JSSCA-v2) stage.
+    HRNet-W32 backbone refined with a Joint-Symmetric Spatial-Channel Attention (JSSCA-v3) stage.
     Outputs: refined high-resolution heatmaps.
     """
 
@@ -153,12 +157,8 @@ class JSSCAHRNet(nn.Module):
         embed_dim = hrnet_cfg.get("jssca_embed_dim", 32)
         num_heads = hrnet_cfg.get("jssca_num_heads", 4)
 
-        # In W32 HRNet, parallel streams sum to 480 channels
-        in_channels = sum(self.hrnet.W32)
-
         self.jssca = JointSpatialChannelAttention(
             num_joints=num_joints,
-            in_channels=in_channels,
             embed_dim=embed_dim,
             num_heads=num_heads,
         )
@@ -168,13 +168,10 @@ class JSSCAHRNet(nn.Module):
         return "heatmap"
 
     def forward(self, x):
-        # 1. Base features from HRNet backbone (returning features = True)
-        _, features = self.hrnet(x, return_features=True)
+        # 1. Base heatmaps from HRNet backbone
+        heatmaps = self.hrnet(x)
 
-        # 2. Refined features from JSSCA-v2 Neck Attention
-        refined_features = self.jssca(features)
-
-        # 3. Predict refined heatmaps from refined features
-        refined_heatmaps = self.hrnet.head(refined_features)
+        # 2. Refined heatmaps from JSSCA-v3 Post-Processor
+        refined_heatmaps = self.jssca(heatmaps)
 
         return refined_heatmaps
