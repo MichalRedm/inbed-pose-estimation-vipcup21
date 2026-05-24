@@ -34,7 +34,7 @@ def build_optimizer(
         for name, param in model.named_parameters():
             if not param.requires_grad:
                 continue
-            if name.startswith("head."):
+            if name.startswith("head.") or name.startswith("decoder."):
                 head_params.append(param)
             else:
                 backbone_params.append(param)

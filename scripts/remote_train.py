@@ -127,6 +127,14 @@ def main():
         # 2. Sync local code and configs to remote
         gpu.sync_project(remote_dir="/root/project")
 
+        # 2.1 Manually upload config if it's in a directory that was ignored (e.g. results/)
+        if config_path and os.path.exists(config_path):
+            # Normalize path for remote (forward slashes)
+            remote_cfg_path = f"/root/project/{Path(config_path).as_posix()}"
+            print(f"[sync] Manually uploading configuration: {config_path} -> {remote_cfg_path}")
+            gpu.run(f"mkdir -p {os.path.dirname(remote_cfg_path)}", stream=False)
+            gpu.upload(config_path, remote_cfg_path, recursive=False)
+
         # 3. Only pass project-specific env vars; PATH/CUDA come from login shell
         k_user = os.getenv("KAGGLE_USERNAME", "")
         k_key = os.getenv("KAGGLE_API_TOKEN", os.getenv("KAGGLE_KEY", ""))
@@ -494,9 +502,14 @@ def main():
                             f"import time, os\n"
                             f'open("{remote_stream_path}", "a").close()\n'
                             f'f = open("{remote_stream_path}", "r")\n'
+                            f"buffer = \"\"\n"
                             f"while True:\n"
-                            f"    line = f.readline()\n"
-                            f'    if line: print(line, end="", flush=True)\n'
+                            f"    chunk = f.read(1024)\n"
+                            f"    if chunk:\n"
+                            f"        buffer += chunk\n"
+                            f"        while \"\\n\" in buffer:\n"
+                            f"            line, buffer = buffer.split(\"\\n\", 1)\n"
+                            f'            print(line + \"\\n\", end=\"\", flush=True)\n'
                             f"    else: time.sleep(0.5)\n"
                             f"'"
                         )
