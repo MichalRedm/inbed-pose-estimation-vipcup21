@@ -517,7 +517,6 @@ class GPUSession:
                 "scripts",
                 "configs",
                 "data",
-                "results",
                 "pretrained_models",
                 "requirements.txt",
                 "README.md",
@@ -549,6 +548,20 @@ class GPUSession:
                     )
                 else:
                     shutil.copy2(src_path, dst_path)
+
+            # 1.5. Dynamically include ONLY the latest frozen config to avoid Results folder bloat
+            runs_dir = os.path.join(local_dir, "results", "runs")
+            if os.path.exists(runs_dir):
+                runs = [os.path.join(runs_dir, d) for d in os.listdir(runs_dir) if os.path.isdir(os.path.join(runs_dir, d))]
+                if runs:
+                    latest_run = max(runs, key=os.path.getmtime)
+                    latest_run_name = os.path.basename(latest_run)
+                    frozen_path = os.path.join(latest_run, "frozen_config.json")
+                    if os.path.exists(frozen_path):
+                        target_run_dir = os.path.join(target, "results", "runs", latest_run_name)
+                        os.makedirs(target_run_dir, exist_ok=True)
+                        shutil.copy2(frozen_path, target_run_dir)
+                        print(f"Included latest frozen config in tarball: results/runs/{latest_run_name}/frozen_config.json")
 
             # 2. Package into a tarball
             archive_path = os.path.join(tmp_dir, "project.tar.gz")
