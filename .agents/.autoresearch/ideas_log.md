@@ -46,7 +46,12 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 
 This archive logs all completed experiments that failed to outperform our baseline or introduced regressions, detailing the exact root cause of their failure.
 
-### 1. JSSCA-v6 Confidence-Gated Spatially-Anchored Attention (Loop 41)
+### 1. ViTPose from scratch / ImageNet-Pretrained (Loop 42)
+*   **Root Cause**: **THE SPATIAL RESOLUTION BOTTLENECK**: Standard ViT-B-16 immediately downsamples the 256x256 image into a 16x16 grid of patches. For human pose estimation (a dense prediction task), a 16x16 feature map is extremely coarse, losing crucial high-frequency spatial details required for precise limb localization.
+*   **Root Cause**: **LACK OF INDUCTIVE BIAS & DATA HUNGER**: Unlike CNNs, plain Transformers lack local translation invariance and must learn spatial relationships from scratch. While SOTA ViTPose performs extremely well on massive datasets (COCO/AIC), our 80-subject dataset is too small to teach a plain ViT-B how to route spatial coordinate information globally. The model achieved a peak of only 41.75% PCK, well below our 64.3% baseline.
+*   **Lesson**: To use Vision Transformers successfully on small datasets, we must load weights pre-trained on a massive pose estimation dataset (like MS COCO) where the model has already learned correct global spatial routing rules.
+
+### 2. JSSCA-v6 Confidence-Gated Spatially-Anchored Attention (Loop 41)
 *   **Root Cause**: **GRID SHIFTING OCCLUSION CEILING**: Under extreme blanket occlusions (duvets), the backbone's heatmaps are flat ($conf \approx 0$). Differentiably shifting flat heatmaps using `F.grid_sample` is a no-op, forcing the network to reconstruct the peak from scratch via a small MLP residual decoder.
 *   **Root Cause**: **FALLBACK TO TRAINING CENTROIDS**: Because the coordinate anchor was zeroed out by confidence gating (to isolate noise), the MHA layer had no spatial reference for occluded extremities. The MLP was forced to fallback to predicting a static peak at the global training average (inside the torso core), causing wrists and elbows to collapse inside the body midline.
 *   **Lesson**: Post-processing coordinate regression on lossy 1D tokens is physically limited under zero visibility. We must perform global attention in a dense spatial representation space (such as a plain ViT backbone or dense spatial feature neck) to preserve spatial skip-connections and location-aware receptive fields.

@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 42 (evaluation & state logging)
-- **Phase**: Phase 5 — State Logging & Continuation
-- **Status**: Loop 42 (**`loop42_vitpose`**) successfully completed 40 epochs. PCK reached **41.75%** and **26.40 px MPJPE** using argmax decoding. Post-mortem diagnostics confirmed that adding internal ImageNet normalization resolved the feature-washout bug, yielding a +17pp improvement over the broken baseline (24.76%). However, plain ViT-B underperformed hierarchical CNNs (like HRNet JSSCA at 64.3%) due to early spatial resolution loss (16x16 patch bottleneck) and high data inefficiency on the small 80-subject dataset.
+- **Current Loop**: 43 (fine-tuning COCO pretrained ViTPose)
+- **Phase**: Phase 3 — Implementation & Phase 4 — Evaluation
+- **Status**: Loop 43 (**`loop43_vitpose_coco`**) has successfully resolved the spatial resolution bottleneck by importing and mapping official COCO pre-trained ViTPose weights. The custom key mapping function maps 100% of the ViT-B-16 backbone and the progressive deconvolution upsampling decoder, leaving only the final 1x1 conv to be trained from scratch. Local synthetic tests confirmed the model compiles, loads weights, and runs forward/backward passes seamlessly with very low initial MSE. Remote training on the 80-subject SLP dataset has been initiated.
 - **Absolute Priority**:
   1. **Record**: Loop 35 (**64.3% PCK@0.2**, **17.63 px MPJPE**) remains the all-time record.
-  2. **Next Step**: Pivot back to hierarchical HRNet models but with stabilized dense spatial neck attention or grayscale thermal pre-training.
+  2. **Next Step**: Complete Loop 43 remote GPU training and evaluate the performance of COCO-loaded ViTPose under blanket occlusions.
 - **Baseline**: Loop 35 (64.3% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -91,8 +91,8 @@ The fundamental loss-metric alignment problem has been resolved:
 | 40 | JSSCA-v5 Spatially-Anchored Attention Post-Processor | UNDERPERFORMED | **55.3%** | **COORDINATE ANCHOR POLLUTION**: Differentiable soft-argmax on blurred extremity heatmaps (ankles/wrists) produced chaotic coordinates, polluting the self-attention joint tokens. Regularized grid translation bypassed autoencoder blur perfectly (loss 2x lower), but extreme occlusions confused physical geometric reasoning. |
 | 41 | JSSCA-v6 (Confidence-Gated Spatially-Anchored Attention) | SUCCESS | **63.56%** | **STABLE POST-PROCESSOR**: Peak confidence gating completely suppressed coordinate anchor noise of occluded joints (knees/ankles fully recovered), but the grid translation was a no-op on flat heatmaps ($conf \approx 0$), forcing the limited MLP decoder to fallback to global training centroids (visual arm collapse). |
 | 42 | ViTPose (Plain ViT-B with Classic Upsampling Decoder) | SUCCESS (norm fixed) | **41.75%** | **ImageNet Normalization Fix**: Resolved the early feature washout bug (+17pp over broken baseline), proving correct distribution alignment. However, plain ViT-B underperformed hierarchical CNNs (JSSCA at 64.3%) by -22.6pp due to patch downsampling resolution loss (16x16 grid bottleneck) and data inefficiency on 80-subject set. |
+| 43 | COCO Pre-trained ViTPose Fine-tuning | RUNNING | TBD | Loading COCO pre-trained weights to resolve the spatial routing bottleneck on a small dataset. Custom weight mapping verified successfully locally. |
 
-## Next Planned Steps (Post-Loop 42 Run)
+## Next Planned Steps (Post-Loop 43 Run)
 
-1. **Grayscale-Aligned / Modality-Aligned Pre-training**: Since plain ImageNet-pretrained ViTs underperform due to severe domain shift and data inefficiency, investigate fine-tuning a hierarchical model (e.g. HRNet) that has been pre-trained on grayscale-converted MS COCO or thermal dataset domains.
-2. **Dense Spatial Neck Attention (JSSCA-v7)**: Build a stabilized dense Transformer Neck (Pre-LN + FFN) operating directly on multi-resolution Stage 4 feature maps of HRNet without spatial downsampling, bypassing the coordinate bottleneck while preserving key spatial priors.
+1. **Dense Spatial Neck Attention (JSSCA-v7)**: Build a stabilized dense Transformer Neck (Pre-LN + FFN) operating directly on multi-resolution Stage 4 feature maps of HRNet without spatial downsampling, bypassing the coordinate bottleneck while preserving key spatial priors.

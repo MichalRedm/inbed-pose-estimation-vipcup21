@@ -518,6 +518,7 @@ class GPUSession:
                 "configs",
                 "data",
                 "results",
+                "pretrained_models",
                 "requirements.txt",
                 "README.md",
                 "gpu_connection.json",
