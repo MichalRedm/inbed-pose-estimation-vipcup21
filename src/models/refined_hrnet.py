@@ -29,6 +29,10 @@ class GCNRefinedHRNet(nn.Module):
         )
 
     @property
+    def in_channels(self) -> int:
+        return self.hrnet.in_channels
+
+    @property
     def output_type(self) -> str:
         # We still primarily output heatmaps for the trainer
         return "heatmap"

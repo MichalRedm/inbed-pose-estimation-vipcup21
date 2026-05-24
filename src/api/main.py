@@ -611,10 +611,12 @@ async def predict(
         in_channels = 1  # Default
         if inference_service._model:
             m = inference_service._model
-            if hasattr(m, "model"):
-                m = m.model
-            if hasattr(m, "conv1"):
-                in_channels = getattr(m.conv1, "in_channels", 1)
+            # Use standardized in_channels property if available
+            if hasattr(m, "in_channels"):
+                in_channels = m.in_channels
+            # Legacy fallback
+            elif hasattr(m, "model") and hasattr(m.model, "in_channels"):
+                in_channels = m.model.in_channels
 
         image = image.convert("RGB" if in_channels == 3 else "L")
         orig_size = image.size

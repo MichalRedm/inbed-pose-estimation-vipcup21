@@ -236,11 +236,11 @@ class HRNet(BaseModel):
             config_model = config
 
         num_joints = config_model.get("num_joints", 14)
-        in_channels = config_model.get("in_channels", 1)
+        self.in_channels = config_model.get("in_channels", 1)
         C = self.W32  # shorthand
 
         # --- Stem ---
-        self.conv1 = nn.Conv2d(in_channels, 64, 3, stride=2, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(self.in_channels, 64, 3, stride=2, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.conv2 = nn.Conv2d(64, 64, 3, stride=2, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(64)
