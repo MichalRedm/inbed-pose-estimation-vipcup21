@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 41 (post-mortem & planning)
+- **Current Loop**: 42 (evaluation & state logging)
 - **Phase**: Phase 5 — State Logging & Continuation
-- **Status**: Loop 41 (**`loop41_jssca_v6`**) successfully completed 40 epochs. PCK restored to **63.56%** and **18.44 px MPJPE** using argmax decoding. Post-mortem diagnostic confirmed that confidence gating effectively isolated spatial noise (knees/ankles recovered to baseline levels), but the spatially-anchored grid shifting model hits a physical ceiling because shifting a flat heatmap ($conf \approx 0$) is a no-op, forcing the model to generate the peak via a limited MLP decoder without spatial skip-connections, which collapses occluded extremities to global training centroids. We will pivot away from post-processing coordinate regression to new representational paradigms.
+- **Status**: Loop 42 (**`loop42_vitpose`**) successfully completed 40 epochs. PCK reached **41.75%** and **26.40 px MPJPE** using argmax decoding. Post-mortem diagnostics confirmed that adding internal ImageNet normalization resolved the feature-washout bug, yielding a +17pp improvement over the broken baseline (24.76%). However, plain ViT-B underperformed hierarchical CNNs (like HRNet JSSCA at 64.3%) due to early spatial resolution loss (16x16 patch bottleneck) and high data inefficiency on the small 80-subject dataset.
 - **Absolute Priority**:
   1. **Record**: Loop 35 (**64.3% PCK@0.2**, **17.63 px MPJPE**) remains the all-time record.
-  2. **Next Step**: Pivot to either dense spatial neck attention or pre-training on grayscale/thermal modality.
+  2. **Next Step**: Pivot back to hierarchical HRNet models but with stabilized dense spatial neck attention or grayscale thermal pre-training.
 - **Baseline**: Loop 35 (64.3% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -30,6 +30,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 | loop17_uncertainty | soft-argmax | **43.1%** | 24.5 px | HIGH-ACCURACY |
 | loop5_uda_refined | argmax | 36.2% | 31.4 px | UDA REF |
 | loop4_uda_alignment | argmax | 35.6% | 40.3 px | UDA BASE |
+| **loop42_vitpose** | argmax | **41.75%** | **26.40 px** | Pre-trained ViT-B (Normalization Fixed) |
 | loop23_stabilized_pretraining | argmax | **41.0%** | 37.0 px | FINE-TUNED |
 | loop18_gcn_final_v5 | soft-argmax | 33.4% | 26.6 px | SUCCESS |
 | loop34_kinematic_refinement | soft-argmax + Kinematic | 33.1% | 24.9 px | FAILURE |
@@ -89,8 +90,9 @@ The fundamental loss-metric alignment problem has been resolved:
 | 39 rerun | JSSCA-v4 No Skips (upsampling decoder) | SUCCESS | **63.94%** | Removed degenerate skip connections to force information through attention bottleneck. Reconstructed heatmaps via progressive deconv decoder. Cap imposed by spatial coordinate blur from autoencoder upsampling. |
 | 40 | JSSCA-v5 Spatially-Anchored Attention Post-Processor | UNDERPERFORMED | **55.3%** | **COORDINATE ANCHOR POLLUTION**: Differentiable soft-argmax on blurred extremity heatmaps (ankles/wrists) produced chaotic coordinates, polluting the self-attention joint tokens. Regularized grid translation bypassed autoencoder blur perfectly (loss 2x lower), but extreme occlusions confused physical geometric reasoning. |
 | 41 | JSSCA-v6 (Confidence-Gated Spatially-Anchored Attention) | SUCCESS | **63.56%** | **STABLE POST-PROCESSOR**: Peak confidence gating completely suppressed coordinate anchor noise of occluded joints (knees/ankles fully recovered), but the grid translation was a no-op on flat heatmaps ($conf \approx 0$), forcing the limited MLP decoder to fallback to global training centroids (visual arm collapse). |
+| 42 | ViTPose (Plain ViT-B with Classic Upsampling Decoder) | SUCCESS (norm fixed) | **41.75%** | **ImageNet Normalization Fix**: Resolved the early feature washout bug (+17pp over broken baseline), proving correct distribution alignment. However, plain ViT-B underperformed hierarchical CNNs (JSSCA at 64.3%) by -22.6pp due to patch downsampling resolution loss (16x16 grid bottleneck) and data inefficiency on 80-subject set. |
 
-## Next Planned Steps (Post-Loop 41 Run)
+## Next Planned Steps (Post-Loop 42 Run)
 
-1. **Pivot to Modality-Aligned Pre-training**: Survey and fine-tune external grayscale-pretrained checkpoints or a thermal-pretrained YOLO-pose model (e.g., `OpenThermalPose` or grayscale COCO pre-training) to resolve low-level early feature washout.
-2. **Dense Spatial Neck Attention**: If continuing with HRNet, design a stabilized Transformer Neck (FFN + Pre-LN) operating directly on multi-resolution dense feature maps (Stage 4) without spatial downsampling, bypassing the lossy 1D coordinate bottleneck entirely.
+1. **Grayscale-Aligned / Modality-Aligned Pre-training**: Since plain ImageNet-pretrained ViTs underperform due to severe domain shift and data inefficiency, investigate fine-tuning a hierarchical model (e.g. HRNet) that has been pre-trained on grayscale-converted MS COCO or thermal dataset domains.
+2. **Dense Spatial Neck Attention (JSSCA-v7)**: Build a stabilized dense Transformer Neck (Pre-LN + FFN) operating directly on multi-resolution Stage 4 feature maps of HRNet without spatial downsampling, bypassing the coordinate bottleneck while preserving key spatial priors.
