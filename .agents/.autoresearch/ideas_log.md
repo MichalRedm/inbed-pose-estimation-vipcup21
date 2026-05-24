@@ -8,20 +8,28 @@ This log tracks our prioritized queue of future improvement hypotheses, synthesi
 
 Below is our prioritized queue of strictly **future** improvement hypotheses, ranked by Return on Investment (ROI)—defined as the combined probability of accuracy gains versus simplicity of implementation.
 
-### 1. ViTPose (Plain ViT-B Backbone with Classic Upsampling Decoder)
-*   **Hypothesis**: Transitioning from a hierarchical convolutional backbone (HRNet) to a plain, non-hierarchical Vision Transformer (ViT-B-16) will resolve the occlusion ceiling. Because a plain ViT processes the image via patch embeddings and applies global self-attention across all patches from the very first layer, it naturally learns long-range anatomical dependencies. If a joint (like a wrist or ankle) is completely occluded under a blanket, the global self-attention layers can implicitly infer its position by attending to confident visible anchors (shoulders, hips, head) across the entire image. This completely eliminates lossy 1D coordinate bottlenecks and flat-heatmap grid shifting no-ops.
-*   **Implementation**: Use PyTorch-native `torchvision.models.vit_b_16(weights=ViT_B_16_Weights.DEFAULT)` with input channel replication. Feed the backbone's 1D spatial output sequence (reshaped to $16 \times 16$ grid) into a lightweight classic decoder: two consecutive transpose convolutions (`ConvTranspose2d` with kernel size 4, stride 2, padding 1) to upsample to $64 \times 64$, followed by a final convolution to predict the 14 joint heatmaps.
-*   **ROI Status**: **EXTREMELY HIGH (ROI Rank 1)** — Simple, powerful transition that resolves both the early convolutional feature washout and the spatial coordinate bottleneck of JSSCA.
+### 1. Corrected & Stabilized Pre-trained ViTPose Fine-tuning (ViTPose-Fixed)
+*   **Hypothesis**: Bypassing the class token completely in the forward pass of our `ViTPose` model will allow the transformer backbone to correctly align with the original COCO pre-trained attention maps (which only process the 192 patch tokens). Combining this structural fix with a **discriminative learning rate** (e.g., `5e-6` for the backbone, `1e-4` for the decoder) or initially **freezing the backbone** for 10 epochs will prevent early gradient washout. Additionally, replacing the dynamic sigma curriculum with a wide stable target Gaussian (`sigma = 3.0`) will prevent sub-pixel peak resolution collapse under heavy occlusions, enabling the plain ViT architecture to finally outperform the CNN baselines.
+*   **Implementation**:
+    - Modify `src/models/vitpose.py` to remove the class token from `forward()` entirely. The input tokens should shape `(B, 192, 768)` (only spatial patches). Interpolate and add only the 192 patch positional embeddings (`self.vit.encoder.pos_embedding[:, 1:, :]` interpolated from 16x12 to 14x14 grid and flattened to 196 shape, or from the COCO state dict).
+    - Modify the training manager/factory to support discriminative learning rates, or implement a parameter-group optimization dictionary in `src/training/optimizer.py`.
+    - Train for 40 epochs on the Kaggle GPU VM with a fixed `sigma: 3.0` setting.
+*   **ROI Status**: **EXTREMELY HIGH (ROI Rank 1)** — Direct resolution of all discovered structural and training bugs of the ViTPose baseline.
 
-### 2. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
+### 2. Dense Spatial Neck Attention (JSSCA-v7)
+*   **Hypothesis**: If plain ViT architectures remain data-hungry, return to the record-holding HRNet framework but implement a dense Transformer Neck. Instead of pooling spatial features of heatmaps to $1\times 1$ tokens (which causes spatial information loss) or downsampling to 8x8 grids, operate a stabilized dense Transformer Neck (Pre-LN + FFN) directly on multi-resolution Stage 4 feature maps of HRNet without spatial downsampling, bypassing the coordinate bottleneck while preserving key spatial priors.
+*   **Implementation**: Create JSSCA-v7 module. Apply 2D spatial attention directly on Stage 4 features, and fuse them with skip-connections.
+*   **ROI Status**: **HIGH (ROI Rank 2)**
+
+### 3. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
 *   **Hypothesis**: Instead of training top-down networks from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` research initiative. Fine-tune them directly on the SLP dataset.
 *   **Implementation**: Load `yolo11n-pose.pt` using the `ultralytics` API, map keypoint labels, and fine-tune on the SLP training split.
-*   **ROI Status**: **MEDIUM (ROI Rank 2)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
+*   **ROI Status**: **MEDIUM (ROI Rank 3)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
 
-### 3. Grayscale COCO Pre-training
+### 4. Grayscale COCO Pre-training
 *   **Hypothesis**: RGB-pretrained networks suffer from feature washout because the first-layer filters are optimized for color edges. Pre-training the backbone on grayscale-converted MS COCO before pose fine-tuning aligns weight statistics, creating robust monochromatic priors.
 *   **Implementation**: Convert COCO images to grayscale and pre-train the ViT or HRNet backbone on COCO keypoints before SLP fine-tuning.
-*   **ROI Status**: **MEDIUM (ROI Rank 3)** — High theoretical value, but requires large-scale dataset pipeline engineering.
+*   **ROI Status**: **MEDIUM (ROI Rank 4)** — High theoretical value, but requires large-scale dataset pipeline engineering.
 
 ---
 
@@ -33,6 +41,7 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
     - **Grayscale Modality Transfer**: Converting RGB datasets to grayscale for pre-training prevents domain feature washout and matches the statistics of infrared (thermal) imagery perfectly.
 *   **Foreshortening Priors**: 2D bone lengths are upper-bounded by physical 3D length but lower-bounded by 0. Using a Hinge loss (ReLU) on length exceeding the max effectively models this projection constraint.
 *   **Curriculum Learning for Priors**: Enforcing structural constraints too early can lead to poor local minima. A linear warmup allows the model to find the correct spatial basins first.
+*   **Refining Vision Transformer Fine-Tuning**: Vision Transformers (ViTs) are extremely susceptible to catastrophic forgetting. Fine-tuning with a uniform learning rate at 1e-4 causes backpropagating gradients from randomly initialized heads to completely wash out the pre-trained self-attention representations. SOTA fine-tuning protocols employ (1) **Discriminative Learning Rates** where the backbone's LR is scaled down by $0.05\times - 0.1\times$ ($5\times 10^{-6}$ to $10^{-5}$), or (2) **Stem and Block Freezing** in the initial epochs until the new decoder head stabilizes.
 *   **SLP Dataset Specifics**: The insulating effect of blankets in IR means joint heat signatures are blurred and shifted. Structural priors are essential to "glue" the limbs together.
 *   **Preventing Skeleton Collapse**: Research indicates direct coordinate regression with structural penalties often leads to collapse. State-of-the-art methods decompose pose into root position + bone vectors (length/angle), applying length priors without compressing the skeleton.
 *   **Occlusion Handling**: Multi-modal fusion is best, but when restricted to IR, explicitly modeling visibility (e.g., through an auxiliary attention branch) helps the network switch from texture-reliance to prior-reliance.
@@ -46,7 +55,18 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 
 This archive logs all completed experiments that failed to outperform our baseline or introduced regressions, detailing the exact root cause of their failure.
 
-### 1. ViTPose from scratch / ImageNet-Pretrained (Loop 42)
+### 1. COCO Pre-trained ViTPose Fine-tuning (Loop 43)
+*   **Result**: **42.30% PCK@0.2**, **28.13 px MPJPE** (Heavily underperformed the 64.3% JSSCA baseline).
+*   **Root Cause**:
+    - **Class Token Attention Mismatch**: Prepending a class token (sequence length 193) into transformer self-attention blocks that were pretrained on COCO *without* a class token (sequence length 192) shifted the token indexes and perturbed the attention distribution. The self-attention layers were forced to process an extra token, diluting the keypoint features and ruining the spatial pose routing capabilities of the transformer.
+    - **Destructive Uniform Fine-tuning (Gradient Washout)**: Fine-tuning the entire model with a uniform learning rate of `1e-4` allowed large gradients from the randomly-initialized deconv decoder to propagate back into the backbone in the first epoch, washing out the rich pre-trained COCO features (catastrophic forgetting).
+    - **Sigma Curriculum PCK Divergence**: The dynamic narrowing sigma curriculum (`sigma_start: 3.0` to `sigma_end: 1.5`) reduced training MSE loss but collapsed the sub-pixel peak resolution. Under heavy blanket occlusion, the network could not predict sharp, narrow peaks, leading to noisy/flat heatmaps at validation time that degraded argmax PCK predictions.
+*   **Lesson**:
+    - Bypassing the class token in the forward pass is structurally mandatory to match original COCO-pre-trained weights.
+    - A discriminative learning rate (backbone LR $\leq 10^{-5}$) or initial backbone freezing is required to protect pre-trained features.
+    - Heatmap targets under heavy occlusions must maintain a wide, stable prior (e.g. `sigma = 3.0`) to avoid localization collapse.
+
+### 2. ViTPose from scratch / ImageNet-Pretrained (Loop 42)
 *   **Root Cause**: **THE SPATIAL RESOLUTION BOTTLENECK**: Standard ViT-B-16 immediately downsamples the 256x256 image into a 16x16 grid of patches. For human pose estimation (a dense prediction task), a 16x16 feature map is extremely coarse, losing crucial high-frequency spatial details required for precise limb localization.
 *   **Root Cause**: **LACK OF INDUCTIVE BIAS & DATA HUNGER**: Unlike CNNs, plain Transformers lack local translation invariance and must learn spatial relationships from scratch. While SOTA ViTPose performs extremely well on massive datasets (COCO/AIC), our 80-subject dataset is too small to teach a plain ViT-B how to route spatial coordinate information globally. The model achieved a peak of only 41.75% PCK, well below our 64.3% baseline.
 *   **Lesson**: To use Vision Transformers successfully on small datasets, we must load weights pre-trained on a massive pose estimation dataset (like MS COCO) where the model has already learned correct global spatial routing rules.
