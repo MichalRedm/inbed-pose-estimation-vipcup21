@@ -8,21 +8,29 @@ This log tracks our prioritized queue of future improvement hypotheses, synthesi
 
 Below is our prioritized queue of strictly **future** improvement hypotheses, ranked by Return on Investment (ROI)—defined as the combined probability of accuracy gains versus simplicity of implementation.
 
-### 1. Loop 41: JSSCA-v6 (Confidence-Gated Spatially-Anchored Attention)
-*   **Hypothesis**: Gating coordinate embeddings with the backbone's peak confidence score (e.g., $conf_j = \max(H_j)$) will completely suppress noisy coordinate anchors from heavily occluded joints. By feeding $(x_j, y_j, conf_j)$ into the coordinate encoder, the model can learn to ignore the coordinate anchors when confidence is low (occluded limbs), preventing coordinate pollution in the self-attention layer. This preserves 100% of the anatomical coordinate structure of highly visible/confident joints, allowing the MHA to reason geometrically and correct extremity occlusions based on physical skeletons without introducing negative transfer noise.
-*   **Implementation**: Modify `JointSpatialChannelAttention` to extract `conf = heatmaps.view(B, J, -1).max(dim=-1)[0]`, feed $(P_j, conf_j)$ into a `nn.Linear(3, 64) -> ReLU -> nn.Linear(64, embed_dim)` coordinate encoder, and softly gate the resulting embedding via multiplication with `conf.unsqueeze(-1)`.
-*   **ROI Status**: **EXTREMELY HIGH (ROI Rank 1)** — Direct resolution of the Loop 40 coordinate pollution bottleneck, preserving the 2x lower loss of JSSCA-v5 and restoring extreme joint precision.
+### 1. ViTPose (Plain ViT-B Backbone with Classic Upsampling Decoder)
+*   **Hypothesis**: Transitioning from a hierarchical convolutional backbone (HRNet) to a plain, non-hierarchical Vision Transformer (ViT-B-16) will resolve the occlusion ceiling. Because a plain ViT processes the image via patch embeddings and applies global self-attention across all patches from the very first layer, it naturally learns long-range anatomical dependencies. If a joint (like a wrist or ankle) is completely occluded under a blanket, the global self-attention layers can implicitly infer its position by attending to confident visible anchors (shoulders, hips, head) across the entire image. This completely eliminates lossy 1D coordinate bottlenecks and flat-heatmap grid shifting no-ops.
+*   **Implementation**: Use PyTorch-native `torchvision.models.vit_b_16(weights=ViT_B_16_Weights.DEFAULT)` with input channel replication. Feed the backbone's 1D spatial output sequence (reshaped to $16 \times 16$ grid) into a lightweight classic decoder: two consecutive transpose convolutions (`ConvTranspose2d` with kernel size 4, stride 2, padding 1) to upsample to $64 \times 64$, followed by a final convolution to predict the 14 joint heatmaps.
+*   **ROI Status**: **EXTREMELY HIGH (ROI Rank 1)** — Simple, powerful transition that resolves both the early convolutional feature washout and the spatial coordinate bottleneck of JSSCA.
 
 ### 2. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
-*   **Hypothesis**: Instead of training top-down HRNet from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` research initiative. Fine-tune them directly on the SLP dataset.
+*   **Hypothesis**: Instead of training top-down networks from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` research initiative. Fine-tune them directly on the SLP dataset.
 *   **Implementation**: Load `yolo11n-pose.pt` using the `ultralytics` API, map keypoint labels, and fine-tune on the SLP training split.
 *   **ROI Status**: **MEDIUM (ROI Rank 2)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
 
+### 3. Grayscale COCO Pre-training
+*   **Hypothesis**: RGB-pretrained networks suffer from feature washout because the first-layer filters are optimized for color edges. Pre-training the backbone on grayscale-converted MS COCO before pose fine-tuning aligns weight statistics, creating robust monochromatic priors.
+*   **Implementation**: Convert COCO images to grayscale and pre-train the ViT or HRNet backbone on COCO keypoints before SLP fine-tuning.
+*   **ROI Status**: **MEDIUM (ROI Rank 3)** — High theoretical value, but requires large-scale dataset pipeline engineering.
 
 ---
 
 ## 📝 Web Research Syntheses
 
+*   **ViTPose & ViTPose++ (2026-05-24 Web Research)**:
+    - **Global Attention**: Standard vision transformers process the input image as a sequence of $16 \times 16$ patches and perform global self-attention. This global receptive field is incredibly effective at handling heavy occlusions, allowing the model to naturally infer the position of hidden joints (wrists/ankles under blankets) based on all other patches (shoulders/hips/head) across the entire frame.
+    - **Lightweight Decoders**: Research shows that a plain ViT backbone paired with a lightweight classic decoder (two transposed convolutions upsampling to $64 \times 64$) achieves state-of-the-art keypoint localization, bypassing complex neck/attention networks.
+    - **Grayscale Modality Transfer**: Converting RGB datasets to grayscale for pre-training prevents domain feature washout and matches the statistics of infrared (thermal) imagery perfectly.
 *   **Foreshortening Priors**: 2D bone lengths are upper-bounded by physical 3D length but lower-bounded by 0. Using a Hinge loss (ReLU) on length exceeding the max effectively models this projection constraint.
 *   **Curriculum Learning for Priors**: Enforcing structural constraints too early can lead to poor local minima. A linear warmup allows the model to find the correct spatial basins first.
 *   **SLP Dataset Specifics**: The insulating effect of blankets in IR means joint heat signatures are blurred and shifted. Structural priors are essential to "glue" the limbs together.
@@ -30,7 +38,7 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 *   **Occlusion Handling**: Multi-modal fusion is best, but when restricted to IR, explicitly modeling visibility (e.g., through an auxiliary attention branch) helps the network switch from texture-reliance to prior-reliance.
 *   **Modality Pre-training & Grayscale COCO (2026-05-19 Web Research)**: In-depth survey of thermal/IR pose estimation literature (LLVIP-Pose, UCH-ThermalPose, OpenThermalPose) confirms that RGB-pretrained backbones undergo severe **feature washout** when the early 3-channel layers are averaged to 1-channel. The state-of-the-art recommendation is either **Channel Replication** ($R=G=B=IR$) or pre-training on grayscale-converted MS COCO to naturellement align weight statistics.
 *   **Cross-Modal Knowledge Distillation — Negative Transfer & Mitigations (2026-05-22 Web Research, post-Loop 32 post-mortem)**:
-     *   Even with output-level heatmap distillation (KL divergence) and linear decay, cross-modality distillation from RGB to IR fundamentally conflicts with physical occlusion augmentations (e.g., synthetic blankets). The RGB teacher models clear, uncovered pose distributions perfectly. When the student is fed heavily occluded IR images (simulated blankets) and forced to mimic the teacher's confident, clear-vision predictions, the student fails to learn the uncertainty and physical properties of the occlusion. It is effectively penalized for behaving like a thermal model under occlusion. SOTA cross-modal distillation is effective *only* when both modalities share similar occlusion states during training.
+     - Even with output-level heatmap distillation (KL divergence) and linear decay, cross-modality distillation from RGB to IR fundamentally conflicts with physical occlusion augmentations (e.g., synthetic blankets). The RGB teacher models clear, uncovered pose distributions perfectly. When the student is fed heavily occluded IR images (simulated blankets) and forced to mimic the teacher's confident, clear-vision predictions, the student fails to learn the uncertainty and physical properties of the occlusion. It is effectively penalized for behaving like a thermal model under occlusion. SOTA cross-modal distillation is effective *only* when both modalities share similar occlusion states during training.
 
 ---
 
@@ -38,7 +46,12 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 
 This archive logs all completed experiments that failed to outperform our baseline or introduced regressions, detailing the exact root cause of their failure.
 
-### 1. JSSCA-v5 Spatially-Anchored Attention Post-Processor (Loop 40)
+### 1. JSSCA-v6 Confidence-Gated Spatially-Anchored Attention (Loop 41)
+*   **Root Cause**: **GRID SHIFTING OCCLUSION CEILING**: Under extreme blanket occlusions (duvets), the backbone's heatmaps are flat ($conf \approx 0$). Differentiably shifting flat heatmaps using `F.grid_sample` is a no-op, forcing the network to reconstruct the peak from scratch via a small MLP residual decoder.
+*   **Root Cause**: **FALLBACK TO TRAINING CENTROIDS**: Because the coordinate anchor was zeroed out by confidence gating (to isolate noise), the MHA layer had no spatial reference for occluded extremities. The MLP was forced to fallback to predicting a static peak at the global training average (inside the torso core), causing wrists and elbows to collapse inside the body midline.
+*   **Lesson**: Post-processing coordinate regression on lossy 1D tokens is physically limited under zero visibility. We must perform global attention in a dense spatial representation space (such as a plain ViT backbone or dense spatial feature neck) to preserve spatial skip-connections and location-aware receptive fields.
+
+### 2. JSSCA-v5 Spatially-Anchored Attention Post-Processor (Loop 40)
 *   **Root Cause**: **COORDINATE ANCHOR POLLUTION UNDER EXTREME OCCLUSION**: For heavily occluded extremity joints (ankles/wrists) under blankets, the HRNet backbone outputs flat, blurred, or noisy heatmaps. Performing `soft_argmax_2d` on these uncertain/flat heatmaps generates highly chaotic coordinate anchors (pulled to the center `(0, 0)`). Gating these noisy coordinates with a simple dense coordinate encoder projected this chaos into the 256-dimensional joint tokens, **polluting** the self-attention layer and confusing the physical geometric reasoning of other limb joints (causing a 15–20% regressive drop on ankles/wrists down to ~34%, and elbows/knees down to ~40-45%).
 *   **Root Cause**: **SOFT-ARGMAX DECODING COLLAPSE**: Standard `soft-argmax` decoding on heatmaps produced by JSSCA-v5 collapsed PCK to 3.3%. Because the model was trained with standard heatmap MSE, the output activations have arbitrary ranges (including negative values) representing a Gaussian shape but are not constrained probability distributions. Softmax-temperature scaling on these unnormalized ranges created severe edge-noise sensitivity, driving expected values to boundary centroids.
 *   **Lesson**: To prevent noisy coordinate anchors from polluting joint tokens, the coordinate encoder must be gated by the backbone's peak confidence score (e.g. `conf = heatmaps.view(B, J, -1).max(dim=-1)[0]`). When confidence is extremely low, the coordinate anchor must be completely suppressed/ignored.
