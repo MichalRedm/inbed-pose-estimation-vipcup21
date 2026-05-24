@@ -8,18 +8,15 @@ This log tracks our prioritized queue of future improvement hypotheses, synthesi
 
 Below is our prioritized queue of strictly **future** improvement hypotheses, ranked by Return on Investment (ROI)—defined as the combined probability of accuracy gains versus simplicity of implementation.
 
-### 1. Corrected & Stabilized Pre-trained ViTPose Fine-tuning (ViTPose-Fixed)
-*   **Hypothesis**: Bypassing the class token completely in the forward pass of our `ViTPose` model will allow the transformer backbone to correctly align with the original COCO pre-trained attention maps (which only process the 192 patch tokens). Combining this structural fix with a **discriminative learning rate** (e.g., `5e-6` for the backbone, `1e-4` for the decoder) or initially **freezing the backbone** for 10 epochs will prevent early gradient washout. Additionally, replacing the dynamic sigma curriculum with a wide stable target Gaussian (`sigma = 3.0`) will prevent sub-pixel peak resolution collapse under heavy occlusions, enabling the plain ViT architecture to finally outperform the CNN baselines.
-*   **Implementation**:
-    - Modify `src/models/vitpose.py` to remove the class token from `forward()` entirely. The input tokens should shape `(B, 192, 768)` (only spatial patches). Interpolate and add only the 192 patch positional embeddings (`self.vit.encoder.pos_embedding[:, 1:, :]` interpolated from 16x12 to 14x14 grid and flattened to 196 shape, or from the COCO state dict).
-    - Modify the training manager/factory to support discriminative learning rates, or implement a parameter-group optimization dictionary in `src/training/optimizer.py`.
-    - Train for 40 epochs on the Kaggle GPU VM with a fixed `sigma: 3.0` setting.
-*   **ROI Status**: **EXTREMELY HIGH (ROI Rank 1)** — Direct resolution of all discovered structural and training bugs of the ViTPose baseline.
+### 1. ViTPose++ Mixture-of-Experts (MoE) for Modality Routing
+*   **Hypothesis**: Our Loop 44 ViTPose model proved that global attention solves the extremity occlusion problem (wrists/ankles reached ~67%, up from 47%). However, mixing clean IR and synthetically blanketed IR forces a single set of FFN weights to model two very different signal-to-noise distributions. Implementing a lightweight ViTPose++ style Mixture-of-Experts (MoE) in the FFN layers (e.g., one "clean" expert and one "occluded" expert) routed by a simple gating network will prevent capacity interference and push PCK past 80%.
+*   **Implementation**: Modify the `vitpose.py` encoder blocks to replace the standard MLP with a 2-expert MoE. Use the visibility/occlusion augmentation flag (or a simple linear probe on the patch tokens) to route tokens.
+*   **ROI Status**: **HIGH (ROI Rank 1)** — Builds directly on our new state-of-the-art architecture.
 
 ### 2. Dense Spatial Neck Attention (JSSCA-v7)
-*   **Hypothesis**: If plain ViT architectures remain data-hungry, return to the record-holding HRNet framework but implement a dense Transformer Neck. Instead of pooling spatial features of heatmaps to $1\times 1$ tokens (which causes spatial information loss) or downsampling to 8x8 grids, operate a stabilized dense Transformer Neck (Pre-LN + FFN) directly on multi-resolution Stage 4 feature maps of HRNet without spatial downsampling, bypassing the coordinate bottleneck while preserving key spatial priors.
+*   **Hypothesis**: If plain ViT architectures remain data-hungry or computationally heavy, return to the highly efficient HRNet framework but implement a dense Transformer Neck. Instead of pooling spatial features of heatmaps to $1\times 1$ tokens (which causes spatial information loss) or downsampling to 8x8 grids, operate a stabilized dense Transformer Neck (Pre-LN + FFN) directly on multi-resolution Stage 4 feature maps of HRNet without spatial downsampling, bypassing the coordinate bottleneck while preserving key spatial priors.
 *   **Implementation**: Create JSSCA-v7 module. Apply 2D spatial attention directly on Stage 4 features, and fuse them with skip-connections.
-*   **ROI Status**: **HIGH (ROI Rank 2)**
+*   **ROI Status**: **HIGH (ROI Rank 2)** — Best fallback if ViTPose MoE overfits.
 
 ### 3. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
 *   **Hypothesis**: Instead of training top-down networks from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` research initiative. Fine-tune them directly on the SLP dataset.

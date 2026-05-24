@@ -30,6 +30,10 @@ class PoseDecodingWrapper(nn.Module):
         # This prevents "double-decoding" issues.
 
     @property
+    def in_channels(self) -> int:
+        return getattr(self.model, "in_channels", 1)
+
+    @property
     def output_type(self) -> str:
         return "coordinates"
 

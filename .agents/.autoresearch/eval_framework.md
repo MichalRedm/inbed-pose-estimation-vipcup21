@@ -38,8 +38,9 @@ All "Verified" metrics in this repository must meet the following criteria:
 
 | Run | PCK@0.2 | MPJPE | Status |
 |-----|---------|-------|--------|
-| **loop31_improved_cover** | **64.0%** | **17.8 px** | **ALL-TIME UNDISPUTED RECORD** |
-| **loop29_channel_replication** | **52.0%** | 29.3 px | PREVIOUS RECORD CHAMPION |
+| **loop44_vitpose_fixed** | **77.8%** | **12.3 px** | **ALL-TIME UNDISPUTED RECORD (ViT)** |
+| **loop31_improved_cover** | **64.0%** | **17.8 px** | PREVIOUS RECORD CHAMPION (CNN) |
+| **loop29_channel_replication** | **52.0%** | 29.3 px | TOP BASELINE |
 | **loop27_clean_sigma_cutout** | **50.3%** | 27.2 px | **TOP ROBUSTNESS** |
 | **loop2_fixed_aug** | **46.6%** | 29.6 px | Solid Scratch Baseline |
 | **loop9_anatomical** | **45.1%** | 25.3 px | RELIABLE |

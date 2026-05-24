@@ -2,11 +2,11 @@
 
 - **Current Loop**: 44 (stabilized ViTPose fine-tuning)
 - **Phase**: Phase 5 — Recursive Continuation & State Logging
-- **Status**: Loop 43 (**`loop43_vitpose_coco`**) has finished training and evaluation. It achieved **42.30% PCK@0.2** and **28.13 px MPJPE**, heavily underperforming the JSSCA baseline (64.3%) and plain CNN baselines. Deep diagnostics revealed a critical **structural mismatch**: we prepended an untrained class token to the sequence (making seq length 193), corrupting the attention maps in self-attention blocks pretrained on COCO *without* a class token (seq length 192). In addition, high uniform LR (`1e-4`) caused immediate gradient washout and catastrophic forgetting of pretrained weights.
+- **Status**: Loop 44 (**`loop44_vitpose_fixed`**) has successfully completed. It achieved **77.84% PCK@0.2** and **12.26 px MPJPE**, a massive improvement over Loop 43. This confirms that bypassing the class token to align with COCO attention maps, combined with a discriminative learning rate (5e-6 for backbone) and stable sigma (3.0), successfully adapts the Vision Transformer to the occluded IR domain.
 - **Absolute Priority**:
-  1. **Record**: Loop 35 (**64.3% PCK@0.2**, **17.63 px MPJPE**) remains the all-time record.
-  2. **Next Step**: Resolve the class token attention mismatch, implement a discriminative learning rate multiplier, and run Loop 44 (ViTPose-Fixed).
-- **Baseline**: Loop 35 (64.3% PCK@0.2).
+  1. **Record**: Loop 44 (**77.84% PCK@0.2**, **12.26 px MPJPE**) is the NEW ALL-TIME RECORD.
+  2. **Next Step**: Investigate if further scaling or hybrid architectures (like JSSCA-v7 dense neck) can push past the 80% PCK barrier.
+- **Baseline**: Loop 44 (77.84% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -93,6 +93,7 @@ The fundamental loss-metric alignment problem has been resolved:
 | 41 | JSSCA-v6 (Confidence-Gated Spatially-Anchored Attention) | SUCCESS | **63.56%** | **STABLE POST-PROCESSOR**: Peak confidence gating completely suppressed coordinate anchor noise of occluded joints (knees/ankles fully recovered), but the grid translation was a no-op on flat heatmaps ($conf \approx 0$), forcing the limited MLP decoder to fallback to global training centroids (visual arm collapse). |
 | 42 | ViTPose (Plain ViT-B with Classic Upsampling Decoder) | SUCCESS (norm fixed) | **41.75%** | **ImageNet Normalization Fix**: Resolved the early feature washout bug (+17pp over broken baseline), proving correct distribution alignment. However, plain ViT-B underperformed hierarchical CNNs (JSSCA at 64.3%) by -22.6pp due to patch downsampling resolution loss (16x16 grid bottleneck) and data inefficiency on 80-subject set. |
 | 43 | COCO Pre-trained ViTPose Fine-tuning | FAILURE | **42.30%** | **REPRESENTATION WASHOUT & STRUCTURAL MISMATCH**: Class token mismatch (seq length 193 vs 192) perturbed attention maps, while uniform LR (1e-4) caused immediate gradient washout and catastrophic forgetting of pretrained weights. |
+| 44 | Stabilized ViTPose Fine-tuning (Fixed Structure + Disc. LR) | SUCCESS | **77.8%** | Bypassing class token to match COCO attention maps; backbone LR at 5e-6; stable sigma=3.0. Reached a new all-time record! |
 
 ## Next Planned Steps (Post-Loop 43 Run)
 
