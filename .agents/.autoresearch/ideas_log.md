@@ -11,13 +11,13 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 ### 1. CycleGAN-based Domain Translation (CycAug)
 *   **Hypothesis**: The current pipeline uses mathematical formulas to simulate blankets. Training a CycleGAN to translate images between the "uncovered" domain (Subjects 1-30) and the "covered" domain (Subjects 31-80) will generate highly realistic synthetic target data while preserving the ground-truth coordinates from the source images. This was the strategy used by the 2nd Runner-Up team (NFPUndercover) in the VIP Cup 2021.
 *   **Implementation**: Train a separate CycleGAN model on the unannotated 31-80 subset. Use the generator as an offline augmentation step or integrate it into `DataAugmenter`.
-*   **Small-Data Survival Tip**: Given only ~1,350 source and 2,250 target images, standard CycleGANs will overfit. Use a lightweight generator architecture (e.g., fewer ResNet blocks), employ strong augmentations during GAN training, and consider Attention-Guided GANs to focus translations purely on the blanket regions rather than full image synthesis.
+*   **Small-Data Survival Tip**: Given only ~1,350 source and 2,250 target images, standard CycleGANs will overfit. Use a lightweight generator architecture, employ strong augmentations, and **initialize the GAN's feature extractors with standard ImageNet weights**. Even though ImageNet is RGB, the early Gabor filters act as a massive head-start for generating realistic thermal blanket textures.
 *   **ROI Status**: **HIGH (UDA Rank 1)** — Proven winning strategy, perfectly leverages the unused 31-80 dataset.
 
 ### 2. Teacher-Student Self-Training (Pseudo-Labeling)
 *   **Hypothesis**: The model can learn from the unlabeled target distribution by generating its own labels. A teacher model trained on augmented source data (Subjects 1-30) predicts heatmaps on the unlabeled target data (Subjects 31-80). High-confidence predictions are converted to pseudo-labels to train the student model.
 *   **Implementation**: Modify the `train_loader` to yield unannotated batches. Maintain an Exponential Moving Average (EMA) teacher model. Apply consistency regularization between weakly-augmented and strongly-augmented views of the unannotated images.
-*   **Small-Data Survival Tip**: Early confirmation bias is fatal on small datasets. Implement a high confidence threshold for pseudo-labels, use a slow EMA decay rate for the teacher network, and aggressively filter out low-confidence extremity predictions.
+*   **Small-Data Survival Tip**: Early confirmation bias is fatal on small datasets. Combine this with **Cross-Modal Teacher Distillation**: train the Teacher model on the highly-accurate **RGB** SLP images to generate perfect pseudo-labels, then use those to train the IR Student model. Alternatively, ensure the Teacher is initialized with MS COCO weights + Channel Replication to guarantee strong structural priors.
 *   **ROI Status**: **HIGH (UDA Rank 2)** — Standard state-of-the-art technique for Semi-Supervised pose estimation.
 
 ### 3. ViTPose++ Mixture-of-Experts (MoE) for Modality Routing

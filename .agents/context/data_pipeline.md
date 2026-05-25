@@ -21,3 +21,8 @@ Raw annotations are stored in `joints_gt_<modality>.mat` files.
 - `joints_gt`: Matrix of shape `(3, 14, N)`.
 - Coords: `0` (x), `1` (y), `2` (visibility).
 - Joint Order (LSP): 0: R Ankle, 1: R Knee, 2: R Hip, 3: L Hip, 4: L Knee, 5: L Ankle, 6: R Wrist, 7: R Elbow, 8: R Shoulder, 9: L Shoulder, 10: L Elbow, 11: L Wrist, 12: Neck, 13: Head.
+
+## Small Data & Modality Gap Challenges
+- **Scarcity**: The source training domain consists of only ~1,350 annotated images. Training complex architectures (like ViTs) from scratch is mathematically prone to catastrophic overfitting (e.g., scoring <45% PCK).
+- **The Gap**: Most pre-trained weights are RGB, but our target is Thermal (IR).
+- **Required Mitigation**: Pre-trained weights are **mandatory**. To bridge the RGB-to-Thermal gap without washing out pre-trained structural priors, the pipeline must employ **Channel Replication** (copying IR to 3 channels) combined with **Discriminative Fine-Tuning** (freezing the backbone initially, then unfreezing with a very low learning rate like `1e-5`).

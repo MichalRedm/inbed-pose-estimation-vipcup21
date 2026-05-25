@@ -15,6 +15,7 @@
 - **Training Source domain**: Uncovered images ONLY, subjects 1–30 (Annotated).
 - **Training Target domain**: Covered images ONLY (cover1 + cover2), subjects 31–80 (Unannotated). *Note: Currently excluded by dataloader, but available for Semi-Supervised/UDA strategies.*
 - **Validation domain**: Covered images ONLY (cover1 + cover2), subjects 81–90 — this is the task objective
+- **Pre-training Mandate**: Due to small dataset size (~1,350 source images), models MUST utilize massive pre-trained weights (e.g., MS COCO for structural priors or Thermal-native datasets). Training from scratch is forbidden unless establishing a baseline.
 - **Evaluation**: Always use run's own `config.json`, or the embedded `decoding_config` in the checkpoint. Threshold standard: **PCK@0.2**.
 - **Anatomical priors**: Must use normalized [0,1] coordinate space if implementing coordinate-space constraints
 - **Remote GPU**: Use Kaggle T4 for training (40s/epoch typical). Be sure to wait for the training to finish before proceeding to the next step.
