@@ -398,8 +398,8 @@ class SelfGhostingThermalFootprint:
         },
     }
 
-    # MODIFIED: Higher decay range (brighter ghost) and lower blur (sharper ghost)
-    def __init__(self, probability: float = 0.5, max_shift: float = 0.15, decay_range=[0.5, 0.85], blur_range=[4.0, 10.0]):
+    # MODIFIED: Lower default probability and wider ranges for better variety
+    def __init__(self, probability: float = 0.2, max_shift: float = 0.15, decay_range=[0.3, 0.9], blur_range=[3.0, 12.0]):
         self.probability = probability
         self.max_shift = max_shift
         self.decay_range = decay_range
@@ -426,9 +426,10 @@ class SelfGhostingThermalFootprint:
 
         ambient_est = np.percentile(img_np, 15)
         
-        # MODIFIED: Multiply extracted heat by 1.5 to artificially boost the ghost intensity
+        # MODIFIED: Randomized heat multiplier to avoid fixed ghost intensity
+        heat_multiplier = random.uniform(0.8, 2.0)
         subject_heat = np.maximum(img_np - ambient_est, 0.0)
-        subject_heat = subject_heat * 1.5 
+        subject_heat = subject_heat * heat_multiplier
         heat_pil = Image.fromarray(np.clip(subject_heat, 0, 255).astype(np.uint8))
 
         max_s = kwargs.get("max_shift", self.max_shift)
@@ -528,7 +529,7 @@ class DataAugmenter:
             probability=self.config.get("occlusion_prob", 0.5),
             is_training=self.is_training
         )
-        self.self_ghosting_footprint = SelfGhostingThermalFootprint(probability=self.config.get("footprint_prob", 0.5))
+        self.self_ghosting_footprint = SelfGhostingThermalFootprint(probability=self.config.get("footprint_prob", 0.2))
         self.cutout = CutoutAugmentation(
             probability=self.config.get("cutout_prob", 0.5),
             size_ratio=self.config.get("cutout_size_ratio", 0.35)
