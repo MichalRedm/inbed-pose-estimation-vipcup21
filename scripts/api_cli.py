@@ -6,13 +6,13 @@ import requests
 API_URL = "http://localhost:8000"
 
 
-def start_training(run_id, config_path, remote, resume, auto_eval):
+def start_training(run_id, config_path, remote, resume, auto_eval, cyclegan=False):
     payload = {
         "run_id": run_id,
         "config_path": config_path,
         "remote": remote,
         "auto_eval": auto_eval,
-        "training": {"resume": resume} if resume else {},
+        "training": {"resume": resume, "cyclegan": cyclegan} if resume or cyclegan else {},
     }
     try:
         response = requests.post(f"{API_URL}/training/start", json=payload)
@@ -113,6 +113,9 @@ def main():
     start_parser.add_argument(
         "--eval", action="store_true", help="Run evaluation after training"
     )
+    start_parser.add_argument(
+        "--cyclegan", action="store_true", help="Train CycleGAN model"
+    )
 
     # Stop
     subparsers.add_parser("stop", help="Stop training")
@@ -133,7 +136,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "start":
-        start_training(args.run_id, args.config, args.remote, args.resume, args.eval)
+        start_training(args.run_id, args.config, args.remote, args.resume, args.eval, args.cyclegan)
     elif args.command == "stop":
         stop_training()
     elif args.command == "status":
