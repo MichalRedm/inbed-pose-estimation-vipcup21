@@ -1,11 +1,11 @@
 # State Tracker
 
-- **Current Loop**: 44 (stabilized ViTPose fine-tuning)
+- **Current Loop**: 45 (Tuned Ghost Augmentation + ViTPose)
 - **Phase**: Phase 5 — Recursive Continuation & State Logging
-- **Status**: Loop 44 (**`loop44_vitpose_fixed`**) has successfully completed. It achieved **77.84% PCK@0.2** and **12.26 px MPJPE**, a massive improvement over Loop 43. This confirms that bypassing the class token to align with COCO attention maps, combined with a discriminative learning rate (5e-6 for backbone) and stable sigma (3.0), successfully adapts the Vision Transformer to the occluded IR domain.
+- **Status**: Loop 45 (**`loop45_ghost_vitpose`**) has completed. Final evaluation yielded **77.4% PCK@0.2** and **12.3 px MPJPE**. This did not beat the Loop 44 baseline (77.8%). The ghost augmentation in its current form did not provide a statistically significant improvement and requires further tuning to be useful against residual thermal footprints.
 - **Absolute Priority**:
-  1. **Record**: Loop 44 (**77.84% PCK@0.2**, **12.26 px MPJPE**) is the NEW ALL-TIME RECORD.
-  2. **Next Step**: Investigate if further scaling or hybrid architectures (like JSSCA-v7 dense neck) can push past the 80% PCK barrier.
+  1. **Record**: Loop 44 (**77.84% PCK@0.2**, **12.26 px MPJPE**) remains the ALL-TIME RECORD.
+  2. **Next Step**: Investigate ViTPose++ MoE or JSSCA-v7 architectures.
 - **Baseline**: Loop 44 (77.84% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -94,8 +94,10 @@ The fundamental loss-metric alignment problem has been resolved:
 | 42 | ViTPose (Plain ViT-B with Classic Upsampling Decoder) | SUCCESS (norm fixed) | **41.75%** | **ImageNet Normalization Fix**: Resolved the early feature washout bug (+17pp over broken baseline), proving correct distribution alignment. However, plain ViT-B underperformed hierarchical CNNs (JSSCA at 64.3%) by -22.6pp due to patch downsampling resolution loss (16x16 grid bottleneck) and data inefficiency on 80-subject set. |
 | 43 | COCO Pre-trained ViTPose Fine-tuning | FAILURE | **42.30%** | **REPRESENTATION WASHOUT & STRUCTURAL MISMATCH**: Class token mismatch (seq length 193 vs 192) perturbed attention maps, while uniform LR (1e-4) caused immediate gradient washout and catastrophic forgetting of pretrained weights. |
 | 44 | Stabilized ViTPose Fine-tuning (Fixed Structure + Disc. LR) | SUCCESS | **77.8%** | Bypassing class token to match COCO attention maps; backbone LR at 5e-6; stable sigma=3.0. Reached a new all-time record! |
+| 45 | Tuned Ghost Augmentation + ViTPose | IN PROGRESS | **77.8%** (E6) | Variable opacity (random multiplier 0.8-2.0, decay 0.3-0.9) and lower probability (0.2). Already matching record early on. |
 
 ## Next Planned Steps (Post-Loop 43 Run)
 
 1. **Corrected & Stabilized Pre-trained ViTPose Fine-tuning (Loop 44)**: Remove class token from forward pass to resolve attention mismatch, implement a discriminative learning rate multiplier (backbone LR $\leq 5 \times 10^{-6}$), and train with a stable wide prior (`sigma = 3.0`).
 2. **Dense Spatial Neck Attention (JSSCA-v7)**: Build a stabilized dense Transformer Neck (Pre-LN + FFN) operating directly on multi-resolution Stage 4 feature maps of HRNet without spatial downsampling, bypassing the coordinate bottleneck while preserving key spatial priors.
+leneck while preserving key spatial priors.
