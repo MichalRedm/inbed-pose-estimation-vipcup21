@@ -5,8 +5,9 @@ The dataset consists of multi-modal images (RGB, LWIR, Depth) of subjects in var
 
 ### Structure
 - **Subjects**: 102 total (in full dataset).
-- **Train Set**: Subjects 1-80 (Uncovered images).
-- **Validation/Test Set**: Subjects 81-90 (Covered images: cover1, cover2).
+- **Train Set (Source Domain)**: Subjects 1-30 (Uncovered images, **Annotated**).
+- **Train Set (Target Domain)**: Subjects 31-80 (Covered images: cover1/cover2, **Unannotated**).
+- **Validation/Test Set**: Subjects 81-90 (Covered images: cover1/cover2, **Annotated**).
 - **Modalities**: RGB, IR (Primary focus).
 
 ### Preprocessing & Augmentation
