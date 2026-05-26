@@ -132,8 +132,9 @@ def create_trainer(
             print("[Factory] Added uncertainty weighting parameters to optimizer")
 
     # 5. Finalize Optimizer — filter out frozen parameters and apply discriminative lr/uniform lr
-    optimizer = build_optimizer(model, trainer, config, rank)
-    trainer.optimizer = optimizer
+    if not use_cyclegan:
+        optimizer = build_optimizer(model, trainer, config, rank)
+        trainer.optimizer = optimizer
 
     if use_uda and rank == 0:
         print(

@@ -57,21 +57,19 @@ class CycleGANTrainer(BaseTrainer):
             self.D_B.parameters(), lr=self.lr, betas=(self.b1, self.b2)
         )
 
-    def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
-        # CycleGAN expects a tuple of (Real_A, Real_B)
-        # We assume the dataloader yields this.
+    def _calculate_losses(self, batch: Any) -> Dict[str, torch.Tensor]:
         real_A, real_B = batch
         real_A = real_A.to(self.device)
         real_B = real_B.to(self.device)
 
         # ------------------
-        #  Train Generators
+        #  Generators
         # ------------------
-        self.optimizer_G.zero_grad()
-
         # Identity loss
-        loss_id_A = self.criterion_identity(self.G_BA(real_A), real_A)
-        loss_id_B = self.criterion_identity(self.G_AB(real_B), real_B)
+        fake_B_id = self.G_AB(real_B)
+        loss_id_B = self.criterion_identity(fake_B_id, real_B)
+        fake_A_id = self.G_BA(real_A)
+        loss_id_A = self.criterion_identity(fake_A_id, real_A)
         loss_identity = (loss_id_A + loss_id_B) / 2
 
         # GAN loss
@@ -92,46 +90,58 @@ class CycleGANTrainer(BaseTrainer):
 
         loss_cycle = (loss_cycle_A + loss_cycle_B) / 2
 
-        # Total loss
+        # Total Generator Loss
         loss_G = (
             loss_GAN + self.lambda_cyc * loss_cycle + self.lambda_id * loss_identity
         )
-        loss_G.backward()
-        self.optimizer_G.step()
 
         # -----------------------
-        #  Train Discriminator A
+        #  Discriminators
         # -----------------------
-        self.optimizer_D_A.zero_grad()
-        loss_real = self.criterion_GAN(self.D_A(real_A), True)
-        loss_fake = self.criterion_GAN(self.D_A(fake_A.detach()), False)
-        loss_D_A = (loss_real + loss_fake) / 2
-        loss_D_A.backward()
-        self.optimizer_D_A.step()
+        # Discriminator A
+        loss_real_A = self.criterion_GAN(self.D_A(real_A), True)
+        loss_fake_A = self.criterion_GAN(self.D_A(fake_A.detach()), False)
+        loss_D_A = (loss_real_A + loss_fake_A) / 2
 
-        # -----------------------
-        #  Train Discriminator B
-        # -----------------------
-        self.optimizer_D_B.zero_grad()
-        loss_real = self.criterion_GAN(self.D_B(real_B), True)
-        loss_fake = self.criterion_GAN(self.D_B(fake_B.detach()), False)
-        loss_D_B = (loss_real + loss_fake) / 2
-        loss_D_B.backward()
-        self.optimizer_D_B.step()
+        # Discriminator B
+        loss_real_B = self.criterion_GAN(self.D_B(real_B), True)
+        loss_fake_B = self.criterion_GAN(self.D_B(fake_B.detach()), False)
+        loss_D_B = (loss_real_B + loss_fake_B) / 2
 
         return {
-            "loss": loss_G.item(),
-            "adv_loss": loss_GAN.item(),
-            "cycle_loss": loss_cycle.item(),
-            "id_loss": loss_identity.item(),
-            "d_loss": (loss_D_A + loss_D_B).item(),
+            "loss": loss_G,
+            "adv_loss": loss_GAN,
+            "cycle_loss": loss_cycle,
+            "id_loss": loss_identity,
+            "loss_D_A": loss_D_A,
+            "loss_D_B": loss_D_B,
+            "d_loss": loss_D_A + loss_D_B,
         }
 
-    def _val_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
-        # For CycleGAN, validation is just tracking the same losses on val set
-        # but without backward pass.
-        with torch.no_grad():
-            return self._train_step(batch)
+    def _train_step(self, batch: Any) -> Dict[str, float]:
+        # 1. Calculate losses
+        losses = self._calculate_losses(batch)
+
+        # 2. Update Generators
+        self.optimizer_G.zero_grad()
+        losses["loss"].backward()
+        self.optimizer_G.step()
+
+        # 3. Update Discriminators
+        self.optimizer_D_A.zero_grad()
+        losses["loss_D_A"].backward()
+        self.optimizer_D_A.step()
+
+        self.optimizer_D_B.zero_grad()
+        losses["loss_D_B"].backward()
+        self.optimizer_D_B.step()
+
+        return {k: v.item() for k, v in losses.items() if isinstance(v, torch.Tensor)}
+
+    def _val_step(self, batch: Any) -> Dict[str, float]:
+        # Validation just calculates losses without gradients
+        losses = self._calculate_losses(batch)
+        return {k: v.item() for k, v in losses.items() if isinstance(v, torch.Tensor)}
 
     def fit(self, train_loader, val_loader=None):
         for epoch in range(self.start_epoch, self.epochs):
