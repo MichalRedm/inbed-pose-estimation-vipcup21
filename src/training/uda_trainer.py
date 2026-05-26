@@ -128,6 +128,18 @@ class UDATrainer(BaseTrainer):
             "total_steps": self.total_steps,
         }
 
+    def get_display_metadata(self) -> Dict[str, Any]:
+        return {
+            "loss_labels": {
+                "loss": "Pose Loss",
+                "adv_loss": "Adversarial",
+                "total_loss": "Total Loss",
+                "val_loss": "Val Loss",
+                "pck": "PCK@0.2",
+            },
+            "primary_metric": "pck",
+        }
+
     def fit(self, train_loader, val_loader=None):
         self.num_batches_per_epoch = len(train_loader)
 
