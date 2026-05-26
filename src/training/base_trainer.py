@@ -76,7 +76,24 @@ class BaseTrainer(ABC):
         """Append a JSON line to the stream file for real-time telemetry."""
         if not self.is_main or not self.streamer:
             return
+        
+        # Inject display metadata on first stream or periodicially
+        if self.current_epoch == self.start_epoch and not hasattr(self, "_metadata_sent"):
+            data["display_metadata"] = self.get_display_metadata()
+            self._metadata_sent = True
+            
         self.streamer.emit(data)
+
+    def get_display_metadata(self) -> Dict[str, Any]:
+        """Return hints for the frontend dashboard on how to display metrics."""
+        return {
+            "loss_labels": {
+                "loss": "Train Loss",
+                "val_loss": "Val Loss",
+                "pck": "PCK@0.2"
+            },
+            "primary_metric": "pck"
+        }
 
     @abstractmethod
     def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:

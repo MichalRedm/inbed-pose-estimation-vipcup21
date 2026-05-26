@@ -5,6 +5,7 @@ import torch.optim as optim
 from src.models import build_model
 from src.training.standard_trainer import StandardTrainer
 from src.training.uda_trainer import UDATrainer
+from src.training.cyclegan_trainer import CycleGANTrainer
 from src.models.discriminator import DomainDiscriminator
 
 
@@ -88,10 +89,20 @@ def create_trainer(
     criterion = nn.MSELoss()
 
     # 4. Decide Trainer Type
-    # Check if UDA is enabled in config
-    use_uda = config.get("training_type") == "uda" or uda_cfg.get("enabled", False)
+    training_type = config.get("training_type", "standard")
+    use_uda = training_type == "uda" or uda_cfg.get("enabled", False)
+    use_cyclegan = training_type == "cyclegan" or train_cfg.get("cyclegan", False)
 
-    if use_uda:
+    if use_cyclegan:
+        trainer = CycleGANTrainer(
+            config=config,
+            device=device,
+            rank=rank,
+            world_size=world_size
+        )
+        # For CycleGAN, 'model' returned by factory is G_AB (contained in trainer)
+        model = trainer.G_AB
+    elif use_uda:
         # UDA Setup
         discriminator = DomainDiscriminator(in_channels=480).to(device)
         optimizer_d = optim.Adam(

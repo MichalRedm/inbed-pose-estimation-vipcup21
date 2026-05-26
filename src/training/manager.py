@@ -24,6 +24,7 @@ class TrainingManager:
         self.log_history: List[str] = []
         self.status_message = "Idle"
         self.current_metrics: Dict[str, float] = {}
+        self.display_metadata: Dict[str, Any] = {}
         self.current_run_id: Optional[str] = None
         self.last_run_id: Optional[str] = self._detect_last_run_id()
         self._stop_event = threading.Event()
@@ -181,7 +182,9 @@ class TrainingManager:
 
             # Update current metrics
             for k, v in metrics.items():
-                if k not in ["epoch", "progress", "is_summary"]:
+                if k == "display_metadata":
+                    self.display_metadata = v
+                elif k not in ["epoch", "progress", "is_summary"]:
                     self.current_metrics[k] = v
 
             self.current_epoch = metrics.get("epoch", self.current_epoch)
@@ -267,6 +270,7 @@ class TrainingManager:
             "log_history": self.log_history,
             "status_message": self.status_message,
             "current_metrics": self.current_metrics,
+            "display_metadata": self.display_metadata,
         }
 
     def _load_history_dict(self) -> Dict[int, Dict[str, float]]:

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Server, Activity } from 'lucide-react';
+import { Play, Server, Activity, Wand2 } from 'lucide-react';
 import { getTrainingConfig, saveTrainingConfig, startTraining } from '../services/api';
 
 interface TrainingConfig {
@@ -14,7 +14,9 @@ interface TrainingConfig {
     rotation_range: [number, number];
     scaling_range: [number, number];
   };
+  cuda: boolean; // Add this if not already there, or keep it generic
   uda: boolean;
+  cyclegan: boolean;
   lambda_adv: number;
   anatomical: boolean;
   lambda_anatomical: number;
@@ -37,7 +39,9 @@ const TrainingForm: React.FC<TrainingFormProps> = ({ onStarted }) => {
       rotation_range: [-30, 30],
       scaling_range: [0.8, 1.2]
     },
+    cuda: true,
     uda: false,
+    cyclegan: false,
     lambda_adv: 0.1,
     anatomical: false,
     lambda_anatomical: 0.01
@@ -135,7 +139,22 @@ const TrainingForm: React.FC<TrainingFormProps> = ({ onStarted }) => {
               <input 
                 type="checkbox" 
                 checked={config.uda}
-                onChange={(e) => setConfig({...config, uda: e.target.checked})}
+                onChange={(e) => setConfig({...config, uda: e.target.checked, cyclegan: e.target.checked ? false : config.cyclegan})}
+              />
+              <span className="slider"></span>
+            </label>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Wand2 size={18} color="var(--accent-lime)" />
+              <span style={{ fontWeight: 600 }}>CycleGAN Domain Translation</span>
+            </div>
+            <label className="switch">
+              <input 
+                type="checkbox" 
+                checked={config.cyclegan}
+                onChange={(e) => setConfig({...config, cyclegan: e.target.checked, uda: e.target.checked ? false : config.uda})}
               />
               <span className="slider"></span>
             </label>

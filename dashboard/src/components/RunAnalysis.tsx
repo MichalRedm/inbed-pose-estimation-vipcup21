@@ -61,7 +61,8 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
 
   const evalResults = localEvalOverride ?? details.evaluation;
 
-  const isCycleGAN = !!(details.config as any)?.training?.cyclegan;
+  const displayMetadata = trainingStatus?.display_metadata;
+  const lossLabels = displayMetadata?.loss_labels || {};
 
   // Build chart data - Unify active and historical logic
   const chartData = (() => {
@@ -155,7 +156,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                     dot={{ r: 3, fill: '#c2ef4e', strokeWidth: 0 }} 
                     activeDot={{ r: 5 }} 
                     animationDuration={300} 
-                    name={isCycleGAN ? "G Loss" : "Train Loss"} 
+                    name={lossLabels.loss || "Train Loss"} 
                     connectNulls
                   />
                   <Line 
@@ -165,7 +166,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                     strokeWidth={2} 
                     dot={{ r: 2, fill: '#6a5fc1', strokeWidth: 0 }} 
                     strokeDasharray="5 3" 
-                    name={isCycleGAN ? "Val G Loss" : "Val Loss"} 
+                    name={lossLabels.val_loss || "Val Loss"} 
                     connectNulls
                   />
                   {hasAdvHistory && (
@@ -176,7 +177,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                       strokeWidth={1.5} 
                       dot={{ r: 2, fill: '#fa7faa', strokeWidth: 0 }} 
                       strokeDasharray="4 4" 
-                      name="Adv Loss" 
+                      name={lossLabels.adv_loss || "Adv Loss"} 
                       connectNulls
                     />
                   )}

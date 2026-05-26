@@ -28,10 +28,12 @@ class StandardStrategy(TrainingStrategy):
 
 class CycleGANStrategy(TrainingStrategy):
     def get_script_path(self, project_root: Path) -> Path:
-        return project_root / "scripts" / "train_cyclegan.py"
+        return project_root / "scripts" / "train.py"
 
     def get_args(self, config: Dict[str, Any], run_id: Optional[str], is_resume: bool) -> List[str]:
-        return super().get_args(config, run_id, is_resume)
+        args = super().get_args(config, run_id, is_resume)
+        args.append("--cyclegan")
+        return args
 
 def get_training_strategy(config: Dict[str, Any]) -> TrainingStrategy:
     """Factory to get the correct strategy based on config."""

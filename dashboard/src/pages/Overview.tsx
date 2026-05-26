@@ -48,6 +48,10 @@ interface TrainingStatus {
   adv_loss_history: number[];
   log_history: string[];
   current_metrics?: Record<string, number | string>;
+  display_metadata?: {
+    loss_labels?: Record<string, string>;
+    primary_metric?: string;
+  };
 }
 
 const Overview: React.FC = () => {

@@ -289,6 +289,30 @@ async def get_run_details(run_id: str):
         if (run_path / f_name).exists():
             with open(run_path / f_name, "r") as f:
                 details[key] = json.load(f)
+                
+    # Add display metadata for frontend
+    if "config" in details:
+        train_cfg = details["config"].get("training", {})
+        if train_cfg.get("cyclegan") or details["config"].get("training_type") == "cyclegan":
+            details["display_metadata"] = {
+                "loss_labels": {
+                    "loss": "Generator Loss",
+                    "adv_loss": "Adversarial",
+                    "cycle_loss": "Cycle Consistency",
+                    "id_loss": "Identity",
+                    "d_loss": "Discriminator",
+                    "val_loss": "Val G Loss"
+                },
+                "primary_metric": "loss"
+            }
+        elif details["config"].get("training_type") == "uda" or details["config"].get("uda", {}).get("enabled"):
+             details["display_metadata"] = {
+                "loss_labels": {
+                    "loss": "Pose Loss",
+                    "adv_loss": "Domain Adv",
+                },
+                "primary_metric": "pck"
+            }
     eval_file = next(
         (
             f
