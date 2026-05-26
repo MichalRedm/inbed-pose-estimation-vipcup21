@@ -12,7 +12,9 @@ def start_training(run_id, config_path, remote, resume, auto_eval, cyclegan=Fals
         "config_path": config_path,
         "remote": remote,
         "auto_eval": auto_eval,
-        "training": {"resume": resume, "cyclegan": cyclegan} if resume or cyclegan else {},
+        "training": {"resume": resume, "cyclegan": cyclegan}
+        if resume or cyclegan
+        else {},
     }
     try:
         response = requests.post(f"{API_URL}/training/start", json=payload)
@@ -136,7 +138,9 @@ def main():
     args = parser.parse_args()
 
     if args.command == "start":
-        start_training(args.run_id, args.config, args.remote, args.resume, args.eval, args.cyclegan)
+        start_training(
+            args.run_id, args.config, args.remote, args.resume, args.eval, args.cyclegan
+        )
     elif args.command == "stop":
         stop_training()
     elif args.command == "status":

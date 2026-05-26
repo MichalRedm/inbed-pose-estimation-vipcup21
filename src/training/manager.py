@@ -370,7 +370,11 @@ class TrainingManager:
                     break
 
                 strategy = get_training_strategy(config_overrides)
-                is_resume = retry_count > 0 or config_overrides.get("training", {}).get("resume", False) or config_overrides.get("resume", False)
+                is_resume = (
+                    retry_count > 0
+                    or config_overrides.get("training", {}).get("resume", False)
+                    or config_overrides.get("resume", False)
+                )
 
                 if is_remote:
                     if retry_count > 0:
@@ -383,10 +387,15 @@ class TrainingManager:
                         "-u",
                         str(project_root / "scripts" / "remote_train.py"),
                     ]
-                    
+
                     # Pass the script path relative to project root to remote_train.py
                     script_path = strategy.get_script_path(project_root)
-                    cmd.extend(["--script", str(script_path.relative_to(project_root).as_posix())])
+                    cmd.extend(
+                        [
+                            "--script",
+                            str(script_path.relative_to(project_root).as_posix()),
+                        ]
+                    )
                 else:
                     self.status_message = "Starting local training..."
                     cmd = [
@@ -396,7 +405,9 @@ class TrainingManager:
                     ]
 
                 # Add common arguments via strategy
-                cmd.extend(strategy.get_args(config_overrides, self.current_run_id, is_resume))
+                cmd.extend(
+                    strategy.get_args(config_overrides, self.current_run_id, is_resume)
+                )
 
                 # Use the frozen config for the run
                 relative_config_path = self.frozen_config_path.relative_to(

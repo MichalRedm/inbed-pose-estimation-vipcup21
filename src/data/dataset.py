@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from typing import Optional, Dict, Any, List
+from typing import Optional
 import scipy.io as sio
 from torch.utils.data import Dataset, default_collate
 from pathlib import Path
@@ -301,9 +301,10 @@ class VIPCupDataset(Dataset):
 
 class PairedDataset(Dataset):
     """
-    Wraps two datasets and returns pairs. 
+    Wraps two datasets and returns pairs.
     Useful for CycleGAN/unpaired translation.
     """
+
     def __init__(self, ds_a, ds_b):
         self.ds_a = ds_a
         self.ds_b = ds_b
@@ -315,18 +316,18 @@ class PairedDataset(Dataset):
         # Sample randomly from both to handle size mismatch
         idx_a = torch.randint(0, len(self.ds_a), (1,)).item()
         idx_b = torch.randint(0, len(self.ds_b), (1,)).item()
-        
+
         sample_a = self.ds_a[idx_a]
         sample_b = self.ds_b[idx_b]
-        
+
         # Return just the images for CycleGAN
         img_a = sample_a["image"]
         img_b = sample_b["image"]
-        
+
         # Generator expects normalized [-1, 1] for Tanh output
         if isinstance(img_a, torch.Tensor) and img_a.max() <= 1.0:
             img_a = (img_a * 2.0) - 1.0
         if isinstance(img_b, torch.Tensor) and img_b.max() <= 1.0:
             img_b = (img_b * 2.0) - 1.0
-            
+
         return img_a, img_b

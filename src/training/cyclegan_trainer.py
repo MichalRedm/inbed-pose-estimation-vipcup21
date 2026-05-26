@@ -5,6 +5,7 @@ from typing import Dict, Any
 from .base_trainer import BaseTrainer
 from src.models.cyclegan import GeneratorResNet, Discriminator, GANLoss
 
+
 class CycleGANTrainer(BaseTrainer):
     """
     Trainer for CycleGAN domain translation.
@@ -74,23 +75,25 @@ class CycleGANTrainer(BaseTrainer):
         # GAN loss
         fake_B = self.G_AB(real_A)
         loss_GAN_AB = self.criterion_GAN(self.D_B(fake_B), True)
-        
+
         fake_A = self.G_BA(real_B)
         loss_GAN_BA = self.criterion_GAN(self.D_A(fake_A), True)
-        
+
         loss_GAN = (loss_GAN_AB + loss_GAN_BA) / 2
 
         # Cycle loss
         recov_A = self.G_BA(fake_B)
         loss_cycle_A = self.criterion_cycle(recov_A, real_A)
-        
+
         recov_B = self.G_AB(fake_A)
         loss_cycle_B = self.criterion_cycle(recov_B, real_B)
-        
+
         loss_cycle = (loss_cycle_A + loss_cycle_B) / 2
 
         # Total loss
-        loss_G = loss_GAN + self.lambda_cyc * loss_cycle + self.lambda_id * loss_identity
+        loss_G = (
+            loss_GAN + self.lambda_cyc * loss_cycle + self.lambda_id * loss_identity
+        )
         loss_G.backward()
         self.optimizer_G.step()
 
@@ -132,7 +135,7 @@ class CycleGANTrainer(BaseTrainer):
         for epoch in range(self.start_epoch, self.epochs):
             self.current_epoch = epoch
             train_metrics = self.train_epoch(train_loader, epoch)
-            
+
             val_metrics = {}
             if val_loader:
                 val_metrics = self.evaluate(val_loader)
@@ -144,15 +147,15 @@ class CycleGANTrainer(BaseTrainer):
                 epoch_data.update(train_metrics)
                 epoch_data.update(val_metrics)
                 self.update_history(epoch_data)
-                
+
                 # Checkpointing
                 # For CycleGAN, we save based on loss (lower is better)
                 val_loss = val_metrics.get("val_loss", train_metrics["loss"])
                 is_best = val_loss < self.best_val_loss
                 if is_best:
                     self.best_val_loss = val_loss
-                
-                self.save_checkpoint(f"epoch_{epoch+1}", is_best=is_best)
+
+                self.save_checkpoint(f"epoch_{epoch + 1}", is_best=is_best)
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         return {
@@ -171,7 +174,7 @@ class CycleGANTrainer(BaseTrainer):
                 "adv_loss": "Adversarial",
                 "cycle_loss": "Cycle Consistency",
                 "id_loss": "Identity",
-                "d_loss": "Discriminator"
+                "d_loss": "Discriminator",
             },
-            "primary_metric": "loss"
+            "primary_metric": "loss",
         }

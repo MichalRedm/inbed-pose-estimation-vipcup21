@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 class GANLoss(nn.Module):
     """
     Defines the GAN loss which uses either LSGAN or the regular GAN.

@@ -37,6 +37,10 @@ interface RunAnalysisProps {
     log_history: string[];
     current_metrics?: Record<string, number | string>;
     history_dict?: Record<string, Record<string, number>>;
+    display_metadata?: {
+      loss_labels?: Record<string, string>;
+      primary_metric?: string;
+    };
   };
 }
 

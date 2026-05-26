@@ -172,18 +172,49 @@ def train():
 
     if config.get("training", {}).get("cyclegan"):
         from src.data.dataset import PairedDataset
+
         # Domain A: Uncovered (Subjects 1-30)
-        ds_A = VIPCupDataset(args.data_root, subjects=range(1, 31), covers=["uncover"], modalities=["IR"], split="train", in_channels=3)
+        ds_A = VIPCupDataset(
+            args.data_root,
+            subjects=range(1, 31),
+            covers=["uncover"],
+            modalities=["IR"],
+            split="train",
+            in_channels=3,
+        )
         # Domain B: Covered (Subjects 31-80)
-        ds_B = VIPCupDataset(args.data_root, subjects=range(31, 81), covers=["cover1", "cover2"], modalities=["IR"], split="train", in_channels=3)
+        ds_B = VIPCupDataset(
+            args.data_root,
+            subjects=range(31, 81),
+            covers=["cover1", "cover2"],
+            modalities=["IR"],
+            split="train",
+            in_channels=3,
+        )
         train_dataset = PairedDataset(ds_A, ds_B)
-        
-        # Validation for CycleGAN (on val subjects)
-        ds_A_val = VIPCupDataset(args.data_root, subjects=range(s_val[0], s_val[1] + 1), covers=["uncover"], modalities=["IR"], split="valid", in_channels=3)
-        ds_B_val = VIPCupDataset(args.data_root, subjects=range(s_val[0], s_val[1] + 1), covers=["cover1", "cover2"], modalities=["IR"], split="valid", in_channels=3)
+
+        # Validation for CycleGAN (using small subset of training subjects for monitoring)
+        ds_A_val = VIPCupDataset(
+            args.data_root,
+            subjects=range(1, 6),
+            covers=["uncover"],
+            modalities=["IR"],
+            split="train",
+            in_channels=3,
+        )
+        ds_B_val = VIPCupDataset(
+            args.data_root,
+            subjects=range(31, 36),
+            covers=["cover1", "cover2"],
+            modalities=["IR"],
+            split="train",
+            in_channels=3,
+        )
         val_dataset = PairedDataset(ds_A_val, ds_B_val)
-        
-        collate_fn = None # Standard collate is fine for PairedDataset returning tensors
+
+        collate_fn = (
+            None  # Standard collate is fine for PairedDataset returning tensors
+        )
     else:
         train_dataset = VIPCupDataset(
             root=args.data_root,

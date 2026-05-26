@@ -41,7 +41,9 @@ def main():
         "--uda", action="store_true", help="Run Adversarial Domain Adaptation training"
     )
     parser.add_argument(
-        "--cyclegan", action="store_true", help="Run CycleGAN domain translation training"
+        "--cyclegan",
+        action="store_true",
+        help="Run CycleGAN domain translation training",
     )
     parser.add_argument(
         "--eval", action="store_true", help="Run evaluation immediately after training"
@@ -195,7 +197,7 @@ def main():
         master_port = random.randint(20000, 29999)
 
         training_script = args_cli.script
-        
+
         # If running the standard train.py, use torchrun for potential DDP support.
         # Otherwise (e.g. CycleGAN), use plain python as those scripts might not support DDP yet.
         if "train.py" in training_script:

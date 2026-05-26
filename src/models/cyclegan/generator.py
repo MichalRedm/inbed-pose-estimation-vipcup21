@@ -1,8 +1,9 @@
-import torch
 import torch.nn as nn
+
 
 class ResidualBlock(nn.Module):
     """Residual Block with Instance Normalization."""
+
     def __init__(self, in_features):
         super(ResidualBlock, self).__init__()
 
@@ -19,11 +20,13 @@ class ResidualBlock(nn.Module):
     def forward(self, x):
         return x + self.block(x)
 
+
 class GeneratorResNet(nn.Module):
     """
     ResNet-based Generator.
     Uses Reflection Padding to reduce boundary artifacts.
     """
+
     def __init__(self, input_shape, num_residual_blocks=9):
         super(GeneratorResNet, self).__init__()
 
@@ -65,7 +68,11 @@ class GeneratorResNet(nn.Module):
             in_features = out_features
 
         # Output layer
-        model += [nn.ReflectionPad2d(3), nn.Conv2d(out_features, channels, 7), nn.Tanh()]
+        model += [
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(out_features, channels, 7),
+            nn.Tanh(),
+        ]
 
         self.model = nn.Sequential(*model)
 
