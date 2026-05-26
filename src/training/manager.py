@@ -65,6 +65,7 @@ class TrainingManager:
                     "cycle_loss": "Cycle Consistency",
                     "id_loss": "Identity",
                     "d_loss": "Discriminator",
+                    "val_loss": "Val G Loss",
                 },
                 "primary_metric": "loss",
             }
@@ -338,6 +339,8 @@ class TrainingManager:
 
                             def sanitize(val):
                                 try:
+                                    if val is None:
+                                        return None
                                     f_val = float(val)
                                     return (
                                         None
@@ -347,11 +350,9 @@ class TrainingManager:
                                 except Exception:
                                     return None
 
+                            # Store all metrics for this epoch
                             result[ep] = {
-                                "loss": sanitize(
-                                    entry.get("loss", entry.get("train_loss", 0.0))
-                                ),
-                                "adv_loss": sanitize(entry.get("adv_loss", 0.0)),
+                                k: sanitize(v) for k, v in entry.items() if k != "epoch"
                             }
                         return result
         except Exception as e:

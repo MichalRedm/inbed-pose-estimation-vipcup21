@@ -85,6 +85,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
           loss: loss ?? null,
           val_loss: (metrics.val_loss ?? metrics.val_loss_pose) ?? null,
           adv: trainingStatus.adv_loss_history?.[i] ?? null,
+          cycle: metrics.cycle_loss ?? null,
         };
       }).filter(d => d.epoch <= total);
     }
@@ -96,6 +97,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
         loss: h.loss ?? h.loss_pose ?? h.train_loss ?? null,
         val_loss: h.val_loss ?? h.val_loss_pose ?? null,
         adv: h.adv_loss ?? null,
+        cycle: h.cycle_loss ?? null,
       }));
     }
     
@@ -182,6 +184,18 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                       dot={{ r: 2, fill: '#fa7faa', strokeWidth: 0 }} 
                       strokeDasharray="4 4" 
                       name={lossLabels.adv_loss || "Adv Loss"} 
+                      connectNulls
+                    />
+                  )}
+                  {chartData.some(d => d.cycle !== null) && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="cycle" 
+                      stroke="#ffb287" 
+                      strokeWidth={2} 
+                      dot={{ r: 2, fill: '#ffb287', strokeWidth: 0 }} 
+                      strokeDasharray="2 2" 
+                      name={lossLabels.cycle_loss || "Cycle Loss"} 
                       connectNulls
                     />
                   )}
