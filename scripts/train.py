@@ -173,6 +173,13 @@ def train():
     if config.get("training", {}).get("cyclegan"):
         from src.data.dataset import PairedDataset
 
+        # For CycleGAN, we want geometric augmentations (flip, rotate, scale) 
+        # and sensor noise/intensity jitter, but NO blanket simulation!
+        gan_aug_cfg = config["training"].get("augmentation", {}).copy()
+        gan_aug_cfg["occlusion_prob"] = 0.0 # Disable mathematical blanket simulation
+        gan_aug_cfg["enabled"] = True
+        gan_augmenter = DataAugmenter(gan_aug_cfg)
+
         # Domain A: Uncovered (Subjects 1-30)
         ds_A = VIPCupDataset(
             args.data_root,
@@ -180,6 +187,7 @@ def train():
             covers=["uncover"],
             modalities=["IR"],
             split="train",
+            augmenter=gan_augmenter,
             in_channels=3,
         )
         # Domain B: Covered (Subjects 31-80)
@@ -189,6 +197,7 @@ def train():
             covers=["cover1", "cover2"],
             modalities=["IR"],
             split="train",
+            augmenter=gan_augmenter,
             in_channels=3,
         )
         train_dataset = PairedDataset(ds_A, ds_B)

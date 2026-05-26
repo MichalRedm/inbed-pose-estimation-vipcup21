@@ -22,8 +22,10 @@ class CycleGANTrainer(BaseTrainer):
         # In CycleGAN, we have 4 models. We pass G_AB as the "primary" model to BaseTrainer
         # although we will handle all 4 manually.
         input_shape = (3, 256, 256)
-        self.G_AB = GeneratorResNet(input_shape, num_residual_blocks=6).to(device)
-        self.G_BA = GeneratorResNet(input_shape, num_residual_blocks=6).to(device)
+        # Use pretrained weights if specified in config (default True based on ideas_log)
+        pretrained = config.get("training", {}).get("pretrained_gan", True)
+        self.G_AB = GeneratorResNet(input_shape, num_residual_blocks=6, pretrained=pretrained).to(device)
+        self.G_BA = GeneratorResNet(input_shape, num_residual_blocks=6, pretrained=pretrained).to(device)
         self.D_A = Discriminator(input_shape).to(device)
         self.D_B = Discriminator(input_shape).to(device)
 
