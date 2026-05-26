@@ -213,48 +213,70 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
           {/* Sidebar Metrics (Active Only) */}
           {isActive && (
             <div className="flex-column" style={{ width: '280px', gap: '16px' }}>
-              <div className="glass highlight-card glow-lime" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>VALIDATION PCK</div>
-                <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-lime)', marginTop: '8px' }}>
-                  {(() => {
-                    const metrics = trainingStatus?.current_metrics || {};
-                    // Try current metrics first (if just finished)
-                    let pck: number | string | undefined = metrics.val_pck ?? metrics.pck;
-                    
-                    if (!pck && trainingStatus) {
-                      // Scan history backwards for latest available PCK
-                      const historyDict = trainingStatus.history_dict || {};
-                      const epochs = Object.keys(historyDict).map(Number).sort((a, b) => b - a);
-                      for (const ep of epochs) {
-                        const m = (historyDict[ep] || historyDict[String(ep)]) as HistoryMetrics | undefined;
-                        if (m && (m.val_pck !== undefined || m.pck !== undefined)) {
-                          pck = m.val_pck ?? m.pck;
-                          break;
-                        }
-                      }
+              {(() => {
+                const metrics = trainingStatus?.current_metrics || {};
+                const cards = [];
+                
+                // 1. PCK (if applicable)
+                let pck: number | string | undefined = metrics.val_pck ?? metrics.pck;
+                if (!pck && trainingStatus) {
+                  const historyDict = trainingStatus.history_dict || {};
+                  const epochs = Object.keys(historyDict).map(Number).sort((a, b) => b - a);
+                  for (const ep of epochs) {
+                    const m = (historyDict[ep] || historyDict[String(ep)]) as HistoryMetrics | undefined;
+                    if (m && (m.val_pck !== undefined || m.pck !== undefined)) {
+                      pck = m.val_pck ?? m.pck;
+                      break;
                     }
-                    return pck ? `${(Number(pck) * 100).toFixed(2)}%` : '--';
-                  })()}
-                </div>
-              </div>
-              
-              <div className="glass highlight-card glow-purple" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>LAST EPOCH LOSS</div>
-                <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-primary)', marginTop: '8px' }}>
-                  {trainingStatus ? (
-                    (Number(trainingStatus.current_metrics?.loss) || Number(trainingStatus.current_metrics?.loss_pose) || 0).toFixed(4)
-                  ) : '--'}
-                </div>
-              </div>
+                  }
+                }
+                if (pck !== undefined) {
+                  cards.push({ label: 'VALIDATION PCK', value: `${(Number(pck) * 100).toFixed(2)}%`, color: 'lime' });
+                }
 
-              <div className="glass highlight-card glow-pink" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>SIGMA</div>
-                <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-pink)', marginTop: '8px' }}>
-                  {trainingStatus ? (
-                    (Number(trainingStatus.current_metrics?.sigma) || 2.0).toFixed(3)
-                  ) : '--'}
-                </div>
-              </div>
+                // 2. Primary Loss
+                const primaryLossKey = displayMetadata?.primary_metric || 'loss';
+                if (metrics[primaryLossKey] !== undefined) {
+                  cards.push({ 
+                    label: (lossLabels[primaryLossKey] || 'LAST EPOCH LOSS').toUpperCase(), 
+                    value: Number(metrics[primaryLossKey]).toFixed(4), 
+                    color: 'primary' 
+                  });
+                } else if (metrics.loss !== undefined) {
+                  cards.push({ label: (lossLabels.loss || 'LAST EPOCH LOSS').toUpperCase(), value: Number(metrics.loss).toFixed(4), color: 'primary' });
+                } else if (metrics.loss_pose !== undefined) {
+                  cards.push({ label: (lossLabels.loss_pose || 'LAST EPOCH LOSS').toUpperCase(), value: Number(metrics.loss_pose).toFixed(4), color: 'primary' });
+                }
+
+                // 3. Mode-specific secondary metrics
+                if (metrics.sigma !== undefined) {
+                  cards.push({ label: 'SIGMA', value: Number(metrics.sigma).toFixed(3), color: 'pink' });
+                }
+                if (metrics.cycle_loss !== undefined) {
+                  cards.push({ label: (lossLabels.cycle_loss || 'CYCLE LOSS').toUpperCase(), value: Number(metrics.cycle_loss).toFixed(4), color: 'lime' });
+                }
+                if (metrics.adv_loss !== undefined) {
+                  cards.push({ label: (lossLabels.adv_loss || 'ADV LOSS').toUpperCase(), value: Number(metrics.adv_loss).toFixed(4), color: 'pink' });
+                }
+                if (metrics.d_loss !== undefined) {
+                  cards.push({ label: (lossLabels.d_loss || 'DISC LOSS').toUpperCase(), value: Number(metrics.d_loss).toFixed(4), color: 'coral' });
+                }
+
+                // Fill defaults if cards are empty
+                if (cards.length === 0) {
+                  cards.push({ label: 'LAST EPOCH LOSS', value: '--', color: 'primary' });
+                }
+
+                // Render up to 4 cards vertically
+                return cards.slice(0, 4).map((c, i) => (
+                  <div key={i} className="glass highlight-card" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>{c.label}</div>
+                    <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: `var(--accent-${c.color})`, marginTop: '8px' }}>
+                      {c.value}
+                    </div>
+                  </div>
+                ));
+              })()}
             </div>
           )}
         </div>
@@ -283,7 +305,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
               marginTop: '16px'
             }}>
               {Object.entries(trainingStatus.current_metrics)
-                .filter(([key]) => !['loss', 'train_loss', 'adv_loss', 'speed', 'eta', 'elapsed', 'val_pck', 'sigma'].includes(key))
+                .filter(([key]) => !['loss', 'loss_pose', 'train_loss', 'adv_loss', 'cycle_loss', 'id_loss', 'd_loss', 'speed', 'eta', 'elapsed', 'val_pck', 'pck', 'sigma'].includes(key))
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([key, value]) => (
                   <div key={key} style={{ 
