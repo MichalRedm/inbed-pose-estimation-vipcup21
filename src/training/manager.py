@@ -117,6 +117,8 @@ class TrainingManager:
         self._stop_event.clear()
         self.log_history = []
         self.progress = 0.0
+        self.current_metrics = {}
+        self.display_metadata = {}
         self.total_epochs = final_config.get("training", {}).get("epochs", 0)
 
         # Load existing history if resuming

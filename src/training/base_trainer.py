@@ -77,10 +77,9 @@ class BaseTrainer(ABC):
         if not self.is_main or not self.streamer:
             return
 
-        # Inject display metadata on first stream or periodicially
-        if self.current_epoch == self.start_epoch and not hasattr(
-            self, "_metadata_sent"
-        ):
+        # Inject display metadata at the start of each epoch or if not sent yet
+        is_first_batch = data.get("progress", 0) <= 0.01  # Progress is roughly 0
+        if is_first_batch or not hasattr(self, "_metadata_sent"):
             data["display_metadata"] = self.get_display_metadata()
             self._metadata_sent = True
 
