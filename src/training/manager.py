@@ -364,6 +364,8 @@ class TrainingManager:
                 if self._stop_event.is_set():
                     break
 
+                is_cyclegan = config_overrides.get("training", {}).get("cyclegan", False)
+
                 if is_remote:
                     if retry_count > 0:
                         self.status_message = f"Reconnecting and resuming (attempt {retry_count}/{max_retries})..."
@@ -377,14 +379,24 @@ class TrainingManager:
                     ]
                 else:
                     self.status_message = "Starting local training..."
+                    script_name = "train_cyclegan.py" if is_cyclegan else "train.py"
                     cmd = [
                         sys.executable,
                         "-u",
-                        str(project_root / "scripts" / "train.py"),
+                        str(project_root / "scripts" / script_name),
                     ]
+
+                if is_cyclegan:
+                    # Remote train doesn't support cyclegan yet, so if remote+cyclegan, 
+                    # we should probably warn or handle it in remote_train.py
+                    # For now, if local, it works.
+                    pass
 
                 if self.current_run_id:
                     cmd.extend(["--run_id", self.current_run_id])
+
+                if is_cyclegan:
+                    cmd.append("--cyclegan")
 
                 # Use the frozen config for the run
                 relative_config_path = self.frozen_config_path.relative_to(

@@ -2,6 +2,8 @@ import os
 import itertools
 import argparse
 import sys
+import json
+from pathlib import Path
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -45,13 +47,24 @@ def main():
     parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
     parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
     parser.add_argument("--n_cpu", type=int, default=4, help="number of cpu threads to use during batch generation")
-    parser.add_argument("--data_dir", type=str, default="data/slp", help="path to dataset")
+    parser.add_argument("--data_dir", type=str, default="data/raw", help="path to dataset")
     parser.add_argument("--output_dir", type=str, default="models", help="where to save checkpoints")
+    parser.add_argument("--run_id", type=str, default=None, help="unique run id for tracking")
     opt = parser.parse_args()
+
+    # Setup run directory
+    if opt.run_id:
+        run_dir = Path("results/runs") / opt.run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        opt.output_dir = str(run_dir / "checkpoints")
+    else:
+        run_dir = None
 
     os.makedirs(opt.output_dir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+
+    # ... (networks initialization)
 
     # Initialize networks
     # We use 3 channels because input_channels is typically 3 (RGB or Replicated IR)
@@ -164,9 +177,41 @@ def main():
             optimizer_D_B.step()
             
             if i % 10 == 0:
+                batch_metrics = {
+                    "epoch": epoch + 1,
+                    "progress": (i + 1) / len(dataloader_A),
+                    "loss": loss_G.item(),
+                    "adv_loss": loss_GAN.item(),
+                    "cycle_loss": loss_cycle.item(),
+                    "id_loss": loss_identity.item(),
+                    "d_loss": (loss_D_A + loss_D_B).item(),
+                }
+                print(f"[METRICS] {json.dumps(batch_metrics)}")
                 print(f"[Epoch {epoch}/{opt.epochs}] [Batch {i}/{len(dataloader_A)}] "
-                      f"[D loss: {(loss_D_A + loss_D_B).item():.4f}] [G loss: {loss_G.item():.4f}, "
-                      f"adv: {loss_GAN.item():.4f}, cycle: {loss_cycle.item():.4f}, id: {loss_identity.item():.4f}]")
+                      f"[D loss: {batch_metrics['d_loss']:.4f}] [G loss: {batch_metrics['loss']:.4f}, "
+                      f"adv: {batch_metrics['adv_loss']:.4f}, cycle: {batch_metrics['cycle_loss']:.4f}, id: {batch_metrics['id_loss']:.4f}]")
+
+        # Save summary metrics and history
+        epoch_metrics = {
+            "epoch": epoch + 1,
+            "loss": loss_G.item(),
+            "adv_loss": loss_GAN.item(),
+            "cycle_loss": loss_cycle.item(),
+            "id_loss": loss_identity.item(),
+            "d_loss": (loss_D_A + loss_D_B).item(),
+            "is_summary": True
+        }
+        print(f"[METRICS] {json.dumps(epoch_metrics)}")
+
+        if run_dir:
+            history_path = run_dir / "history.json"
+            history = []
+            if history_path.exists():
+                with open(history_path, "r") as f:
+                    history = json.load(f)
+            history.append(epoch_metrics)
+            with open(history_path, "w") as f:
+                json.dump(history, f, indent=4)
 
         # Save model checkpoints
         if (epoch + 1) % 10 == 0 or (epoch + 1) == opt.epochs:
