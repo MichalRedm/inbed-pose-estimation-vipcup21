@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Any
 
 
 from src.utils import get_training_config
+from src.training.strategies import get_training_strategy
 
 project_root = Path(__file__).parent.parent.parent
 
@@ -364,7 +365,8 @@ class TrainingManager:
                 if self._stop_event.is_set():
                     break
 
-                is_cyclegan = config_overrides.get("training", {}).get("cyclegan", False)
+                strategy = get_training_strategy(config_overrides)
+                is_resume = retry_count > 0 or config_overrides.get("training", {}).get("resume", False) or config_overrides.get("resume", False)
 
                 if is_remote:
                     if retry_count > 0:
@@ -377,36 +379,26 @@ class TrainingManager:
                         "-u",
                         str(project_root / "scripts" / "remote_train.py"),
                     ]
+                    
+                    # Pass the script path relative to project root to remote_train.py
+                    script_path = strategy.get_script_path(project_root)
+                    cmd.extend(["--script", str(script_path.relative_to(project_root).as_posix())])
                 else:
                     self.status_message = "Starting local training..."
-                    script_name = "train_cyclegan.py" if is_cyclegan else "train.py"
                     cmd = [
                         sys.executable,
                         "-u",
-                        str(project_root / "scripts" / script_name),
+                        str(strategy.get_script_path(project_root)),
                     ]
 
-                if is_cyclegan:
-                    # Remote train doesn't support cyclegan yet, so if remote+cyclegan, 
-                    # we should probably warn or handle it in remote_train.py
-                    # For now, if local, it works.
-                    pass
-
-                if self.current_run_id:
-                    cmd.extend(["--run_id", self.current_run_id])
-
-                if is_cyclegan:
-                    cmd.append("--cyclegan")
+                # Add common arguments via strategy
+                cmd.extend(strategy.get_args(config_overrides, self.current_run_id, is_resume))
 
                 # Use the frozen config for the run
                 relative_config_path = self.frozen_config_path.relative_to(
                     project_root
                 ).as_posix()
                 cmd.extend(["--config", relative_config_path])
-
-                # If this is a retry, force `--resume` flag to ensure we resume training rather than clean start
-                if retry_count > 0 and "--resume" not in cmd:
-                    cmd.append("--resume")
 
                 print(
                     f"[TrainingManager] Using config: {relative_config_path} (Attempt {retry_count + 1})"

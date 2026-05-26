@@ -35,6 +35,9 @@ def main():
         "--run_id", type=str, default=None, help="Unique ID for this run"
     )
     parser.add_argument(
+        "--script", type=str, default="scripts/train.py", help="Script to run on remote"
+    )
+    parser.add_argument(
         "--uda", action="store_true", help="Run Adversarial Domain Adaptation training"
     )
     parser.add_argument(
@@ -191,20 +194,21 @@ def main():
 
         master_port = random.randint(20000, 29999)
 
-        if args_cli.cyclegan:
-            training_script = "scripts/train_cyclegan.py"
-            # Note: CycleGAN script currently doesn't use torchrun/DDP
-            cmd = (
-                f"cd /root/project && {env_setup} && "
-                f"python3 {training_script} --data_dir /root/project/data/raw {resume_flag} {run_id_flag} {passthrough}"
-            )
-        else:
-            training_script = "scripts/train.py"
+        training_script = args_cli.script
+        
+        # If running the standard train.py, use torchrun for potential DDP support.
+        # Otherwise (e.g. CycleGAN), use plain python as those scripts might not support DDP yet.
+        if "train.py" in training_script:
             uda_flag = "--uda" if args_cli.uda else ""
             cmd = (
                 f"cd /root/project && {env_setup} && "
                 f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
                 f"{training_script} --data_root /root/project/data/raw {resume_flag} {run_id_flag} {uda_flag} {passthrough}"
+            )
+        else:
+            cmd = (
+                f"cd /root/project && {env_setup} && "
+                f"python3 {training_script} --data_dir /root/project/data/raw {resume_flag} {run_id_flag} {passthrough}"
             )
 
         # --- Step 4: Smart Cleanup & State Tracking ---
