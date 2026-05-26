@@ -186,6 +186,7 @@ class TrainingManager:
             for k, v in metrics.items():
                 if k == "display_metadata":
                     self.display_metadata = v
+                    self.log_history.append(f"[{time.strftime('%H:%M:%S')}] [Manager] Received display metadata: {list(v.get('loss_labels', {}).keys())}")
                 elif k not in ["epoch", "progress", "is_summary"]:
                     self.current_metrics[k] = v
 

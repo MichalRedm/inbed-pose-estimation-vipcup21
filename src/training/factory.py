@@ -140,6 +140,8 @@ def create_trainer(
         print(
             f"[Factory] Created UDATrainer (Lambda Adv: {uda_cfg.get('lambda_adv', 0.001)})"
         )
+    elif use_cyclegan and rank == 0:
+        print("[Factory] Created CycleGANTrainer")
     elif not use_uda and rank == 0:
         print("[Factory] Created StandardTrainer")
 
