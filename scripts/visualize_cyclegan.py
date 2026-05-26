@@ -68,11 +68,9 @@ def main():
     for i in range(args.num_samples):
         # Pick random sample
         idx = np.random.randint(len(dataset))
-        img_t, _ = dataset[idx]
-        
-        # Denormalize [0, 1] for visualization
-        # VIPCupDataset returns tensors normalized to [0, 1] usually, 
-        # but our CycleGAN might expect [-1, 1]
+        sample = dataset[idx]
+        img_t = sample["image"]
+        subject_id = sample["subject"]
         
         # Generator expects [-1, 1]
         img_input = (img_t * 2) - 1.0
@@ -87,7 +85,7 @@ def main():
 
         # Plot Original (Uncovered)
         axes[i][0].imshow(img_t.permute(1, 2, 0).numpy())
-        axes[i][0].set_title(f"Original (Uncovered) - Subj {dataset.samples[idx]['subject']}")
+        axes[i][0].set_title(f"Original (Uncovered) - Subj {subject_id}")
         axes[i][0].axis("off")
 
         # Plot Fake (Covered)
