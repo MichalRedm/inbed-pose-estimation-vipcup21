@@ -1,8 +1,8 @@
 # State Tracker
 
 - **Current Loop**: 48 (Contrastive Unpaired Translation - CUT)
-- **Phase**: Phase 1 — Deep Codebase & Online Research
-- **Status**: Loop 47 CycleGAN training concluded cleanly. Custom specialized evaluation added to evaluate.py to correctly perform translation visual audits and generate eval_results.json without keypoint PCK metrics. Ready to start Loop 48 to replace the bijective constraint of CycleGAN with InfoNCE patchwise contrastive learning.
+- **Phase**: Phase 4 — Evolving Evaluation Framework
+- **Status**: RUNNING. CUT architecture (PatchSampleF + InfoNCE) implemented and verified. Remote training launched via API CLI with config `configs/loop48_cut.yaml`. Tunnel hostname updated and connection verified.
 - **Absolute Priority**:
   1. **Record**: Loop 44 (**77.84% PCK@0.2**, **12.26 px MPJPE**) remains the ALL-TIME RECORD.
   2. **Next Step**: Develop Contrastive Unpaired Translation (CUT) (Loop 48) on top of the newly merged robust training/sync infrastructure to achieve realistic blanket fabric simulations without steganographic noise.
