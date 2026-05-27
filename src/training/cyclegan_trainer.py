@@ -24,8 +24,12 @@ class CycleGANTrainer(BaseTrainer):
         input_shape = (3, 256, 256)
         # Use pretrained weights if specified in config (default True based on ideas_log)
         pretrained = config.get("training", {}).get("pretrained_gan", True)
-        self.G_AB = GeneratorResNet(input_shape, num_residual_blocks=6, pretrained=pretrained).to(device)
-        self.G_BA = GeneratorResNet(input_shape, num_residual_blocks=6, pretrained=pretrained).to(device)
+        self.G_AB = GeneratorResNet(
+            input_shape, num_residual_blocks=6, pretrained=pretrained
+        ).to(device)
+        self.G_BA = GeneratorResNet(
+            input_shape, num_residual_blocks=6, pretrained=pretrained
+        ).to(device)
         self.D_A = Discriminator(input_shape).to(device)
         self.D_B = Discriminator(input_shape).to(device)
 
@@ -177,21 +181,4 @@ class CycleGANTrainer(BaseTrainer):
             "optimizer_G_state_dict": self.optimizer_G.state_dict(),
             "optimizer_D_A_state_dict": self.optimizer_D_A.state_dict(),
             "optimizer_D_B_state_dict": self.optimizer_D_B.state_dict(),
-        }
-
-    def get_display_metadata(self) -> Dict[str, Any]:
-        return {
-            "charts": [
-                {"key": "loss", "label": "Generator Loss", "color": "primary"},
-                {"key": "val_loss", "label": "Val G Loss", "color": "lime", "dash": "5 3"},
-                {"key": "cycle_loss", "label": "Cycle Consistency", "color": "lime", "dash": "2 2"},
-                {"key": "adv_loss", "label": "Adversarial", "color": "pink", "dash": "4 4"},
-            ],
-            "highlights": [
-                {"key": "loss", "label": "GENERATOR LOSS", "color": "primary"},
-                {"key": "cycle_loss", "label": "CYCLE LOSS", "color": "lime"},
-                {"key": "adv_loss", "label": "ADV LOSS", "color": "pink"},
-                {"key": "d_loss", "label": "DISC LOSS", "color": "coral"},
-            ],
-            "primary_metric": "loss",
         }

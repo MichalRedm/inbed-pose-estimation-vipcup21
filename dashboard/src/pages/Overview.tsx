@@ -35,6 +35,22 @@ export interface RunDetails {
     }>;
   };
   history?: Array<Record<string, number>>;
+  display_metadata?: {
+    charts?: Array<{
+      key: string;
+      label: string;
+      color: string;
+      dash?: string;
+    }>;
+    highlights?: Array<{
+      key: string;
+      label: string;
+      color: 'primary' | 'lime' | 'pink' | 'coral';
+      suffix?: string;
+      multiplier?: number;
+    }>;
+    primary_metric?: string;
+  };
 }
 
 interface TrainingStatus {
@@ -48,10 +64,8 @@ interface TrainingStatus {
   adv_loss_history: number[];
   log_history: string[];
   current_metrics?: Record<string, number | string>;
-  display_metadata?: {
-    loss_labels?: Record<string, string>;
-    primary_metric?: string;
-  };
+  history_dict?: Record<string, Record<string, number | string | null>>;
+  display_metadata?: RunDetails['display_metadata'];
 }
 
 const Overview: React.FC = () => {
@@ -74,7 +88,7 @@ const Overview: React.FC = () => {
 
   const fetchRunDetails = useCallback(async (id: string) => {
     try {
-      const details = await getRunDetails(id);
+      const details: RunDetails = await getRunDetails(id);
       setRunDetails(details);
     } catch (error) {
       console.error('Failed to fetch run details:', error);

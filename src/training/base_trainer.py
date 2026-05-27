@@ -80,15 +80,16 @@ class BaseTrainer(ABC):
         # Inject display metadata periodically (start of epoch OR every 10% progress)
         progress = data.get("progress", 0)
         is_start = progress <= 0.01
-        
+
         if not hasattr(self, "_last_metadata_progress"):
             self._last_metadata_progress = -1.0
 
         # Send if it's the start, if we haven't sent it yet, or every 10% progress increment
-        if (is_start or 
-            not hasattr(self, "_metadata_sent") or 
-            (progress - self._last_metadata_progress) >= 0.10):
-            
+        if (
+            is_start
+            or not hasattr(self, "_metadata_sent")
+            or (progress - self._last_metadata_progress) >= 0.10
+        ):
             data["display_metadata"] = self.get_display_metadata()
             self._metadata_sent = True
             self._last_metadata_progress = progress
@@ -97,24 +98,9 @@ class BaseTrainer(ABC):
 
     def get_display_metadata(self) -> Dict[str, Any]:
         """Return hints for the frontend dashboard on how to display metrics."""
-        return {
-            "charts": [
-                {"key": "loss", "label": "Train Loss", "color": "primary"},
-                {"key": "val_loss", "label": "Val Loss", "color": "lime", "dash": "5 3"},
-            ],
-            "highlights": [
-                {
-                    "key": "val_pck",
-                    "label": "VALIDATION PCK",
-                    "color": "lime",
-                    "suffix": "%",
-                    "multiplier": 100,
-                },
-                {"key": "loss", "label": "TRAIN LOSS", "color": "primary"},
-                {"key": "sigma", "label": "SIGMA", "color": "pink"},
-            ],
-            "primary_metric": "val_pck",
-        }
+        from src.utils import get_display_metadata_for_config
+
+        return get_display_metadata_for_config(self.config)
 
     @abstractmethod
     def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:

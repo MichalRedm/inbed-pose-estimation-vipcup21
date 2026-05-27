@@ -295,10 +295,12 @@ def main():
                         remote_stat = sftp.stat(remote_path)
                         sftp.close()
                         if remote_stat.st_size == local_path.stat().st_size:
-                            print(f"[resume] Remote {fname} is already up-to-date. Skipping upload.")
+                            print(
+                                f"[resume] Remote {fname} is already up-to-date. Skipping upload."
+                            )
                             continue
                     except Exception:
-                        pass # Remote file doesn't exist or error, proceed with upload
+                        pass  # Remote file doesn't exist or error, proceed with upload
 
                     print(f"[resume] Uploading local {fname} to remote...")
                     try:

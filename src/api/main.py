@@ -26,7 +26,6 @@ from src.training.manager import training_manager  # noqa: E402
 from src.utils import (  # noqa: E402
     get_training_config,
     save_training_config,
-    get_display_metadata_for_config,
     LSP_JOINT_NAMES,
 )
 from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
@@ -294,6 +293,7 @@ async def get_run_details(run_id: str):
     # Add display metadata for frontend
     if "config" in details:
         from src.utils.config_manager import get_display_metadata_for_config
+
         details["display_metadata"] = get_display_metadata_for_config(details["config"])
     eval_file = next(
         (

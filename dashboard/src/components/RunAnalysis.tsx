@@ -51,7 +51,7 @@ interface RunAnalysisProps {
     adv_loss_history: number[];
     log_history: string[];
     current_metrics?: Record<string, number | string>;
-    history_dict?: Record<string, Record<string, any>>;
+    history_dict?: Record<string, Record<string, number | string | null>>;
     display_metadata?: {
       charts?: ChartConfig[];
       highlights?: HighlightConfig[];
@@ -101,14 +101,14 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
       
       return epochs.map(ep => {
         const metrics = historyDict[ep] || historyDict[String(ep)] || {};
-        const entry: any = { epoch: ep };
-        charts.forEach(c => {
+        const entry: Record<string, number | null> = { epoch: ep };
+        charts.forEach((c: ChartConfig) => {
           // Special handling for keys that might have multiple names
           let val = metrics[c.key];
           if (val === undefined && c.key === 'loss') val = metrics.loss_pose || metrics.train_loss;
           if (val === undefined && c.key === 'val_loss') val = metrics.val_loss_pose;
           
-          entry[c.key] = val ?? null;
+          entry[c.key] = typeof val === 'number' ? val : null;
         });
         return entry;
       });
@@ -116,13 +116,13 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
 
     // 2. Fallback to historical details.history
     if (details.history && details.history.length > 0) {
-      return details.history.map((h: any, i) => {
-        const entry: any = { epoch: h.epoch ?? (i + 1) };
-        charts.forEach(c => {
+      return details.history.map((h: Record<string, number>, i: number) => {
+        const entry: Record<string, number | null> = { epoch: h.epoch ?? (i + 1) };
+        charts.forEach((c: ChartConfig) => {
           let val = h[c.key];
           if (val === undefined && c.key === 'loss') val = h.loss_pose || h.train_loss;
           if (val === undefined && c.key === 'val_loss') val = h.val_loss_pose;
-          entry[c.key] = val ?? null;
+          entry[c.key] = typeof val === 'number' ? val : null;
         });
         return entry;
       });
@@ -225,9 +225,8 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                 const metrics = trainingStatus?.current_metrics || {};
                 const historyDict = trainingStatus?.history_dict || {};
                 
-                return highlights.map((h, i) => {
-                  let val: any = metrics[h.key];
-                  
+                return highlights.map((h: HighlightConfig, i: number) => {
+                  let val: number | string | null | undefined = metrics[h.key];
                   // Heuristic for PCK if not in current batch metrics
                   if (val === undefined && (h.key === 'val_pck' || h.key === 'pck')) {
                     const epochs = Object.keys(historyDict).map(Number).sort((a, b) => b - a);
@@ -240,7 +239,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                     }
                   }
 
-                  const displayVal = val !== undefined 
+                  const displayVal = val !== undefined && val !== null
                     ? (Number(val) * (h.multiplier || 1)).toFixed(h.key.includes('pck') ? 2 : 4) 
                     : '--';
 
@@ -248,7 +247,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                     <div key={i} className="glass highlight-card" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                       <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>{h.label}</div>
                       <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: colorMap[h.color] || h.color, marginTop: '8px' }}>
-                        {displayVal}{val !== undefined ? h.suffix : ''}
+                        {displayVal}{val !== undefined && val !== null ? h.suffix : ''}
                       </div>
                     </div>
                   );

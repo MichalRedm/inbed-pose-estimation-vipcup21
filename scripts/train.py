@@ -173,10 +173,10 @@ def train():
     if config.get("training", {}).get("cyclegan"):
         from src.data.dataset import PairedDataset
 
-        # For CycleGAN, we want geometric augmentations (flip, rotate, scale) 
+        # For CycleGAN, we want geometric augmentations (flip, rotate, scale)
         # and sensor noise/intensity jitter, but NO blanket simulation!
         gan_aug_cfg = config["training"].get("augmentation", {}).copy()
-        gan_aug_cfg["occlusion_prob"] = 0.0 # Disable mathematical blanket simulation
+        gan_aug_cfg["occlusion_prob"] = 0.0  # Disable mathematical blanket simulation
         gan_aug_cfg["enabled"] = True
         gan_augmenter = DataAugmenter(gan_aug_cfg)
 

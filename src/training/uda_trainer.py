@@ -128,27 +128,6 @@ class UDATrainer(BaseTrainer):
             "total_steps": self.total_steps,
         }
 
-    def get_display_metadata(self) -> Dict[str, Any]:
-        return {
-            "charts": [
-                {"key": "loss", "label": "Pose Loss", "color": "primary"},
-                {"key": "adv_loss", "label": "Domain Adv", "color": "pink", "dash": "4 4"},
-                {"key": "val_pck", "label": "Val PCK", "color": "lime", "dash": "5 3"},
-            ],
-            "highlights": [
-                {
-                    "key": "val_pck",
-                    "label": "VALIDATION PCK",
-                    "color": "lime",
-                    "suffix": "%",
-                    "multiplier": 100,
-                },
-                {"key": "loss", "label": "POSE LOSS", "color": "primary"},
-                {"key": "adv_loss", "label": "DOMAIN ADV", "color": "pink"},
-            ],
-            "primary_metric": "val_pck",
-        }
-
     def fit(self, train_loader, val_loader=None):
         self.num_batches_per_epoch = len(train_loader)
 
