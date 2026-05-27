@@ -167,170 +167,170 @@ def train():
                 f"Device: {device} (Distributed: {is_distributed}, World Size: {world_size})"
             )
 
-    # 5. Initialize Data
-    s_train = dataset_cfg.get("subjects_train", [1, 30])
-    s_val = dataset_cfg.get("subjects_val", [81, 90])
-    augmenter = DataAugmenter(config["training"].get("augmentation", {}))
+        # 5. Initialize Data
+        s_train = dataset_cfg.get("subjects_train", [1, 30])
+        s_val = dataset_cfg.get("subjects_val", [81, 90])
+        augmenter = DataAugmenter(config["training"].get("augmentation", {}))
 
-    # Determine in_channels from model config
-    model_cfg = config.get("model", {})
-    model_name = model_cfg.get("name", "hrnet")
-    in_channels = model_cfg.get(model_name, {}).get("in_channels", 1)
+        # Determine in_channels from model config
+        model_cfg = config.get("model", {})
+        model_name = model_cfg.get("name", "hrnet")
+        in_channels = model_cfg.get(model_name, {}).get("in_channels", 1)
 
-    is_translation = (
-        config.get("training_type") in ["cyclegan", "cut"]
-        or config.get("training", {}).get("cyclegan", False)
-    )
-
-    if is_translation:
-        from src.data.dataset import PairedDataset
-
-        # For Translation (CycleGAN/CUT), we want geometric augmentations (flip, rotate, scale)
-        # and sensor noise/intensity jitter, but NO blanket simulation!
-        gan_aug_cfg = config["training"].get("augmentation", {}).copy()
-        gan_aug_cfg["occlusion_prob"] = 0.0  # Disable mathematical blanket simulation
-        gan_aug_cfg["enabled"] = True
-        gan_augmenter = DataAugmenter(gan_aug_cfg)
-
-        # Domain A: Uncovered (Subjects 1-30)
-        ds_A = VIPCupDataset(
-            args.data_root,
-            subjects=range(1, 31),
-            covers=["uncover"],
-            modalities=["IR"],
-            split="train",
-            augmenter=gan_augmenter,
-            in_channels=3,
-            return_joints=False,
+        is_translation = (
+            config.get("training_type") in ["cyclegan", "cut"]
+            or config.get("training", {}).get("cyclegan", False)
         )
-        # Domain B: Covered (Subjects 31-80)
-        ds_B = VIPCupDataset(
-            args.data_root,
-            subjects=range(31, 81),
-            covers=["cover1", "cover2"],
-            modalities=["IR"],
-            split="train",
-            augmenter=gan_augmenter,
-            in_channels=3,
-            return_joints=False,
+
+        if is_translation:
+            from src.data.dataset import PairedDataset
+
+            # For Translation (CycleGAN/CUT), we want geometric augmentations (flip, rotate, scale)
+            # and sensor noise/intensity jitter, but NO blanket simulation!
+            gan_aug_cfg = config["training"].get("augmentation", {}).copy()
+            gan_aug_cfg["occlusion_prob"] = 0.0  # Disable mathematical blanket simulation
+            gan_aug_cfg["enabled"] = True
+            gan_augmenter = DataAugmenter(gan_aug_cfg)
+
+            # Domain A: Uncovered (Subjects 1-30)
+            ds_A = VIPCupDataset(
+                args.data_root,
+                subjects=range(1, 31),
+                covers=["uncover"],
+                modalities=["IR"],
+                split="train",
+                augmenter=gan_augmenter,
+                in_channels=3,
+                return_joints=False,
+            )
+            # Domain B: Covered (Subjects 31-80)
+            ds_B = VIPCupDataset(
+                args.data_root,
+                subjects=range(31, 81),
+                covers=["cover1", "cover2"],
+                modalities=["IR"],
+                split="train",
+                augmenter=gan_augmenter,
+                in_channels=3,
+                return_joints=False,
+            )
+            train_dataset = PairedDataset(ds_A, ds_B)
+
+            # Validation for CycleGAN (using small subset of training subjects for monitoring)
+            ds_A_val = VIPCupDataset(
+                args.data_root,
+                subjects=range(1, 6),
+                covers=["uncover"],
+                modalities=["IR"],
+                split="train",
+                in_channels=3,
+                return_joints=False,
+            )
+            ds_B_val = VIPCupDataset(
+                args.data_root,
+                subjects=range(31, 36),
+                covers=["cover1", "cover2"],
+                modalities=["IR"],
+                split="train",
+                in_channels=3,
+                return_joints=False,
+            )
+            val_dataset = PairedDataset(ds_A_val, ds_B_val)
+
+            collate_fn = (
+                None  # Standard collate is fine for PairedDataset returning tensors
+            )
+        else:
+            train_dataset = VIPCupDataset(
+                root=args.data_root,
+                subjects=range(s_train[0], s_train[1] + 1),
+                modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
+                split="train",
+                augmenter=augmenter,
+                image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
+                in_channels=in_channels,
+            )
+            val_dataset = VIPCupDataset(
+                root=args.data_root,
+                subjects=range(s_val[0], s_val[1] + 1),
+                modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
+                covers=dataset_cfg.get("covers", None),
+                split="valid",
+                image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
+                in_channels=in_channels,
+            )
+            collate_fn = collate_skip_none
+
+        train_sampler = (
+            torch.utils.data.DistributedSampler(train_dataset) if is_distributed else None
         )
-        train_dataset = PairedDataset(ds_A, ds_B)
-
-        # Validation for CycleGAN (using small subset of training subjects for monitoring)
-        ds_A_val = VIPCupDataset(
-            args.data_root,
-            subjects=range(1, 6),
-            covers=["uncover"],
-            modalities=["IR"],
-            split="train",
-            in_channels=3,
-            return_joints=False,
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=config["training"].get("batch_size", 16),
+            shuffle=(train_sampler is None),
+            sampler=train_sampler,
+            collate_fn=collate_fn,
+            num_workers=4 if os.name != "nt" else 0,
         )
-        ds_B_val = VIPCupDataset(
-            args.data_root,
-            subjects=range(31, 36),
-            covers=["cover1", "cover2"],
-            modalities=["IR"],
-            split="train",
-            in_channels=3,
-            return_joints=False,
+        val_loader = torch.utils.data.DataLoader(
+            val_dataset,
+            batch_size=config["training"].get("batch_size", 16),
+            shuffle=False,
+            collate_fn=collate_fn,
+            num_workers=4 if os.name != "nt" else 0,
         )
-        val_dataset = PairedDataset(ds_A_val, ds_B_val)
 
-        collate_fn = (
-            None  # Standard collate is fine for PairedDataset returning tensors
-        )
-    else:
-        train_dataset = VIPCupDataset(
-            root=args.data_root,
-            subjects=range(s_train[0], s_train[1] + 1),
-            modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
-            split="train",
-            augmenter=augmenter,
-            image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
-            in_channels=in_channels,
-        )
-        val_dataset = VIPCupDataset(
-            root=args.data_root,
-            subjects=range(s_val[0], s_val[1] + 1),
-            modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
-            covers=dataset_cfg.get("covers", None),
-            split="valid",
-            image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
-            in_channels=in_channels,
-        )
-        collate_fn = collate_skip_none
+        # 6. Initialize Trainer via Factory
+        trainer, model = create_trainer(config, device, rank, world_size)
 
-    train_sampler = (
-        torch.utils.data.DistributedSampler(train_dataset) if is_distributed else None
-    )
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=config["training"].get("batch_size", 16),
-        shuffle=(train_sampler is None),
-        sampler=train_sampler,
-        collate_fn=collate_fn,
-        num_workers=4 if os.name != "nt" else 0,
-    )
-    val_loader = torch.utils.data.DataLoader(
-        val_dataset,
-        batch_size=config["training"].get("batch_size", 16),
-        shuffle=False,
-        collate_fn=collate_fn,
-        num_workers=4 if os.name != "nt" else 0,
-    )
+        # 7. Resume Logic (Robustly integrated)
+        if args.resume:
+            ckpt_root = Path(config["training"]["save_dir"]) / "checkpoints"
+            ckpt_files = list(ckpt_root.glob("*.pth"))
+            if ckpt_files:
+                latest_model_path = ckpt_root / "latest_model.pth"
+                if latest_model_path.exists():
+                    latest_ckpt = latest_model_path
+                else:
+                    latest_ckpt = max(ckpt_files, key=os.path.getmtime)
 
-    # 6. Initialize Trainer via Factory
-    trainer, model = create_trainer(config, device, rank, world_size)
+                if rank == 0:
+                    print(f"Loading checkpoint: {latest_ckpt}")
 
-    # 7. Resume Logic (Robustly integrated)
-    if args.resume:
-        ckpt_root = Path(config["training"]["save_dir"]) / "checkpoints"
-        ckpt_files = list(ckpt_root.glob("*.pth"))
-        if ckpt_files:
-            latest_model_path = ckpt_root / "latest_model.pth"
-            if latest_model_path.exists():
-                latest_ckpt = latest_model_path
-            else:
-                latest_ckpt = max(ckpt_files, key=os.path.getmtime)
+                state = torch.load(latest_ckpt, map_location=device)
 
-            if rank == 0:
-                print(f"Loading checkpoint: {latest_ckpt}")
+                # Get start_epoch from checkpoint state OR history (take max)
+                ckpt_epoch = state.get("epoch", 0)
+                hist_epoch = 0
+                history_path = Path(config["training"]["save_dir"]) / "history.json"
+                if history_path.exists():
+                    try:
+                        with open(history_path, "r") as f:
+                            hist_epoch = len(json.load(f))
+                    except Exception:
+                        pass
 
-            state = torch.load(latest_ckpt, map_location=device)
+                start_epoch = max(ckpt_epoch, hist_epoch)
+                trainer.start_epoch = start_epoch
+                if rank == 0:
+                    print(f"Resuming from global epoch {start_epoch + 1}")
 
-            # Get start_epoch from checkpoint state OR history (take max)
-            ckpt_epoch = state.get("epoch", 0)
-            hist_epoch = 0
-            history_path = Path(config["training"]["save_dir"]) / "history.json"
-            if history_path.exists():
-                try:
-                    with open(history_path, "r") as f:
-                        hist_epoch = len(json.load(f))
-                except Exception:
-                    pass
+                state = torch.load(latest_ckpt, map_location=device)
+                m_state = state.get("model_state_dict", state)
+                # Remove 'module.' prefix if it exists (saved from DDP)
+                m_state = {k.replace("module.", ""): v for k, v in m_state.items()}
+                model.load_state_dict(m_state)
 
-            start_epoch = max(ckpt_epoch, hist_epoch)
-            trainer.start_epoch = start_epoch
-            if rank == 0:
-                print(f"Resuming from global epoch {start_epoch + 1}")
-
-            state = torch.load(latest_ckpt, map_location=device)
-            m_state = state.get("model_state_dict", state)
-            # Remove 'module.' prefix if it exists (saved from DDP)
-            m_state = {k.replace("module.", ""): v for k, v in m_state.items()}
-            model.load_state_dict(m_state)
-
-            if "optimizer_state_dict" in state and hasattr(trainer, "optimizer"):
-                trainer.optimizer.load_state_dict(state["optimizer_state_dict"])
-            if "optimizer_d_state_dict" in state and hasattr(trainer, "optimizer_d"):
-                trainer.optimizer_d.load_state_dict(state["optimizer_d_state_dict"])
-            if "discriminator_state_dict" in state and hasattr(
-                trainer, "discriminator"
-            ):
-                trainer.discriminator.load_state_dict(state["discriminator_state_dict"])
-            if "total_steps" in state and hasattr(trainer, "total_steps"):
-                trainer.total_steps = state["total_steps"]
+                if "optimizer_state_dict" in state and hasattr(trainer, "optimizer"):
+                    trainer.optimizer.load_state_dict(state["optimizer_state_dict"])
+                if "optimizer_d_state_dict" in state and hasattr(trainer, "optimizer_d"):
+                    trainer.optimizer_d.load_state_dict(state["optimizer_d_state_dict"])
+                if "discriminator_state_dict" in state and hasattr(
+                    trainer, "discriminator"
+                ):
+                    trainer.discriminator.load_state_dict(state["discriminator_state_dict"])
+                if "total_steps" in state and hasattr(trainer, "total_steps"):
+                    trainer.total_steps = state["total_steps"]
 
         # 8. Start Training
         trainer.fit(train_loader, val_loader)
