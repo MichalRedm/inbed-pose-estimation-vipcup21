@@ -50,6 +50,8 @@ All "Verified" metrics in this repository must meet the following criteria:
 | loop24_unfrozen_pretraining | 36.7% | 41.3 px | UNDERPERFORMED |
 | loop19_normalized_ana | 12.7% | 66.7 px | FAILURE (**Skeleton Collapse**) |
 
+*Note: Translation tasks (Loop 47 CycleGAN, Loop 48 CUT) are physical augmentations evaluated visually, not via PCK, until they are integrated into a downstream pose estimator pipeline.*
+
 > Previous figures (76.4%, 78.5%, 81.0%, 84.6% etc.) were computed by the flawed remote evaluate.py and were based on the less strict **PCK@0.5** metric. They are directionally useful (comparing relative improvement) but not accurate absolute baselines for the current **PCK@0.2** standard.
 
 ## Advanced Diagnostics

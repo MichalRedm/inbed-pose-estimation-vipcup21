@@ -2,7 +2,7 @@
 
 - **Current Loop**: 48 (Contrastive Unpaired Translation - CUT)
 - **Phase**: Phase 4 — Evolving Evaluation Framework
-- **Status**: RUNNING. CUT architecture (PatchSampleF + InfoNCE) implemented and verified. Remote training launched via API CLI with config `configs/loop48_cut.yaml`. Tunnel hostname updated and connection verified.
+- **Status**: RUNNING. CUT architecture (PatchSampleF + InfoNCE) implemented. Discovered "darkening steganography" failure mode when applying NCE to raw pixels. Restarted training after applying the Deep Semantic NCE Fix (extracting only deep layers 6, 9 and resblocks 0, 4, 8) and optimizing DDP timeouts. Remote training is active.
 - **Absolute Priority**:
   1. **Record**: Loop 44 (**77.84% PCK@0.2**, **12.26 px MPJPE**) remains the ALL-TIME RECORD.
   2. **Next Step**: Develop Contrastive Unpaired Translation (CUT) (Loop 48) on top of the newly merged robust training/sync infrastructure to achieve realistic blanket fabric simulations without steganographic noise.
