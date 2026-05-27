@@ -154,7 +154,9 @@ class CycleGANTrainer(BaseTrainer):
         # ------------------
         self.optimizer_G.zero_grad(set_to_none=True)
 
-        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+        with torch.amp.autocast(
+            device_type=device_type, dtype=torch.float16, enabled=use_amp
+        ):
             # Identity loss (skip if lambda_identity <= 0)
             if self.lambda_id > 0:
                 fake_B_id = self.G_AB(real_B)
@@ -198,7 +200,9 @@ class CycleGANTrainer(BaseTrainer):
         self.optimizer_D_A.zero_grad(set_to_none=True)
         self.optimizer_D_B.zero_grad(set_to_none=True)
 
-        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+        with torch.amp.autocast(
+            device_type=device_type, dtype=torch.float16, enabled=use_amp
+        ):
             # Discriminator A
             loss_real_A = self.criterion_GAN(self.D_A(real_A), True)
             loss_fake_A = self.criterion_GAN(self.D_A(fake_A.detach()), False)
@@ -208,7 +212,9 @@ class CycleGANTrainer(BaseTrainer):
         self.scaler_D_A.step(self.optimizer_D_A)
         self.scaler_D_A.update()
 
-        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+        with torch.amp.autocast(
+            device_type=device_type, dtype=torch.float16, enabled=use_amp
+        ):
             # Discriminator B
             loss_real_B = self.criterion_GAN(self.D_B(real_B), True)
             loss_fake_B = self.criterion_GAN(self.D_B(fake_B.detach()), False)
@@ -233,7 +239,9 @@ class CycleGANTrainer(BaseTrainer):
     def _val_step(self, batch: Any) -> Dict[str, float]:
         device_type = self.device.type
         use_amp = device_type == "cuda"
-        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+        with torch.amp.autocast(
+            device_type=device_type, dtype=torch.float16, enabled=use_amp
+        ):
             losses = self._calculate_losses(batch)
         return {k: v.item() for k, v in losses.items() if isinstance(v, torch.Tensor)}
 

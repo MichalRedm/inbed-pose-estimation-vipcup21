@@ -74,10 +74,10 @@ class GeneratorResNet(nn.Module):
             ]
             in_features = out_features
 
-        # Output layer
+        # Output layer (Forces monochromatic output to prevent color hallucinations)
         upsampling += [
             nn.ReflectionPad2d(3),
-            nn.Conv2d(out_features, channels, 7),
+            nn.Conv2d(out_features, 1, 7),
             nn.Tanh(),
         ]
 
@@ -117,4 +117,8 @@ class GeneratorResNet(nn.Module):
         x = self.encoder(x)
         x = self.resblocks(x)
         x = self.decoder(x)
+        # Replicate to 3 channels to maintain compatibility with HRNet/ViTPose
+        # and prevent "color hallucinations" (R!=G!=B) in thermal domain.
+        if x.shape[1] == 1:
+            x = x.repeat(1, 3, 1, 1)
         return x

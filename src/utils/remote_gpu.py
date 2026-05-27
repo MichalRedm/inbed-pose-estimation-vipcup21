@@ -325,6 +325,10 @@ class GPUSession:
                 self.ensure_connected()
                 return func(*args, **kwargs)
             except (paramiko.SSHException, socket.error, EOFError, OSError) as e:
+                # Do not treat missing files as connection errors
+                if isinstance(e, FileNotFoundError) or getattr(e, "errno", None) == 2:
+                    raise
+
                 err_str = str(e).lower()
                 is_conn_error = any(
                     kw in err_str
