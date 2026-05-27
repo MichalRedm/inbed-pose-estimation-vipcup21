@@ -157,9 +157,9 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                   <Line 
                     type="monotone" 
                     dataKey="loss" 
-                    stroke="#c2ef4e" 
+                    stroke="#6a5fc1" 
                     strokeWidth={2.5} 
-                    dot={{ r: 3, fill: '#c2ef4e', strokeWidth: 0 }} 
+                    dot={{ r: 3, fill: '#6a5fc1', strokeWidth: 0 }} 
                     activeDot={{ r: 5 }} 
                     animationDuration={300} 
                     name={lossLabels.loss || "Train Loss"} 
@@ -168,9 +168,9 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                   <Line 
                     type="monotone" 
                     dataKey="val_loss" 
-                    stroke="#6a5fc1" 
+                    stroke="#c2ef4e" 
                     strokeWidth={2} 
-                    dot={{ r: 2, fill: '#6a5fc1', strokeWidth: 0 }} 
+                    dot={{ r: 2, fill: '#c2ef4e', strokeWidth: 0 }} 
                     strokeDasharray="5 3" 
                     name={lossLabels.val_loss || "Val Loss"} 
                     connectNulls
@@ -191,9 +191,9 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                     <Line 
                       type="monotone" 
                       dataKey="cycle" 
-                      stroke="#ffb287" 
+                      stroke="#c2ef4e" 
                       strokeWidth={2} 
-                      dot={{ r: 2, fill: '#ffb287', strokeWidth: 0 }} 
+                      dot={{ r: 2, fill: '#c2ef4e', strokeWidth: 0 }} 
                       strokeDasharray="2 2" 
                       name={lossLabels.cycle_loss || "Cycle Loss"} 
                       connectNulls
