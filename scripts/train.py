@@ -189,6 +189,7 @@ def train():
             split="train",
             augmenter=gan_augmenter,
             in_channels=3,
+            return_joints=False,
         )
         # Domain B: Covered (Subjects 31-80)
         ds_B = VIPCupDataset(
@@ -199,6 +200,7 @@ def train():
             split="train",
             augmenter=gan_augmenter,
             in_channels=3,
+            return_joints=False,
         )
         train_dataset = PairedDataset(ds_A, ds_B)
 
@@ -210,6 +212,7 @@ def train():
             modalities=["IR"],
             split="train",
             in_channels=3,
+            return_joints=False,
         )
         ds_B_val = VIPCupDataset(
             args.data_root,
@@ -218,6 +221,7 @@ def train():
             modalities=["IR"],
             split="train",
             in_channels=3,
+            return_joints=False,
         )
         val_dataset = PairedDataset(ds_A_val, ds_B_val)
 

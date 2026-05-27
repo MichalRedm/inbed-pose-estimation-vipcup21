@@ -61,6 +61,22 @@ class CycleGANTrainer(BaseTrainer):
             self.D_B.parameters(), lr=self.lr, betas=(self.b1, self.b2)
         )
 
+        # GradScalers for mixed precision (enabled only if device is CUDA)
+        use_amp = self.device.type == "cuda"
+        self.scaler_G = torch.amp.GradScaler("cuda", enabled=use_amp)
+        self.scaler_D_A = torch.amp.GradScaler("cuda", enabled=use_amp)
+        self.scaler_D_B = torch.amp.GradScaler("cuda", enabled=use_amp)
+
+        # Model compilation (optional, enabled if compile is specified in config and PyTorch 2.x compile is available)
+        compile_cfg = train_cfg.get("compile", False)
+        if compile_cfg and hasattr(torch, "compile"):
+            if self.is_main:
+                print("[CycleGANTrainer] Compiling models...")
+            self.G_AB = torch.compile(self.G_AB)
+            self.G_BA = torch.compile(self.G_BA)
+            self.D_A = torch.compile(self.D_A)
+            self.D_B = torch.compile(self.D_B)
+
     def _calculate_losses(self, batch: Any) -> Dict[str, torch.Tensor]:
         real_A, real_B = batch
         real_A = real_A.to(self.device)
@@ -69,12 +85,15 @@ class CycleGANTrainer(BaseTrainer):
         # ------------------
         #  Generators
         # ------------------
-        # Identity loss
-        fake_B_id = self.G_AB(real_B)
-        loss_id_B = self.criterion_identity(fake_B_id, real_B)
-        fake_A_id = self.G_BA(real_A)
-        loss_id_A = self.criterion_identity(fake_A_id, real_A)
-        loss_identity = (loss_id_A + loss_id_B) / 2
+        # Identity loss (skip if lambda_identity <= 0)
+        if self.lambda_id > 0:
+            fake_B_id = self.G_AB(real_B)
+            loss_id_B = self.criterion_identity(fake_B_id, real_B)
+            fake_A_id = self.G_BA(real_A)
+            loss_id_A = self.criterion_identity(fake_A_id, real_A)
+            loss_identity = (loss_id_A + loss_id_B) / 2
+        else:
+            loss_identity = torch.tensor(0.0, device=self.device)
 
         # GAN loss
         fake_B = self.G_AB(real_A)
@@ -123,28 +142,99 @@ class CycleGANTrainer(BaseTrainer):
         }
 
     def _train_step(self, batch: Any) -> Dict[str, float]:
-        # 1. Calculate losses
-        losses = self._calculate_losses(batch)
+        real_A, real_B = batch
+        real_A = real_A.to(self.device)
+        real_B = real_B.to(self.device)
 
-        # 2. Update Generators
-        self.optimizer_G.zero_grad()
-        losses["loss"].backward()
-        self.optimizer_G.step()
+        device_type = self.device.type
+        use_amp = device_type == "cuda"
 
-        # 3. Update Discriminators
-        self.optimizer_D_A.zero_grad()
-        losses["loss_D_A"].backward()
-        self.optimizer_D_A.step()
+        # ------------------
+        #  Generators Update
+        # ------------------
+        self.optimizer_G.zero_grad(set_to_none=True)
 
-        self.optimizer_D_B.zero_grad()
-        losses["loss_D_B"].backward()
-        self.optimizer_D_B.step()
+        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+            # Identity loss (skip if lambda_identity <= 0)
+            if self.lambda_id > 0:
+                fake_B_id = self.G_AB(real_B)
+                loss_id_B = self.criterion_identity(fake_B_id, real_B)
+                fake_A_id = self.G_BA(real_A)
+                loss_id_A = self.criterion_identity(fake_A_id, real_A)
+                loss_identity = (loss_id_A + loss_id_B) / 2
+            else:
+                loss_identity = torch.tensor(0.0, device=self.device)
 
+            # GAN loss
+            fake_B = self.G_AB(real_A)
+            loss_GAN_AB = self.criterion_GAN(self.D_B(fake_B), True)
+
+            fake_A = self.G_BA(real_B)
+            loss_GAN_BA = self.criterion_GAN(self.D_A(fake_A), True)
+
+            loss_GAN = (loss_GAN_AB + loss_GAN_BA) / 2
+
+            # Cycle loss
+            recov_A = self.G_BA(fake_B)
+            loss_cycle_A = self.criterion_cycle(recov_A, real_A)
+
+            recov_B = self.G_AB(fake_A)
+            loss_cycle_B = self.criterion_cycle(recov_B, real_B)
+
+            loss_cycle = (loss_cycle_A + loss_cycle_B) / 2
+
+            # Total Generator Loss
+            loss_G = (
+                loss_GAN + self.lambda_cyc * loss_cycle + self.lambda_id * loss_identity
+            )
+
+        self.scaler_G.scale(loss_G).backward()
+        self.scaler_G.step(self.optimizer_G)
+        self.scaler_G.update()
+
+        # -----------------------
+        #  Discriminators Update
+        # -----------------------
+        self.optimizer_D_A.zero_grad(set_to_none=True)
+        self.optimizer_D_B.zero_grad(set_to_none=True)
+
+        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+            # Discriminator A
+            loss_real_A = self.criterion_GAN(self.D_A(real_A), True)
+            loss_fake_A = self.criterion_GAN(self.D_A(fake_A.detach()), False)
+            loss_D_A = (loss_real_A + loss_fake_A) / 2
+
+        self.scaler_D_A.scale(loss_D_A).backward()
+        self.scaler_D_A.step(self.optimizer_D_A)
+        self.scaler_D_A.update()
+
+        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+            # Discriminator B
+            loss_real_B = self.criterion_GAN(self.D_B(real_B), True)
+            loss_fake_B = self.criterion_GAN(self.D_B(fake_B.detach()), False)
+            loss_D_B = (loss_real_B + loss_fake_B) / 2
+
+        self.scaler_D_B.scale(loss_D_B).backward()
+        self.scaler_D_B.step(self.optimizer_D_B)
+        self.scaler_D_B.update()
+
+        # Compile metrics dict
+        losses = {
+            "loss": loss_G,
+            "adv_loss": loss_GAN,
+            "cycle_loss": loss_cycle,
+            "id_loss": loss_identity,
+            "loss_D_A": loss_D_A,
+            "loss_D_B": loss_D_B,
+            "d_loss": loss_D_A + loss_D_B,
+        }
         return {k: v.item() for k, v in losses.items() if isinstance(v, torch.Tensor)}
 
     def _val_step(self, batch: Any) -> Dict[str, float]:
-        # Validation just calculates losses without gradients
-        losses = self._calculate_losses(batch)
+        device_type = self.device.type
+        use_amp = device_type == "cuda"
+        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+            losses = self._calculate_losses(batch)
         return {k: v.item() for k, v in losses.items() if isinstance(v, torch.Tensor)}
 
     def fit(self, train_loader, val_loader=None):

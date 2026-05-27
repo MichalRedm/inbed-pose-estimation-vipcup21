@@ -37,6 +37,7 @@ class VIPCupDataset(Dataset):
         augmenter: Optional[DataAugmenter] = None,
         image_size=(256, 256),
         in_channels: int = 1,
+        return_joints: bool = True,
     ):
         self.root = Path(root)
         self.split = split  # "train" or "valid"
@@ -52,6 +53,7 @@ class VIPCupDataset(Dataset):
         self.heatmap_size = (64, 64)  # HRNet output size
         self.sigma = 2.0
         self.in_channels = in_channels
+        self.return_joints = return_joints
 
         self.samples = self._prepare_samples()
         if self.subjects and not self.samples:
@@ -177,7 +179,7 @@ class VIPCupDataset(Dataset):
         else:
             image = Image.open(image_path).convert("RGB")
 
-        joints = sample["joints"].get(target_mod)
+        joints = sample["joints"].get(target_mod) if self.return_joints else None
 
         # Apply data augmentation if provided (affects both image and joints)
         image_source = None
