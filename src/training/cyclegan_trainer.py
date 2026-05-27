@@ -181,12 +181,17 @@ class CycleGANTrainer(BaseTrainer):
 
     def get_display_metadata(self) -> Dict[str, Any]:
         return {
-            "loss_labels": {
-                "loss": "Generator Loss",
-                "adv_loss": "Adversarial",
-                "cycle_loss": "Cycle Consistency",
-                "id_loss": "Identity",
-                "d_loss": "Discriminator",
-            },
+            "charts": [
+                {"key": "loss", "label": "Generator Loss", "color": "primary"},
+                {"key": "val_loss", "label": "Val G Loss", "color": "lime", "dash": "5 3"},
+                {"key": "cycle_loss", "label": "Cycle Consistency", "color": "lime", "dash": "2 2"},
+                {"key": "adv_loss", "label": "Adversarial", "color": "pink", "dash": "4 4"},
+            ],
+            "highlights": [
+                {"key": "loss", "label": "GENERATOR LOSS", "color": "primary"},
+                {"key": "cycle_loss", "label": "CYCLE LOSS", "color": "lime"},
+                {"key": "adv_loss", "label": "ADV LOSS", "color": "pink"},
+                {"key": "d_loss", "label": "DISC LOSS", "color": "coral"},
+            ],
             "primary_metric": "loss",
         }

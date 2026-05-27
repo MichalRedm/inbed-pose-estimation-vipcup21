@@ -26,6 +26,7 @@ from src.training.manager import training_manager  # noqa: E402
 from src.utils import (  # noqa: E402
     get_training_config,
     save_training_config,
+    get_display_metadata_for_config,
     LSP_JOINT_NAMES,
 )
 from src.data.dataset import VIPCupDataset, collate_skip_none  # noqa: E402
@@ -292,32 +293,8 @@ async def get_run_details(run_id: str):
 
     # Add display metadata for frontend
     if "config" in details:
-        train_cfg = details["config"].get("training", {})
-        if (
-            train_cfg.get("cyclegan")
-            or details["config"].get("training_type") == "cyclegan"
-        ):
-            details["display_metadata"] = {
-                "loss_labels": {
-                    "loss": "Generator Loss",
-                    "adv_loss": "Adversarial",
-                    "cycle_loss": "Cycle Consistency",
-                    "id_loss": "Identity",
-                    "d_loss": "Discriminator",
-                    "val_loss": "Val G Loss",
-                },
-                "primary_metric": "loss",
-            }
-        elif details["config"].get("training_type") == "uda" or details["config"].get(
-            "uda", {}
-        ).get("enabled"):
-            details["display_metadata"] = {
-                "loss_labels": {
-                    "loss": "Pose Loss",
-                    "adv_loss": "Domain Adv",
-                },
-                "primary_metric": "pck",
-            }
+        from src.utils.config_manager import get_display_metadata_for_config
+        details["display_metadata"] = get_display_metadata_for_config(details["config"])
     eval_file = next(
         (
             f

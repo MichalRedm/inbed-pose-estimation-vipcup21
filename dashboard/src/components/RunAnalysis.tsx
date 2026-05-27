@@ -24,6 +24,21 @@ import {
 import { evaluateModel } from '../services/api';
 import type { RunDetails } from '../pages/Overview';
 
+interface ChartConfig {
+  key: string;
+  label: string;
+  color: string;
+  dash?: string;
+}
+
+interface HighlightConfig {
+  key: string;
+  label: string;
+  color: 'primary' | 'lime' | 'pink' | 'coral';
+  suffix?: string;
+  multiplier?: number;
+}
+
 interface RunAnalysisProps {
   details: RunDetails;
   isActive?: boolean;
@@ -36,20 +51,13 @@ interface RunAnalysisProps {
     adv_loss_history: number[];
     log_history: string[];
     current_metrics?: Record<string, number | string>;
-    history_dict?: Record<string, Record<string, number>>;
+    history_dict?: Record<string, Record<string, any>>;
     display_metadata?: {
-      loss_labels?: Record<string, string>;
+      charts?: ChartConfig[];
+      highlights?: HighlightConfig[];
       primary_metric?: string;
     };
   };
-}
-
-interface HistoryMetrics {
-  val_pck?: number;
-  pck?: number;
-  val_loss?: number;
-  loss?: number;
-  [key: string]: number | undefined;
 }
 
 const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingStatus }) => {
@@ -60,51 +68,68 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
   // Local override set by "Re-evaluate"; falls back to prop data
   const [localEvalOverride, setLocalEvalOverride] = useState<RunDetails['evaluation'] | null>(null);
 
-  // Note: All local state (showLogs, localEvalOverride, etc.) is naturally reset 
-  // when the 'details.id' changes because the parent renders this component with a 'key={details.id}'.
-
   const evalResults = localEvalOverride ?? details.evaluation;
 
-  const displayMetadata = trainingStatus?.display_metadata;
-  const lossLabels = displayMetadata?.loss_labels || {};
+  // 1. Resolve Metadata
+  const displayMetadata = trainingStatus?.display_metadata || details.display_metadata;
+  
+  // Heuristic fallbacks if metadata is missing (legacy support)
+  const charts = displayMetadata?.charts || [
+    { key: 'loss', label: 'Train Loss', color: '#6a5fc1' },
+    { key: 'val_loss', label: 'Val Loss', color: '#c2ef4e', dash: '5 3' }
+  ];
 
-  // Build chart data - Unify active and historical logic
+  const highlights = displayMetadata?.highlights || [
+    { key: 'val_pck', label: 'VALIDATION PCK', color: 'lime', suffix: '%', multiplier: 100 },
+    { key: 'loss', label: 'TRAIN LOSS', color: 'primary' }
+  ];
+
+  // Map backend color names to hex/vars
+  const colorMap: Record<string, string> = {
+    primary: '#6a5fc1',
+    lime: '#c2ef4e',
+    pink: '#fa7faa',
+    coral: '#ffb287',
+  };
+
+  // Build chart data
   const chartData = (() => {
-    // 1. Prefer active training status if it's currently running
-    if (isActive && trainingStatus?.loss_history && trainingStatus.loss_history.length > 0) {
-      const history = trainingStatus.loss_history;
-      const historyDict = trainingStatus.history_dict || {};
-      const total = trainingStatus.total_epochs || 30;
+    // 1. Prefer active training status
+    if (isActive && trainingStatus?.history_dict) {
+      const historyDict = trainingStatus.history_dict;
+      const epochs = Object.keys(historyDict).map(Number).sort((a, b) => a - b);
       
-      return history.map((loss, i) => {
-        const ep = i + 1;
-        // API dict keys become strings in JSON
-        const metrics = (historyDict[ep] || historyDict[String(ep)]) as HistoryMetrics | undefined || {};
-        return {
-          epoch: ep,
-          loss: loss ?? null,
-          val_loss: (metrics.val_loss ?? metrics.val_loss_pose) ?? null,
-          adv: trainingStatus.adv_loss_history?.[i] ?? null,
-          cycle: metrics.cycle_loss ?? null,
-        };
-      }).filter(d => d.epoch <= total);
+      return epochs.map(ep => {
+        const metrics = historyDict[ep] || historyDict[String(ep)] || {};
+        const entry: any = { epoch: ep };
+        charts.forEach(c => {
+          // Special handling for keys that might have multiple names
+          let val = metrics[c.key];
+          if (val === undefined && c.key === 'loss') val = metrics.loss_pose || metrics.train_loss;
+          if (val === undefined && c.key === 'val_loss') val = metrics.val_loss_pose;
+          
+          entry[c.key] = val ?? null;
+        });
+        return entry;
+      });
     }
 
-    // 2. Fallback to historical data (most complete for finished runs)
+    // 2. Fallback to historical details.history
     if (details.history && details.history.length > 0) {
-      return details.history.map((h: Record<string, number>, i) => ({
-        epoch: h.epoch ?? (i + 1),
-        loss: h.loss ?? h.loss_pose ?? h.train_loss ?? null,
-        val_loss: h.val_loss ?? h.val_loss_pose ?? null,
-        adv: h.adv_loss ?? null,
-        cycle: h.cycle_loss ?? null,
-      }));
+      return details.history.map((h: any, i) => {
+        const entry: any = { epoch: h.epoch ?? (i + 1) };
+        charts.forEach(c => {
+          let val = h[c.key];
+          if (val === undefined && c.key === 'loss') val = h.loss_pose || h.train_loss;
+          if (val === undefined && c.key === 'val_loss') val = h.val_loss_pose;
+          entry[c.key] = val ?? null;
+        });
+        return entry;
+      });
     }
     
     return [];
   })();
-
-  const hasAdvHistory = isActive ? (!!trainingStatus?.adv_loss_history && trainingStatus.adv_loss_history.some(v => v !== null)) : chartData.some(d => d.adv !== null);
 
   const handleRunEvaluation = async () => {
     setIsEvaluating(true);
@@ -154,51 +179,20 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                     itemStyle={{ color: '#fff' }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="loss" 
-                    stroke="#6a5fc1" 
-                    strokeWidth={2.5} 
-                    dot={{ r: 3, fill: '#6a5fc1', strokeWidth: 0 }} 
-                    activeDot={{ r: 5 }} 
-                    animationDuration={300} 
-                    name={lossLabels.loss || "Train Loss"} 
-                    connectNulls
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="val_loss" 
-                    stroke="#c2ef4e" 
-                    strokeWidth={2} 
-                    dot={{ r: 2, fill: '#c2ef4e', strokeWidth: 0 }} 
-                    strokeDasharray="5 3" 
-                    name={lossLabels.val_loss || "Val Loss"} 
-                    connectNulls
-                  />
-                  {hasAdvHistory && (
+                  {charts.map((c) => (
                     <Line 
+                      key={c.key}
                       type="monotone" 
-                      dataKey="adv" 
-                      stroke="#fa7faa" 
-                      strokeWidth={1.5} 
-                      dot={{ r: 2, fill: '#fa7faa', strokeWidth: 0 }} 
-                      strokeDasharray="4 4" 
-                      name={lossLabels.adv_loss || "Adv Loss"} 
+                      dataKey={c.key} 
+                      stroke={colorMap[c.color] || c.color} 
+                      strokeWidth={c.key === (displayMetadata?.primary_metric || 'loss') ? 2.5 : 1.5} 
+                      dot={{ r: 2, fill: colorMap[c.color] || c.color, strokeWidth: 0 }} 
+                      strokeDasharray={c.dash}
+                      name={c.label} 
                       connectNulls
+                      animationDuration={300}
                     />
-                  )}
-                  {chartData.some(d => d.cycle !== null) && (
-                    <Line 
-                      type="monotone" 
-                      dataKey="cycle" 
-                      stroke="#c2ef4e" 
-                      strokeWidth={2} 
-                      dot={{ r: 2, fill: '#c2ef4e', strokeWidth: 0 }} 
-                      strokeDasharray="2 2" 
-                      name={lossLabels.cycle_loss || "Cycle Loss"} 
-                      connectNulls
-                    />
-                  )}
+                  ))}
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -229,67 +223,36 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
             <div className="flex-column" style={{ width: '280px', gap: '16px' }}>
               {(() => {
                 const metrics = trainingStatus?.current_metrics || {};
-                const cards = [];
+                const historyDict = trainingStatus?.history_dict || {};
                 
-                // 1. PCK (if applicable)
-                let pck: number | string | undefined = metrics.val_pck ?? metrics.pck;
-                if (!pck && trainingStatus) {
-                  const historyDict = trainingStatus.history_dict || {};
-                  const epochs = Object.keys(historyDict).map(Number).sort((a, b) => b - a);
-                  for (const ep of epochs) {
-                    const m = (historyDict[ep] || historyDict[String(ep)]) as HistoryMetrics | undefined;
-                    if (m && (m.val_pck !== undefined || m.pck !== undefined)) {
-                      pck = m.val_pck ?? m.pck;
-                      break;
+                return highlights.map((h, i) => {
+                  let val: any = metrics[h.key];
+                  
+                  // Heuristic for PCK if not in current batch metrics
+                  if (val === undefined && (h.key === 'val_pck' || h.key === 'pck')) {
+                    const epochs = Object.keys(historyDict).map(Number).sort((a, b) => b - a);
+                    for (const ep of epochs) {
+                      const m = historyDict[ep] || historyDict[String(ep)];
+                      if (m && (m.val_pck !== undefined || m.pck !== undefined)) {
+                        val = m.val_pck ?? m.pck;
+                        break;
+                      }
                     }
                   }
-                }
-                if (pck !== undefined) {
-                  cards.push({ label: 'VALIDATION PCK', value: `${(Number(pck) * 100).toFixed(2)}%`, color: 'lime' });
-                }
 
-                // 2. Primary Loss
-                const primaryLossKey = displayMetadata?.primary_metric || 'loss';
-                if (metrics[primaryLossKey] !== undefined) {
-                  cards.push({ 
-                    label: (lossLabels[primaryLossKey] || 'LAST EPOCH LOSS').toUpperCase(), 
-                    value: Number(metrics[primaryLossKey]).toFixed(4), 
-                    color: 'primary' 
-                  });
-                } else if (metrics.loss !== undefined) {
-                  cards.push({ label: (lossLabels.loss || 'LAST EPOCH LOSS').toUpperCase(), value: Number(metrics.loss).toFixed(4), color: 'primary' });
-                } else if (metrics.loss_pose !== undefined) {
-                  cards.push({ label: (lossLabels.loss_pose || 'LAST EPOCH LOSS').toUpperCase(), value: Number(metrics.loss_pose).toFixed(4), color: 'primary' });
-                }
+                  const displayVal = val !== undefined 
+                    ? (Number(val) * (h.multiplier || 1)).toFixed(h.key.includes('pck') ? 2 : 4) 
+                    : '--';
 
-                // 3. Mode-specific secondary metrics
-                if (metrics.sigma !== undefined) {
-                  cards.push({ label: 'SIGMA', value: Number(metrics.sigma).toFixed(3), color: 'pink' });
-                }
-                if (metrics.cycle_loss !== undefined) {
-                  cards.push({ label: (lossLabels.cycle_loss || 'CYCLE LOSS').toUpperCase(), value: Number(metrics.cycle_loss).toFixed(4), color: 'lime' });
-                }
-                if (metrics.adv_loss !== undefined) {
-                  cards.push({ label: (lossLabels.adv_loss || 'ADV LOSS').toUpperCase(), value: Number(metrics.adv_loss).toFixed(4), color: 'pink' });
-                }
-                if (metrics.d_loss !== undefined) {
-                  cards.push({ label: (lossLabels.d_loss || 'DISC LOSS').toUpperCase(), value: Number(metrics.d_loss).toFixed(4), color: 'coral' });
-                }
-
-                // Fill defaults if cards are empty
-                if (cards.length === 0) {
-                  cards.push({ label: 'LAST EPOCH LOSS', value: '--', color: 'primary' });
-                }
-
-                // Render up to 4 cards vertically
-                return cards.slice(0, 4).map((c, i) => (
-                  <div key={i} className="glass highlight-card" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>{c.label}</div>
-                    <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: `var(--accent-${c.color})`, marginTop: '8px' }}>
-                      {c.value}
+                  return (
+                    <div key={i} className="glass highlight-card" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                      <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>{h.label}</div>
+                      <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: colorMap[h.color] || h.color, marginTop: '8px' }}>
+                        {displayVal}{val !== undefined ? h.suffix : ''}
+                      </div>
                     </div>
-                  </div>
-                ));
+                  );
+                });
               })()}
             </div>
           )}

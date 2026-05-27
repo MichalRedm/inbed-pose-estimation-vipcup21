@@ -50,45 +50,9 @@ class TrainingManager:
 
     def _get_initial_display_metadata(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Heuristically determine display metadata based on config before training starts."""
-        train_cfg = config.get("training", {})
-        uda_cfg = config.get("uda", {})
-        training_type = config.get("training_type", "standard")
+        from src.utils.config_manager import get_display_metadata_for_config
 
-        use_cyclegan = training_type == "cyclegan" or train_cfg.get("cyclegan", False)
-        use_uda = training_type == "uda" or uda_cfg.get("enabled", False)
-
-        if use_cyclegan:
-            return {
-                "loss_labels": {
-                    "loss": "Generator Loss",
-                    "adv_loss": "Adversarial",
-                    "cycle_loss": "Cycle Consistency",
-                    "id_loss": "Identity",
-                    "d_loss": "Discriminator",
-                    "val_loss": "Val G Loss",
-                },
-                "primary_metric": "loss",
-            }
-        elif use_uda:
-            return {
-                "loss_labels": {
-                    "loss": "Pose Loss",
-                    "adv_loss": "Adversarial",
-                    "total_loss": "Total Loss",
-                    "val_loss": "Val Loss",
-                    "pck": "PCK@0.2",
-                },
-                "primary_metric": "pck",
-            }
-        else:
-            return {
-                "loss_labels": {
-                    "loss": "Train Loss",
-                    "val_loss": "Val Loss",
-                    "pck": "PCK@0.2",
-                },
-                "primary_metric": "pck",
-            }
+        return get_display_metadata_for_config(config)
 
     def start_training(self, config_overrides: Optional[Dict] = None):
         config_overrides = config_overrides or {}

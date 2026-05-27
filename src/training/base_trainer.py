@@ -98,12 +98,22 @@ class BaseTrainer(ABC):
     def get_display_metadata(self) -> Dict[str, Any]:
         """Return hints for the frontend dashboard on how to display metrics."""
         return {
-            "loss_labels": {
-                "loss": "Train Loss",
-                "val_loss": "Val Loss",
-                "pck": "PCK@0.2",
-            },
-            "primary_metric": "pck",
+            "charts": [
+                {"key": "loss", "label": "Train Loss", "color": "primary"},
+                {"key": "val_loss", "label": "Val Loss", "color": "lime", "dash": "5 3"},
+            ],
+            "highlights": [
+                {
+                    "key": "val_pck",
+                    "label": "VALIDATION PCK",
+                    "color": "lime",
+                    "suffix": "%",
+                    "multiplier": 100,
+                },
+                {"key": "loss", "label": "TRAIN LOSS", "color": "primary"},
+                {"key": "sigma", "label": "SIGMA", "color": "pink"},
+            ],
+            "primary_metric": "val_pck",
         }
 
     @abstractmethod

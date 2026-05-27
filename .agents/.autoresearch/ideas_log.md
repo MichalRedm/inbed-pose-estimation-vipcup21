@@ -11,6 +11,7 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 ### 1. CycleGAN-based Domain Translation (CycAug)
 *   **Hypothesis**: The current pipeline uses mathematical formulas to simulate blankets. Training a CycleGAN to translate images between the "uncovered" domain (Subjects 1-30) and the "covered" domain (Subjects 31-80) will generate highly realistic synthetic target data while preserving the ground-truth coordinates from the source images. This was the strategy used by the 2nd Runner-Up team (NFPUndercover) in the VIP Cup 2021.
 *   **Implementation**: Train a separate CycleGAN model on the unannotated 31-80 subset. Use the generator as an offline augmentation step or integrate it into `DataAugmenter`.
+*   **TODO**: Refactor the CycleGAN generator to output exactly **one channel** (monochromatic) and then replicate it to three channels. This will prevent "hallucinated" colors (divergence between R, G, and B channels) and produce more realistic thermal signatures.
 *   **Small-Data Survival Tip**: Given only ~1,350 source and 2,250 target images, standard CycleGANs will overfit. Use a lightweight generator architecture, employ strong augmentations, and **initialize the GAN's feature extractors with standard ImageNet weights**. Even though ImageNet is RGB, the early Gabor filters act as a massive head-start for generating realistic thermal blanket textures.
 *   **ROI Status**: **HIGH (UDA Rank 1)** — Proven winning strategy, perfectly leverages the unused 31-80 dataset.
 

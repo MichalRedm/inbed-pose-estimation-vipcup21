@@ -130,14 +130,23 @@ class UDATrainer(BaseTrainer):
 
     def get_display_metadata(self) -> Dict[str, Any]:
         return {
-            "loss_labels": {
-                "loss": "Pose Loss",
-                "adv_loss": "Adversarial",
-                "total_loss": "Total Loss",
-                "val_loss": "Val Loss",
-                "pck": "PCK@0.2",
-            },
-            "primary_metric": "pck",
+            "charts": [
+                {"key": "loss", "label": "Pose Loss", "color": "primary"},
+                {"key": "adv_loss", "label": "Domain Adv", "color": "pink", "dash": "4 4"},
+                {"key": "val_pck", "label": "Val PCK", "color": "lime", "dash": "5 3"},
+            ],
+            "highlights": [
+                {
+                    "key": "val_pck",
+                    "label": "VALIDATION PCK",
+                    "color": "lime",
+                    "suffix": "%",
+                    "multiplier": 100,
+                },
+                {"key": "loss", "label": "POSE LOSS", "color": "primary"},
+                {"key": "adv_loss", "label": "DOMAIN ADV", "color": "pink"},
+            ],
+            "primary_metric": "val_pck",
         }
 
     def fit(self, train_loader, val_loader=None):
