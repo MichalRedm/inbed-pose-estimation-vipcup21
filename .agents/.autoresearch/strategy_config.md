@@ -2,8 +2,8 @@
 
 ## Repository Architecture Map
 - `src/data/`: `VIPCupDataset` (IR/RGB, cover-aware), `DataAugmenter` (flip, rotate, scale, occlusion)
-- `src/models/`: HRNet-W32 (`hrnet.py`), `SoftArgmax2D` layer (`layers.py`), model factory (`__init__.py`)
-- `src/training/`: `BaseTrainer` (abstract, PCK-based checkpointing), `StandardTrainer` (heatmap MSE + optional anatomical + coord regression), `AnatomicalLoss` (`losses.py`)
+- `src/models/cyclegan/`: GeneratorResNet (used by both CycleGAN and CUT), Discriminators, and Losses (PatchNCE).
+- `src/training/`: `BaseTrainer` (abstract, PCK-based checkpointing), `StandardTrainer`, `CycleGANTrainer`, `CUTTrainer`.
 - `src/utils/`: `decode_heatmaps()` (argmax + soft-argmax), `compute_pck()`, `compute_mpjpe()`, `LSP_JOINT_NAMES`
 - `src/api/main.py`: FastAPI inference server; auto-selects decoder per run; caches loaded models by run_id key
 - `scripts/`: Remote and local entry points. `evaluate.py` is fixed and recommended for post-training validation.
