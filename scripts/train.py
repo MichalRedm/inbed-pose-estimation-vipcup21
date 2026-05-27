@@ -170,10 +170,15 @@ def train():
     model_name = model_cfg.get("name", "hrnet")
     in_channels = model_cfg.get(model_name, {}).get("in_channels", 1)
 
-    if config.get("training", {}).get("cyclegan"):
+    is_translation = (
+        config.get("training_type") in ["cyclegan", "cut"]
+        or config.get("training", {}).get("cyclegan", False)
+    )
+
+    if is_translation:
         from src.data.dataset import PairedDataset
 
-        # For CycleGAN, we want geometric augmentations (flip, rotate, scale)
+        # For Translation (CycleGAN/CUT), we want geometric augmentations (flip, rotate, scale)
         # and sensor noise/intensity jitter, but NO blanket simulation!
         gan_aug_cfg = config["training"].get("augmentation", {}).copy()
         gan_aug_cfg["occlusion_prob"] = 0.0  # Disable mathematical blanket simulation
