@@ -44,12 +44,7 @@ def get_display_metadata_for_config(config: dict) -> dict:
         return {
             "charts": [
                 {"key": "loss", "label": "Generator Loss", "color": "primary"},
-                {
-                    "key": "val_loss",
-                    "label": "Val G Loss",
-                    "color": "lime",
-                    "dash": "5 3",
-                },
+                {"key": "val_loss", "label": "Val G Loss", "color": "lime", "dash": "5 3"},
                 {
                     "key": "cycle_loss",
                     "label": "Cycle Consistency",
@@ -75,12 +70,7 @@ def get_display_metadata_for_config(config: dict) -> dict:
         return {
             "charts": [
                 {"key": "loss", "label": "Pose Loss", "color": "primary"},
-                {
-                    "key": "adv_loss",
-                    "label": "Domain Adv",
-                    "color": "pink",
-                    "dash": "4 4",
-                },
+                {"key": "adv_loss", "label": "Domain Adv", "color": "pink", "dash": "4 4"},
                 {"key": "val_pck", "label": "Val PCK", "color": "lime", "dash": "5 3"},
             ],
             "highlights": [
@@ -100,12 +90,7 @@ def get_display_metadata_for_config(config: dict) -> dict:
         return {
             "charts": [
                 {"key": "loss", "label": "Train Loss", "color": "primary"},
-                {
-                    "key": "val_loss",
-                    "label": "Val Loss",
-                    "color": "lime",
-                    "dash": "5 3",
-                },
+                {"key": "val_loss", "label": "Val Loss", "color": "lime", "dash": "5 3"},
             ],
             "highlights": [
                 {
