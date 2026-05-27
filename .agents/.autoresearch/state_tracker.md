@@ -2,10 +2,10 @@
 
 - **Current Loop**: 47 (Single-Channel CycleGAN Domain Translation)
 - **Phase**: Phase 4 — Evaluation
-- **Status**: CycleGAN training launched via API client under run ID `loop47_cyclegan` with optimized batch size and memory speedups.
+- **Status**: CycleGAN training evaluated up to Epoch 60. Identified key bijective bottleneck (steganographic noise at Epoch 38, resolved by Epoch 60 convergence but highlighting structural limitations in simulating thick fabric).
 - **Absolute Priority**:
   1. **Record**: Loop 44 (**77.84% PCK@0.2**, **12.26 px MPJPE**) remains the ALL-TIME RECORD.
-  2. **Next Step**: Monitor `loop47_cyclegan` training progress and verify quality of monochromatic-to-replicated translations.
+  2. **Next Step**: Transition to **Contrastive Unpaired Translation (CUT)** (Loop 48) to eliminate bijective constraints and achieve realistic blanket fabric and thermal occlusion.
 - **Baseline**: Loop 44 (77.84% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
@@ -96,8 +96,8 @@ The fundamental loss-metric alignment problem has been resolved:
 | 44 | Stabilized ViTPose Fine-tuning (Fixed Structure + Disc. LR) | SUCCESS | **77.8%** | Bypassing class token to match COCO attention maps; backbone LR at 5e-6; stable sigma=3.0. Reached a new all-time record! |
 | 45 | Tuned Ghost Augmentation + ViTPose | IN PROGRESS | **77.8%** (E6) | Variable opacity (random multiplier 0.8-2.0, decay 0.3-0.9) and lower probability (0.2). Already matching record early on. |
 
-## Next Planned Steps (Post-Loop 43 Run)
+## Next Planned Steps (Post-Loop 47 Run)
 
-1. **Corrected & Stabilized Pre-trained ViTPose Fine-tuning (Loop 44)**: Remove class token from forward pass to resolve attention mismatch, implement a discriminative learning rate multiplier (backbone LR $\leq 5 \times 10^{-6}$), and train with a stable wide prior (`sigma = 3.0`).
-2. **Dense Spatial Neck Attention (JSSCA-v7)**: Build a stabilized dense Transformer Neck (Pre-LN + FFN) operating directly on multi-resolution Stage 4 feature maps of HRNet without spatial downsampling, bypassing the coordinate bottleneck while preserving key spatial priors.
-leneck while preserving key spatial priors.
+1. **Transition to Contrastive Unpaired Translation (Loop 48)**: Build and implement a CUT-based generator to replace CycleGAN, utilizing patchwise contrastive learning (InfoNCE loss) to model one-way, physically realistic thermal blanket simulation without strict cycle consistency.
+2. **Semi-Supervised Pose-Consistency Integration**: Combine CUT with the labeled pose estimator to enforce joint prediction alignment between uncovered inputs and synthetic covered translations.
+3. **MoE Modality Routing (Loop 49)**: Explore Mixture-of-Experts (MoE) for modality routing on the ViTPose backbone to handle clean IR and covered IR representations dynamically.
