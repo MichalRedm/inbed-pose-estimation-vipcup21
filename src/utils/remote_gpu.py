@@ -608,31 +608,44 @@ class GPUSession:
             remote_asset_path = f"{remote_dir}/{asset}"
             self.run(f"mkdir -p {remote_asset_path}", check=True)
             
-            # Get remote sizes
-            result = self.run(f"find {remote_asset_path} -type f -exec ls -l {{}} +", stream=False)
+            # Get remote metadata (size and mtime)
+            result = self.run(f"find {remote_asset_path} -type f -exec stat -c '%s %Y %n' {{}} +", stream=False)
             remote_files = {}
             for line in result.stdout.splitlines():
-                parts = line.split()
-                if len(parts) >= 9:
-                    size = int(parts[4])
-                    path = parts[8]
-                    # Get relative path to asset root
+                parts = line.split(maxsplit=2)
+                if len(parts) >= 3:
+                    size = int(parts[0])
+                    mtime = int(parts[1])
+                    path = parts[2]
                     rel_path = os.path.relpath(path, remote_dir).replace("\\", "/")
-                    remote_files[rel_path] = size
+                    remote_files[rel_path] = (size, mtime)
             
             # Upload missing or changed files
             for root, _, files in os.walk(local_asset_path):
                 for f in files:
                     l_path = os.path.join(root, f)
                     rel_path = os.path.relpath(l_path, local_dir).replace("\\", "/")
-                    l_size = os.path.stat(l_path).st_size
+                    stat = os.stat(l_path)
+                    l_size = stat.st_size
+                    l_mtime = int(stat.st_mtime)
                     
-                    if rel_path not in remote_files or remote_files[rel_path] != l_size:
+                    r_meta = remote_files.get(rel_path)
+                    # Check size OR if local is newer than remote (with 2s tolerance)
+                    needs_upload = False
+                    if not r_meta:
+                        needs_upload = True
+                    else:
+                        r_size, r_mtime = r_meta
+                        if l_size != r_size or l_mtime > (r_mtime + 2):
+                            needs_upload = True
+                    
+                    if needs_upload:
                         r_path = f"{remote_dir}/{rel_path}"
                         print(f"  Uploading {rel_path} ({l_size / 1024 / 1024:.1f} MB)...")
-                        # Ensure remote subdirectory exists
                         self.run(f"mkdir -p {os.path.dirname(r_path)}", stream=False)
                         self.upload(l_path, r_path, recursive=False)
+                        # Sync mtime back to remote so future checks work
+                        self.run(f"touch -d @{l_mtime} {r_path}", stream=False)
 
         print(f"Project synced successfully to {remote_dir}")
 
