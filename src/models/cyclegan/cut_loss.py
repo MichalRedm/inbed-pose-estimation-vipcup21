@@ -6,7 +6,7 @@ class PatchSampleF(nn.Module):
     MLP used for projecting intermediate feature maps into a shared
     embedding space for Patchwise Contrastive Learning (CUT).
     """
-    def __init__(self, in_channels_list=[3, 64, 128, 256, 256], embed_dim=256):
+    def __init__(self, in_channels_list=[128, 256, 256, 256, 256], embed_dim=256):
         super().__init__()
         self.embed_dim = embed_dim
         

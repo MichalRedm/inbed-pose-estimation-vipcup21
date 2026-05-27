@@ -122,36 +122,33 @@ class GeneratorResNet(nn.Module):
                 x = x.repeat(1, 3, 1, 1)
             return x
 
-        features = [x]
+        features = []
 
         # Process through encoder and collect intermediate features
         feat_x = x
         for i, layer in enumerate(self.encoder):
             feat_x = layer(feat_x)
-            # After initial conv block (idx 3), first downsample (idx 6), second downsample (idx 9)
-            if i in [3, 6, 9]:
+            # After first downsample (idx 6) -> 128 channels
+            # After second downsample (idx 9) -> 256 channels
+            if i in [6, 9]:
                 features.append(feat_x)
 
-        # Process through first resblock
-        feat_x = self.resblocks[0](feat_x)
-        features.append(feat_x)
-
-        if encode_only:
-            return features
+        # Process through resblocks and collect deep features
+        for i in range(len(self.resblocks)):
+            feat_x = self.resblocks[i](feat_x)
+            # Collect after block 0, 4, 8 -> 256 channels each
+            if i in [0, 4, 8]:
+                features.append(feat_x)
+                if encode_only and len(features) == 5:
+                    return features
 
         if return_features:
-            # Process remaining resblocks
-            for i in range(1, len(self.resblocks)):
-                feat_x = self.resblocks[i](feat_x)
-
             out = self.decoder(feat_x)
             if out.shape[1] == 1:
                 out = out.repeat(1, 3, 1, 1)
-
             return out, features
         
-        # Standard full forward (redundant here but for completeness)
-        feat_x = self.resblocks[1:](feat_x)
+        # Standard full forward
         out = self.decoder(feat_x)
         if out.shape[1] == 1:
             out = out.repeat(1, 3, 1, 1)

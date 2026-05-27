@@ -3,8 +3,8 @@ training:
   epochs: 100
   batch_size: 8
   lr: 0.0002
-  lambda_gan: 1.0
-  lambda_nce: 1.0
+  lambda_gan: 2.0
+  lambda_nce: 0.5
   num_patches: 256
   pretrained_gan: true
   augmentation:
