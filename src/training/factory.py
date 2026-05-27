@@ -88,8 +88,8 @@ def create_trainer(
     criterion = nn.MSELoss()
 
     # 4. Decide Trainer Type
-    # Check if UDA is enabled in config
-    use_uda = config.get("training_type") == "uda" or uda_cfg.get("enabled", False)
+    training_type = config.get("training_type", "standard")
+    use_uda = training_type == "uda" or uda_cfg.get("enabled", False)
 
     if use_uda:
         # UDA Setup
