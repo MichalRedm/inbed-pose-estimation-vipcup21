@@ -287,6 +287,19 @@ def main():
                             )
                         continue
 
+                    # Check if remote file exists and has the same size
+                    remote_path = f"{remote_ckpt_dir}/{fname}"
+                    try:
+                        # Use sftp to check size
+                        sftp = gpu.open_sftp()
+                        remote_stat = sftp.stat(remote_path)
+                        sftp.close()
+                        if remote_stat.st_size == local_path.stat().st_size:
+                            print(f"[resume] Remote {fname} is already up-to-date. Skipping upload.")
+                            continue
+                    except Exception:
+                        pass # Remote file doesn't exist or error, proceed with upload
+
                     print(f"[resume] Uploading local {fname} to remote...")
                     try:
                         gpu.upload(
