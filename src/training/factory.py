@@ -6,6 +6,7 @@ from src.models import build_model
 from src.training.standard_trainer import StandardTrainer
 from src.training.uda_trainer import UDATrainer
 from src.training.cyclegan_trainer import CycleGANTrainer
+from src.training.cut_trainer import CUTTrainer
 from src.models.discriminator import DomainDiscriminator
 
 
@@ -92,8 +93,14 @@ def create_trainer(
     training_type = config.get("training_type", "standard")
     use_uda = training_type == "uda" or uda_cfg.get("enabled", False)
     use_cyclegan = training_type == "cyclegan" or train_cfg.get("cyclegan", False)
+    use_cut = training_type == "cut"
 
-    if use_cyclegan:
+    if use_cut:
+        trainer = CUTTrainer(
+            config=config, device=device, rank=rank, world_size=world_size
+        )
+        model = trainer.G
+    elif use_cyclegan:
         trainer = CycleGANTrainer(
             config=config, device=device, rank=rank, world_size=world_size
         )
@@ -132,7 +139,7 @@ def create_trainer(
             print("[Factory] Added uncertainty weighting parameters to optimizer")
 
     # 5. Finalize Optimizer — filter out frozen parameters and apply discriminative lr/uniform lr
-    if not use_cyclegan:
+    if not (use_cyclegan or use_cut):
         optimizer = build_optimizer(model, trainer, config, rank)
         trainer.optimizer = optimizer
 
@@ -140,6 +147,8 @@ def create_trainer(
         print(
             f"[Factory] Created UDATrainer (Lambda Adv: {uda_cfg.get('lambda_adv', 0.001)})"
         )
+    elif use_cut and rank == 0:
+        print("[Factory] Created CUTTrainer")
     elif use_cyclegan and rank == 0:
         print("[Factory] Created CycleGANTrainer")
     elif not use_uda and rank == 0:

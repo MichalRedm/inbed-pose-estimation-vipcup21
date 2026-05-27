@@ -113,12 +113,35 @@ class GeneratorResNet(nn.Module):
         except Exception as e:
             print(f"[Generator] Could not load pretrained weights: {e}")
 
-    def forward(self, x):
-        x = self.encoder(x)
-        x = self.resblocks(x)
-        x = self.decoder(x)
-        # Replicate to 3 channels to maintain compatibility with HRNet/ViTPose
-        # and prevent "color hallucinations" (R!=G!=B) in thermal domain.
-        if x.shape[1] == 1:
-            x = x.repeat(1, 3, 1, 1)
-        return x
+    def forward(self, x, return_features=False):
+        if not return_features:
+            x = self.encoder(x)
+            x = self.resblocks(x)
+            x = self.decoder(x)
+            if x.shape[1] == 1:
+                x = x.repeat(1, 3, 1, 1)
+            return x
+
+        features = [x]
+
+        # Process through encoder and collect intermediate features
+        feat_x = x
+        for i, layer in enumerate(self.encoder):
+            feat_x = layer(feat_x)
+            # After initial conv block (idx 3), first downsample (idx 6), second downsample (idx 9)
+            if i in [3, 6, 9]:
+                features.append(feat_x)
+
+        # Process through first resblock
+        feat_x = self.resblocks[0](feat_x)
+        features.append(feat_x)
+
+        # Process remaining resblocks
+        for i in range(1, len(self.resblocks)):
+            feat_x = self.resblocks[i](feat_x)
+
+        out = self.decoder(feat_x)
+        if out.shape[1] == 1:
+            out = out.repeat(1, 3, 1, 1)
+
+        return out, features
