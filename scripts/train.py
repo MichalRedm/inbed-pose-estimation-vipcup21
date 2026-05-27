@@ -146,19 +146,26 @@ def train():
 
     if is_distributed:
         if not dist.is_initialized():
-            dist.init_process_group(backend="nccl")
+            # Add a 10-minute timeout to synchronization barriers to prevent infinite hangs.
+            # If a GPU hangs, the other will timeout and crash, allowing Manager auto-retry to take over.
+            from datetime import timedelta
+
+            dist.init_process_group(
+                backend="nccl", timeout=timedelta(minutes=10)
+            )
         torch.cuda.set_device(local_rank)
         device = torch.device("cuda", local_rank)
     else:
         check_cuda()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if rank == 0:
-        mode = config.get("training_type", "standard").upper()
-        print(f"--- Starting {mode} Training ---")
-        print(
-            f"Device: {device} (Distributed: {is_distributed}, World Size: {world_size})"
-        )
+    try:
+        if rank == 0:
+            mode = config.get("training_type", "standard").upper()
+            print(f"--- Starting {mode} Training ---")
+            print(
+                f"Device: {device} (Distributed: {is_distributed}, World Size: {world_size})"
+            )
 
     # 5. Initialize Data
     s_train = dataset_cfg.get("subjects_train", [1, 30])
@@ -325,11 +332,12 @@ def train():
             if "total_steps" in state and hasattr(trainer, "total_steps"):
                 trainer.total_steps = state["total_steps"]
 
-    # 8. Start Training
-    trainer.fit(train_loader, val_loader)
+        # 8. Start Training
+        trainer.fit(train_loader, val_loader)
 
-    if is_distributed:
-        dist.destroy_process_group()
+    finally:
+        if is_distributed:
+            dist.destroy_process_group()
 
 
 if __name__ == "__main__":
