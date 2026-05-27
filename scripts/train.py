@@ -73,6 +73,9 @@ def train():
         "--uda", action="store_true", help="Enable Unsupervised Domain Adaptation"
     )
     parser.add_argument(
+        "--cyclegan", action="store_true", help="Enable CycleGAN Domain Translation"
+    )
+    parser.add_argument(
         "--lambda_adv", type=float, default=None, help="Adversarial weight"
     )
     parser.add_argument("--resume", action="store_true")
@@ -106,6 +109,12 @@ def train():
         config["uda"]["enabled"] = True
         if args.lambda_adv is not None:
             config["uda"]["lambda_adv"] = args.lambda_adv
+
+    if args.cyclegan:
+        config["training_type"] = "cyclegan"
+        if "training" not in config:
+            config["training"] = {}
+        config["training"]["cyclegan"] = True
 
     # Handle Run ID and Logging
     run_root = None
@@ -161,25 +170,84 @@ def train():
     model_name = model_cfg.get("name", "hrnet")
     in_channels = model_cfg.get(model_name, {}).get("in_channels", 1)
 
-    train_dataset = VIPCupDataset(
-        root=args.data_root,
-        subjects=range(s_train[0], s_train[1] + 1),
-        modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
-        split="train",
-        augmenter=augmenter,
-        image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
-        in_channels=in_channels,
-    )
-    val_dataset = VIPCupDataset(
-        root=args.data_root,
-        subjects=range(s_val[0], s_val[1] + 1),
-        modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
-        covers=dataset_cfg.get("covers", None),
-        split="valid",
-        image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
-        in_channels=in_channels,
-    )
-    collate_fn = collate_skip_none
+    if config.get("training", {}).get("cyclegan"):
+        from src.data.dataset import PairedDataset
+
+        # For CycleGAN, we want geometric augmentations (flip, rotate, scale)
+        # and sensor noise/intensity jitter, but NO blanket simulation!
+        gan_aug_cfg = config["training"].get("augmentation", {}).copy()
+        gan_aug_cfg["occlusion_prob"] = 0.0  # Disable mathematical blanket simulation
+        gan_aug_cfg["enabled"] = True
+        gan_augmenter = DataAugmenter(gan_aug_cfg)
+
+        # Domain A: Uncovered (Subjects 1-30)
+        ds_A = VIPCupDataset(
+            args.data_root,
+            subjects=range(1, 31),
+            covers=["uncover"],
+            modalities=["IR"],
+            split="train",
+            augmenter=gan_augmenter,
+            in_channels=3,
+            return_joints=False,
+        )
+        # Domain B: Covered (Subjects 31-80)
+        ds_B = VIPCupDataset(
+            args.data_root,
+            subjects=range(31, 81),
+            covers=["cover1", "cover2"],
+            modalities=["IR"],
+            split="train",
+            augmenter=gan_augmenter,
+            in_channels=3,
+            return_joints=False,
+        )
+        train_dataset = PairedDataset(ds_A, ds_B)
+
+        # Validation for CycleGAN (using small subset of training subjects for monitoring)
+        ds_A_val = VIPCupDataset(
+            args.data_root,
+            subjects=range(1, 6),
+            covers=["uncover"],
+            modalities=["IR"],
+            split="train",
+            in_channels=3,
+            return_joints=False,
+        )
+        ds_B_val = VIPCupDataset(
+            args.data_root,
+            subjects=range(31, 36),
+            covers=["cover1", "cover2"],
+            modalities=["IR"],
+            split="train",
+            in_channels=3,
+            return_joints=False,
+        )
+        val_dataset = PairedDataset(ds_A_val, ds_B_val)
+
+        collate_fn = (
+            None  # Standard collate is fine for PairedDataset returning tensors
+        )
+    else:
+        train_dataset = VIPCupDataset(
+            root=args.data_root,
+            subjects=range(s_train[0], s_train[1] + 1),
+            modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
+            split="train",
+            augmenter=augmenter,
+            image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
+            in_channels=in_channels,
+        )
+        val_dataset = VIPCupDataset(
+            root=args.data_root,
+            subjects=range(s_val[0], s_val[1] + 1),
+            modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
+            covers=dataset_cfg.get("covers", None),
+            split="valid",
+            image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
+            in_channels=in_channels,
+        )
+        collate_fn = collate_skip_none
 
     train_sampler = (
         torch.utils.data.DistributedSampler(train_dataset) if is_distributed else None

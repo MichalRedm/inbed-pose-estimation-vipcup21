@@ -11,6 +11,7 @@
 - [x] **Metrics**: PCK@0.5 (torso-relative) and MPJPE — standardized in `src/utils/pose.py`.
 - [x] **PCK-Based Checkpointing**: `BaseTrainer.compute_val_pck()` computes true PCK each epoch; `best_model.pth` saved at epoch of highest val PCK (not lowest combined loss).
 - [x] **Soft-Argmax Decoding**: Sub-pixel coordinate decoding in API and training evaluation; auto-selected per run.
+- [x] **CycleGAN Generator Optimization**: Refactored generator to output monochromatic 1-channel images (replicated to 3-channels) to prevent color hallucinations in thermal domain translation.
 
 ## Current Technical Debts / Open Issues
 

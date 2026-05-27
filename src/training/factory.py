@@ -5,6 +5,7 @@ import torch.optim as optim
 from src.models import build_model
 from src.training.standard_trainer import StandardTrainer
 from src.training.uda_trainer import UDATrainer
+from src.training.cyclegan_trainer import CycleGANTrainer
 from src.models.discriminator import DomainDiscriminator
 
 
@@ -90,8 +91,15 @@ def create_trainer(
     # 4. Decide Trainer Type
     training_type = config.get("training_type", "standard")
     use_uda = training_type == "uda" or uda_cfg.get("enabled", False)
+    use_cyclegan = training_type == "cyclegan" or train_cfg.get("cyclegan", False)
 
-    if use_uda:
+    if use_cyclegan:
+        trainer = CycleGANTrainer(
+            config=config, device=device, rank=rank, world_size=world_size
+        )
+        # For CycleGAN, 'model' returned by factory is G_AB (contained in trainer)
+        model = trainer.G_AB
+    elif use_uda:
         # UDA Setup
         discriminator = DomainDiscriminator(in_channels=480).to(device)
         optimizer_d = optim.Adam(
@@ -124,13 +132,16 @@ def create_trainer(
             print("[Factory] Added uncertainty weighting parameters to optimizer")
 
     # 5. Finalize Optimizer — filter out frozen parameters and apply discriminative lr/uniform lr
-    optimizer = build_optimizer(model, trainer, config, rank)
-    trainer.optimizer = optimizer
+    if not use_cyclegan:
+        optimizer = build_optimizer(model, trainer, config, rank)
+        trainer.optimizer = optimizer
 
     if use_uda and rank == 0:
         print(
             f"[Factory] Created UDATrainer (Lambda Adv: {uda_cfg.get('lambda_adv', 0.001)})"
         )
+    elif use_cyclegan and rank == 0:
+        print("[Factory] Created CycleGANTrainer")
     elif not use_uda and rank == 0:
         print("[Factory] Created StandardTrainer")
 

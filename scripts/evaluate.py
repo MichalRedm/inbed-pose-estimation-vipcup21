@@ -184,6 +184,102 @@ def evaluate(
 
     # Load config from checkpoint (run-specific, authoritative)
     config, state = load_run_config(checkpoint_path)
+
+    is_cyclegan = config.get("training_type") == "cyclegan" or config.get(
+        "training", {}
+    ).get("cyclegan", False)
+    if is_cyclegan:
+        rank = int(os.environ.get("RANK", -1))
+        if rank <= 0:
+            print(
+                "Detected CycleGAN domain translation model. Running translation visual audit..."
+            )
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        from src.models.cyclegan.generator import GeneratorResNet
+
+        input_shape = (3, 256, 256)
+        model = GeneratorResNet(input_shape, num_residual_blocks=6).to(device)
+
+        if state is None:
+            state = torch.load(checkpoint_path, map_location=device, weights_only=False)
+
+        state_dict = state.get("model_state_dict", state)
+        # Strip metadata keys
+        metadata_keys = ["decoding_config", "config", "best_optimized_pck"]
+        filtered_state = {k: v for k, v in state_dict.items() if k not in metadata_keys}
+        filtered_state = {
+            k.replace("module.", ""): v for k, v in filtered_state.items()
+        }
+
+        model.load_state_dict(filtered_state)
+        model.eval()
+
+        dataset_cfg = config.get("dataset", {})
+        data_root = data_root or dataset_cfg.get("root", "data/raw")
+
+        val_dataset = VIPCupDataset(
+            root=data_root,
+            subjects=range(1, 31),
+            covers=["uncover"],
+            modalities=dataset_cfg.get("modalities", ["IR"]),
+            split="train",
+            in_channels=3,
+            image_size=(256, 256),
+        )
+
+        audit_path = (
+            checkpoint_path.parent.parent / f"visual_audit_{checkpoint_path.stem}.png"
+        )
+
+        num_samples = min(5, len(val_dataset))
+        fig, axes = plt.subplots(num_samples, 2, figsize=(10, 5 * num_samples))
+        if num_samples == 1:
+            axes = [axes]
+
+        with torch.no_grad():
+            for i in range(num_samples):
+                sample = val_dataset[i]
+                img_t = sample["image"]
+                subj = sample["subject"]
+
+                img_input = (img_t * 2) - 1.0
+                img_input = img_input.unsqueeze(0).to(device)
+                fake_B = model(img_input)
+                fake_B = (fake_B.squeeze(0).cpu() + 1.0) / 2.0
+                fake_B = torch.clamp(fake_B, 0, 1)
+
+                axes[i][0].imshow(img_t.permute(1, 2, 0).numpy())
+                axes[i][0].set_title(f"Original (Uncovered) - Subj {subj}")
+                axes[i][0].axis("off")
+
+                axes[i][1].imshow(fake_B.permute(1, 2, 0).numpy())
+                axes[i][1].set_title("Generated (Covered)")
+                axes[i][1].axis("off")
+
+        plt.tight_layout()
+        plt.savefig(audit_path)
+        plt.close()
+
+        if rank <= 0:
+            print(f"CycleGAN Visual Audit saved to {audit_path}")
+            metrics = {
+                "model_type": "cyclegan",
+                "run_id": config.get("run_id", "loop47_cyclegan"),
+                "status": "success",
+                "visual_audit": str(
+                    audit_path.resolve().relative_to(project_root.resolve())
+                ),
+            }
+            if save_json:
+                save_path = Path(save_json)
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(save_path, "w") as f:
+                    json.dump(metrics, f, indent=4)
+                print(f"Results saved to {save_json}")
+            return metrics
+        return None
+
     dataset_cfg = config.get("dataset", {})
     image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
     data_root = data_root or dataset_cfg.get("root", "data/raw")

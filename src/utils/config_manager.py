@@ -33,12 +33,45 @@ def get_training_config():
 
 def get_display_metadata_for_config(config: dict) -> dict:
     """Heuristically determine display metadata based on config."""
+    train_cfg = config.get("training", {})
     uda_cfg = config.get("uda", {})
     training_type = config.get("training_type", "standard")
 
+    use_cyclegan = training_type == "cyclegan" or train_cfg.get("cyclegan", False)
     use_uda = training_type == "uda" or uda_cfg.get("enabled", False)
 
-    if use_uda:
+    if use_cyclegan:
+        return {
+            "charts": [
+                {"key": "loss", "label": "Generator Loss", "color": "primary"},
+                {
+                    "key": "val_loss",
+                    "label": "Val G Loss",
+                    "color": "lime",
+                    "dash": "5 3",
+                },
+                {
+                    "key": "cycle_loss",
+                    "label": "Cycle Consistency",
+                    "color": "lime",
+                    "dash": "2 2",
+                },
+                {
+                    "key": "adv_loss",
+                    "label": "Adversarial",
+                    "color": "pink",
+                    "dash": "4 4",
+                },
+            ],
+            "highlights": [
+                {"key": "loss", "label": "GENERATOR LOSS", "color": "primary"},
+                {"key": "cycle_loss", "label": "CYCLE LOSS", "color": "lime"},
+                {"key": "adv_loss", "label": "ADV LOSS", "color": "pink"},
+                {"key": "d_loss", "label": "DISC LOSS", "color": "coral"},
+            ],
+            "primary_metric": "loss",
+        }
+    elif use_uda:
         return {
             "charts": [
                 {"key": "loss", "label": "Pose Loss", "color": "primary"},

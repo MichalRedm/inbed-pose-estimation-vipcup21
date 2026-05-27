@@ -8,44 +8,43 @@ This log tracks our prioritized queue of future improvement hypotheses, synthesi
 
 Below is our prioritized queue of strictly **future** improvement hypotheses, ranked by Return on Investment (ROI)—defined as the combined probability of accuracy gains versus simplicity of implementation.
 
-### 1. CycleGAN-based Domain Translation (CycAug)
-*   **Hypothesis**: The current pipeline uses mathematical formulas to simulate blankets. Training a CycleGAN to translate images between the "uncovered" domain (Subjects 1-30) and the "covered" domain (Subjects 31-80) will generate highly realistic synthetic target data while preserving the ground-truth coordinates from the source images. This was the strategy used by the 2nd Runner-Up team (NFPUndercover) in the VIP Cup 2021.
-*   **Implementation**: Train a separate CycleGAN model on the unannotated 31-80 subset. Use the generator as an offline augmentation step or integrate it into `DataAugmenter`.
-*   **Small-Data Survival Tip**: Given only ~1,350 source and 2,250 target images, standard CycleGANs will overfit. Use a lightweight generator architecture, employ strong augmentations, and **initialize the GAN's feature extractors with standard ImageNet weights**. Even though ImageNet is RGB, the early Gabor filters act as a massive head-start for generating realistic thermal blanket textures.
-*   **ROI Status**: **HIGH (UDA Rank 1)** — Proven winning strategy, perfectly leverages the unused 31-80 dataset.
+### 1. Contrastive Unpaired Translation (CUT)
+*   **Hypothesis**: Standard CycleGAN training (Loop 47) enforces a strict bijective (one-to-one) constraint due to the cycle-consistency loss. This forces the model to perform "steganographic watermarking" (storing under-blanket pose details in high-frequency noise or stretching contrast to darken regions) to reconstruct the source image perfectly during the cycle. By replacing cycle-consistency with **Patchwise Contrastive Learning (InfoNCE Loss)**, we can achieve "one-way" translation (many-to-one mapping). This will completely resolve the high-frequency checkerboard grid noise and simple contrast-darkening, enabling physically realistic simulation of thermal blankets.
+*   **Implementation**: Discard the backward generator $G_{BA}$ and second discriminator $D_A$ (saving ~50% VRAM and accelerating training by **2x**). Add a patchwise contrastive loss over multi-layer feature maps extracted from the generator's encoder, maximizing mutual information between corresponding source and target patches.
+*   **ROI Status**: **VERY HIGH (ROI Rank 1)** — Directly addresses the fundamental mathematical constraint and steganographic failure modes identified during Loop 47.
 
 ### 2. Teacher-Student Self-Training (Pseudo-Labeling)
 *   **Hypothesis**: The model can learn from the unlabeled target distribution by generating its own labels. A teacher model trained on augmented source data (Subjects 1-30) predicts heatmaps on the unlabeled target data (Subjects 31-80). High-confidence predictions are converted to pseudo-labels to train the student model.
 *   **Implementation**: Modify the `train_loader` to yield unannotated batches. Maintain an Exponential Moving Average (EMA) teacher model. Apply consistency regularization between weakly-augmented and strongly-augmented views of the unannotated images.
 *   **Small-Data Survival Tip**: Early confirmation bias is fatal on small datasets. Combine this with **Cross-Modal Teacher Distillation**: train the Teacher model on the highly-accurate **RGB** SLP images to generate perfect pseudo-labels, then use those to train the IR Student model. Alternatively, ensure the Teacher is initialized with MS COCO weights + Channel Replication to guarantee strong structural priors.
-*   **ROI Status**: **HIGH (UDA Rank 2)** — Standard state-of-the-art technique for Semi-Supervised pose estimation.
+*   **ROI Status**: **HIGH (ROI Rank 2)** — Standard state-of-the-art technique for Semi-Supervised pose estimation.
 
 ### 3. ViTPose++ Mixture-of-Experts (MoE) for Modality Routing
 *   **Hypothesis**: Our Loop 44 ViTPose model proved that global attention solves the extremity occlusion problem (wrists/ankles reached ~67%, up from 47%). However, mixing clean IR and synthetically blanketed IR forces a single set of FFN weights to model two very different signal-to-noise distributions. Implementing a lightweight ViTPose++ style Mixture-of-Experts (MoE) in the FFN layers (e.g., one "clean" expert and one "occluded" expert) routed by a simple gating network will prevent capacity interference and push PCK past 80%.
 *   **Implementation**: Modify the `vitpose.py` encoder blocks to replace the standard MLP with a 2-expert MoE. Use the visibility/occlusion augmentation flag (or a simple linear probe on the patch tokens) to route tokens.
 *   **Small-Data Survival Tip**: MoE divides the already small dataset across multiple experts. Restrict the architecture to exactly 2 experts and share/freeze the early ViT stem layers to ensure stable feature extraction before routing.
-*   **ROI Status**: **HIGH (ROI Rank 1)** — Builds directly on our new state-of-the-art architecture.
+*   **ROI Status**: **HIGH (ROI Rank 3)** — Builds directly on our new state-of-the-art architecture.
 
 ### 4. Dense Spatial Neck Attention (JSSCA-v7)
 *   **Hypothesis**: If plain ViT architectures remain data-hungry or computationally heavy, return to the highly efficient HRNet framework but implement a dense Transformer Neck. Instead of pooling spatial features of heatmaps to $1\times 1$ tokens (which causes spatial information loss) or downsampling to 8x8 grids, operate a stabilized dense Transformer Neck (Pre-LN + FFN) directly on multi-resolution Stage 4 feature maps of HRNet without spatial downsampling, bypassing the coordinate bottleneck while preserving key spatial priors.
 *   **Implementation**: Create JSSCA-v7 module. Apply 2D spatial attention directly on Stage 4 features, and fuse them with skip-connections.
-*   **ROI Status**: **HIGH (ROI Rank 2)** — Best fallback if ViTPose MoE overfits.
+*   **ROI Status**: **HIGH (ROI Rank 4)** — Best fallback if ViTPose MoE overfits.
 
 ### 5. Fourier Domain Feature Alignment
 *   **Hypothesis**: While blankets distort spatial features significantly, certain frequency-domain signatures remain invariant between uncovered and covered thermal images. The winning VIP Cup team (Samaritan) used dual spatial and Fourier domain branches to achieve cross-domain robustness.
 *   **Implementation**: Add an auxiliary branch to the HRNet/ViTPose backbone that applies a 2D Fast Fourier Transform (FFT) to the input or early feature maps, enforcing feature alignment between Subjects 1-30 and 31-80 via a contrastive loss in the frequency domain.
 *   **Small-Data Survival Tip**: Frequency-domain alignment acts as a powerful mathematical prior that doesn't require learning new feature extractors from scratch, making it exceptionally well-suited for small datasets to prevent overfitting on spatial textures.
-*   **ROI Status**: **MEDIUM (UDA Rank 3)** — Highly effective but requires architectural refactoring and custom loss formulation.
+*   **ROI Status**: **MEDIUM (ROI Rank 5)** — Highly effective but requires architectural refactoring and custom loss formulation.
 
 ### 6. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
 *   **Hypothesis**: Instead of training top-down networks from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` research initiative. Fine-tune them directly on the SLP dataset.
 *   **Implementation**: Load `yolo11n-pose.pt` using the `ultralytics` API, map keypoint labels, and fine-tune on the SLP training split.
-*   **ROI Status**: **MEDIUM (ROI Rank 3)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
+*   **ROI Status**: **MEDIUM (ROI Rank 6)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
 
 ### 7. Grayscale COCO Pre-training
 *   **Hypothesis**: RGB-pretrained networks suffer from feature washout because the first-layer filters are optimized for color edges. Pre-training the backbone on grayscale-converted MS COCO before pose fine-tuning aligns weight statistics, creating robust monochromatic priors.
 *   **Implementation**: Convert COCO images to grayscale and pre-train the ViT or HRNet backbone on COCO keypoints before SLP fine-tuning.
-*   **ROI Status**: **MEDIUM (ROI Rank 4)** — High theoretical value, but requires large-scale dataset pipeline engineering.
+*   **ROI Status**: **MEDIUM (ROI Rank 7)** — High theoretical value, but requires large-scale dataset pipeline engineering.
 
 ---
 
@@ -64,6 +63,9 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 *   **Modality Pre-training & Grayscale COCO (2026-05-19 Web Research)**: In-depth survey of thermal/IR pose estimation literature (LLVIP-Pose, UCH-ThermalPose, OpenThermalPose) confirms that RGB-pretrained backbones undergo severe **feature washout** when the early 3-channel layers are averaged to 1-channel. The state-of-the-art recommendation is either **Channel Replication** ($R=G=B=IR$) or pre-training on grayscale-converted MS COCO to naturellement align weight statistics.
 *   **Cross-Modal Knowledge Distillation — Negative Transfer & Mitigations (2026-05-22 Web Research, post-Loop 32 post-mortem)**:
      - Even with output-level heatmap distillation (KL divergence) and linear decay, cross-modality distillation from RGB to IR fundamentally conflicts with physical occlusion augmentations (e.g., synthetic blankets). The RGB teacher models clear, uncovered pose distributions perfectly. When the student is fed heavily occluded IR images (simulated blankets) and forced to mimic the teacher's confident, clear-vision predictions, the student fails to learn the uncertainty and physical properties of the occlusion. It is effectively penalized for behaving like a thermal model under occlusion. SOTA cross-modal distillation is effective *only* when both modalities share similar occlusion states during training.
+*   **Contrastive Unpaired Translation & Bijective Steganography (2026-05-27 Web Research)**:
+     - **Steganography in Bijective GANs**: Cycle-consistency loss forces the model to retain all source details in the translated image. In extreme many-to-one translations (such as putting a blanket over a person), this forces the generator to hide under-blanket details in high-frequency "checkered" noise, degrading visual quality.
+     - **Patchwise Contrastive Learning (InfoNCE)**: Using InfoNCE loss on multi-layer patch activations maximizes mutual information between corresponding patches, allowing one-way (many-to-one) translations without steganographic watermarking, resulting in smooth, physically realistic blanket and fabric simulations.
 
 ---
 

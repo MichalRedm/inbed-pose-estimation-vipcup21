@@ -7,6 +7,8 @@ from src.utils import load_config
 class TestProjectInfrastructure(unittest.TestCase):
     def setUp(self):
         self.config = load_config()
+        if "model" in self.config and "vitpose" in self.config["model"]:
+            self.config["model"]["vitpose"]["pretrained_weights_path"] = None
 
     def test_model_creation(self):
         """Test if the model can be instantiated with default config via factory."""
@@ -16,7 +18,11 @@ class TestProjectInfrastructure(unittest.TestCase):
     def test_model_forward(self):
         """Test if the model forward pass produces correct heatmap dimensions."""
         model = build_model(self.config)
-        dummy_input = torch.randn(1, 1, 256, 256)
+        model_name = self.config.get("model", {}).get("name")
+        in_channels = (
+            self.config.get("model", {}).get(model_name, {}).get("in_channels", 1)
+        )
+        dummy_input = torch.randn(1, in_channels, 256, 256)
         output = model(dummy_input)
         # Expected Output: [Batch, Joints, HeatmapH, HeatmapW]
         # In our implementation, input 256 -> output 64

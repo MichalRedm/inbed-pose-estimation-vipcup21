@@ -8,35 +8,41 @@ dataset:
   root: "data/raw"
   kaggle_slug: "awsaf49/ieee-vip-cup-2021-train-val-dataset"
   modalities: ["IR"]
-  # Subject ranges (inclusive)
-  subjects_train: [1, 80]
+  subjects_train: [1, 80]         # Full 80-subject training set
   subjects_val: [81, 90]
   image_size: [256, 256]
 
 model:
-  name: "hrnet"
-  hrnet:
+  name: vitpose
+  vitpose:
+    pretrained: false
+    pretrained_weights_path: "pretrained_models/vitpose-b-multi-coco.pth"
     num_joints: 14
-    in_channels: 1 
-    architecture: "w32"
-    heatmap_size: [64, 64]
-    sigma: 2.0
+    in_channels: 3
 
 training:
+  epochs: 40
   batch_size: 16
-  epochs: 30
   lr: 0.0001
+  backbone_lr_ratio: 0.05         # 1e-4 * 0.05 = 5e-6 (Stable fine-tuning)
   weight_decay: 0.0001
-  lambda_anatomical: 0.5
-  warmup_epochs: 10
-  anatomical_mode: "hinge"
+  sigma_start: 3.0                # Wide stable Gaussian for heavy occlusions
+  sigma_end: 3.0                  # No curriculum decay to prevent peak collapse
   save_dir: "models/checkpoints"
   augmentation:
     enabled: true
-    occlusion_prob: 0.7
     flip_prob: 0.5
     rotation_range: [-30, 30]
     scaling_range: [0.8, 1.2]
+    translation: [0.10, 0.10]     # up to 10% random shift
+    occlusion_prob: 0.5           # physically realistic thermal blanket simulation
+    cutout_prob: 0.5              # structured cutout for robustness against occlusion
+    cutout_size_ratio: 0.35       # 35% of image dimension
+    intensity_jitter_prob: 0.5    # brightness/contrast attenuation
+    intensity_jitter_range: [0.55, 1.15]   # Multiplicative brightness scale
+    contrast_jitter_range: [0.5, 1.15]     # Contrast compression/expansion factor
+    sensor_noise_prob: 0.4        # Gaussian + salt-pepper noise
+    sensor_noise_sigma: [5, 12]    # Gaussian noise sigma range
 
 remote:
   use_remote: false

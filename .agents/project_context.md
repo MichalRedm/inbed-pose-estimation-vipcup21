@@ -38,6 +38,7 @@ Finalize and validate the production-grade architectural refactoring of the pose
 - [x] Evaluated and cataloged Loop 28 (Two-Sided Hinge + Local Soft-Argmax) failure modes, confirming Loop 27 as our production-grade baseline.
 - [x] Implemented, synchronized, and benchmarked COCO pre-trained ViTPose fine-tuning (Loop 43), diagnosing structural attention token mismatches and representation washouts.
 - [x] Discovered true dataset composition (Train: 1-30 annotated source, 31-80 unannotated target). Pivoting strategy to explore Semi-Supervised Learning (SSL) and true Unsupervised Domain Adaptation (UDA).
+- [x] Refactored CycleGAN generator (Loop 47) to enforce 1-channel monochromatic output for realistic thermal domain translation.
 
 ## Dashboard-Driven ML
 - **Real-time Monitoring**: All training and evaluation MUST be performed via the Dashboard API (see `ml_operations.md` rule).

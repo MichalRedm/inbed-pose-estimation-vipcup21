@@ -37,6 +37,7 @@ class VIPCupDataset(Dataset):
         augmenter: Optional[DataAugmenter] = None,
         image_size=(256, 256),
         in_channels: int = 1,
+        return_joints: bool = True,
     ):
         self.root = Path(root)
         self.split = split  # "train" or "valid"
@@ -52,6 +53,7 @@ class VIPCupDataset(Dataset):
         self.heatmap_size = (64, 64)  # HRNet output size
         self.sigma = 2.0
         self.in_channels = in_channels
+        self.return_joints = return_joints
 
         self.samples = self._prepare_samples()
         if self.subjects and not self.samples:
@@ -177,7 +179,7 @@ class VIPCupDataset(Dataset):
         else:
             image = Image.open(image_path).convert("RGB")
 
-        joints = sample["joints"].get(target_mod)
+        joints = sample["joints"].get(target_mod) if self.return_joints else None
 
         # Apply data augmentation if provided (affects both image and joints)
         image_source = None
@@ -208,10 +210,7 @@ class VIPCupDataset(Dataset):
 
         # Convert to tensor if not already (augmenter might return tensors or PIL)
         if not torch.is_tensor(image):
-            if target_mod == "IR":
-                image = v2.functional.to_image(image).float() / 255.0
-            else:
-                image = v2.functional.to_image(image).float() / 255.0
+            image = v2.functional.to_image(image).float() / 255.0
 
         if image_source is not None and not torch.is_tensor(image_source):
             image_source = v2.functional.to_image(image_source).float() / 255.0
@@ -300,3 +299,37 @@ class VIPCupDataset(Dataset):
             ]
 
         return torch.from_numpy(heatmaps)
+
+
+class PairedDataset(Dataset):
+    """
+    Wraps two datasets and returns pairs.
+    Useful for CycleGAN/unpaired translation.
+    """
+
+    def __init__(self, ds_a, ds_b):
+        self.ds_a = ds_a
+        self.ds_b = ds_b
+
+    def __len__(self):
+        return max(len(self.ds_a), len(self.ds_b))
+
+    def __getitem__(self, idx):
+        # Sample randomly from both to handle size mismatch
+        idx_a = torch.randint(0, len(self.ds_a), (1,)).item()
+        idx_b = torch.randint(0, len(self.ds_b), (1,)).item()
+
+        sample_a = self.ds_a[idx_a]
+        sample_b = self.ds_b[idx_b]
+
+        # Return just the images for CycleGAN
+        img_a = sample_a["image"]
+        img_b = sample_b["image"]
+
+        # Generator expects normalized [-1, 1] for Tanh output
+        if isinstance(img_a, torch.Tensor) and img_a.max() <= 1.0:
+            img_a = (img_a * 2.0) - 1.0
+        if isinstance(img_b, torch.Tensor) and img_b.max() <= 1.0:
+            img_b = (img_b * 2.0) - 1.0
+
+        return img_a, img_b

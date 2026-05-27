@@ -41,6 +41,11 @@ def main():
         "--uda", action="store_true", help="Run Adversarial Domain Adaptation training"
     )
     parser.add_argument(
+        "--cyclegan",
+        action="store_true",
+        help="Run CycleGAN domain translation training",
+    )
+    parser.add_argument(
         "--eval", action="store_true", help="Run evaluation immediately after training"
     )
     args_cli, other_args = parser.parse_known_args()
@@ -197,10 +202,11 @@ def main():
         # Otherwise (e.g. CycleGAN), use plain python as those scripts might not support DDP yet.
         if "train.py" in training_script:
             uda_flag = "--uda" if args_cli.uda else ""
+            cyclegan_flag = "--cyclegan" if args_cli.cyclegan else ""
             cmd = (
                 f"cd /root/project && {env_setup} && "
                 f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
-                f"{training_script} --data_root /root/project/data/raw {resume_flag} {run_id_flag} {uda_flag} {passthrough}"
+                f"{training_script} --data_root /root/project/data/raw {resume_flag} {run_id_flag} {uda_flag} {cyclegan_flag} {passthrough}"
             )
         else:
             cmd = (
