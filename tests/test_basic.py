@@ -7,6 +7,8 @@ from src.utils import load_config
 class TestProjectInfrastructure(unittest.TestCase):
     def setUp(self):
         self.config = load_config()
+        if "model" in self.config and "vitpose" in self.config["model"]:
+            self.config["model"]["vitpose"]["pretrained_weights_path"] = None
 
     def test_model_creation(self):
         """Test if the model can be instantiated with default config via factory."""
