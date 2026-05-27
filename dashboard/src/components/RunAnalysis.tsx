@@ -24,6 +24,21 @@ import {
 import { evaluateModel } from '../services/api';
 import type { RunDetails } from '../pages/Overview';
 
+interface ChartConfig {
+  key: string;
+  label: string;
+  color: string;
+  dash?: string;
+}
+
+interface HighlightConfig {
+  key: string;
+  label: string;
+  color: 'primary' | 'lime' | 'pink' | 'coral';
+  suffix?: string;
+  multiplier?: number;
+}
+
 interface RunAnalysisProps {
   details: RunDetails;
   isActive?: boolean;
@@ -36,16 +51,13 @@ interface RunAnalysisProps {
     adv_loss_history: number[];
     log_history: string[];
     current_metrics?: Record<string, number | string>;
-    history_dict?: Record<string, Record<string, number>>;
+    history_dict?: Record<string, Record<string, number | string | null>>;
+    display_metadata?: {
+      charts?: ChartConfig[];
+      highlights?: HighlightConfig[];
+      primary_metric?: string;
+    };
   };
-}
-
-interface HistoryMetrics {
-  val_pck?: number;
-  pck?: number;
-  val_loss?: number;
-  loss?: number;
-  [key: string]: number | undefined;
 }
 
 const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingStatus }) => {
@@ -56,46 +68,68 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
   // Local override set by "Re-evaluate"; falls back to prop data
   const [localEvalOverride, setLocalEvalOverride] = useState<RunDetails['evaluation'] | null>(null);
 
-  // Note: All local state (showLogs, localEvalOverride, etc.) is naturally reset 
-  // when the 'details.id' changes because the parent renders this component with a 'key={details.id}'.
-
   const evalResults = localEvalOverride ?? details.evaluation;
 
-  // Build chart data - Unify active and historical logic
+  // 1. Resolve Metadata
+  const displayMetadata = trainingStatus?.display_metadata || details.display_metadata;
+  
+  // Heuristic fallbacks if metadata is missing (legacy support)
+  const charts = displayMetadata?.charts || [
+    { key: 'loss', label: 'Train Loss', color: '#6a5fc1' },
+    { key: 'val_loss', label: 'Val Loss', color: '#c2ef4e', dash: '5 3' }
+  ];
+
+  const highlights = displayMetadata?.highlights || [
+    { key: 'val_pck', label: 'VALIDATION PCK', color: 'lime', suffix: '%', multiplier: 100 },
+    { key: 'loss', label: 'TRAIN LOSS', color: 'primary' }
+  ];
+
+  // Map backend color names to hex/vars
+  const colorMap: Record<string, string> = {
+    primary: '#6a5fc1',
+    lime: '#c2ef4e',
+    pink: '#fa7faa',
+    coral: '#ffb287',
+  };
+
+  // Build chart data
   const chartData = (() => {
-    // 1. Prefer active training status if it's currently running
-    if (isActive && trainingStatus?.loss_history && trainingStatus.loss_history.length > 0) {
-      const history = trainingStatus.loss_history;
-      const historyDict = trainingStatus.history_dict || {};
-      const total = trainingStatus.total_epochs || 30;
+    // 1. Prefer active training status
+    if (isActive && trainingStatus?.history_dict) {
+      const historyDict = trainingStatus.history_dict;
+      const epochs = Object.keys(historyDict).map(Number).sort((a, b) => a - b);
       
-      return history.map((loss, i) => {
-        const ep = i + 1;
-        // API dict keys become strings in JSON
-        const metrics = (historyDict[ep] || historyDict[String(ep)]) as HistoryMetrics | undefined || {};
-        return {
-          epoch: ep,
-          loss: loss ?? null,
-          val_loss: (metrics.val_loss ?? metrics.val_loss_pose) ?? null,
-          adv: trainingStatus.adv_loss_history?.[i] ?? null,
-        };
-      }).filter(d => d.epoch <= total);
+      return epochs.map(ep => {
+        const metrics = historyDict[ep] || historyDict[String(ep)] || {};
+        const entry: Record<string, number | null> = { epoch: ep };
+        charts.forEach((c: ChartConfig) => {
+          // Special handling for keys that might have multiple names
+          let val = metrics[c.key];
+          if (val === undefined && c.key === 'loss') val = metrics.loss_pose || metrics.train_loss;
+          if (val === undefined && c.key === 'val_loss') val = metrics.val_loss_pose;
+          
+          entry[c.key] = typeof val === 'number' ? val : null;
+        });
+        return entry;
+      });
     }
 
-    // 2. Fallback to historical data (most complete for finished runs)
+    // 2. Fallback to historical details.history
     if (details.history && details.history.length > 0) {
-      return details.history.map((h: Record<string, number>, i) => ({
-        epoch: h.epoch ?? (i + 1),
-        loss: h.loss ?? h.loss_pose ?? h.train_loss ?? null,
-        val_loss: h.val_loss ?? h.val_loss_pose ?? null,
-        adv: h.adv_loss ?? null,
-      }));
+      return details.history.map((h: Record<string, number>, i: number) => {
+        const entry: Record<string, number | null> = { epoch: h.epoch ?? (i + 1) };
+        charts.forEach((c: ChartConfig) => {
+          let val = h[c.key];
+          if (val === undefined && c.key === 'loss') val = h.loss_pose || h.train_loss;
+          if (val === undefined && c.key === 'val_loss') val = h.val_loss_pose;
+          entry[c.key] = typeof val === 'number' ? val : null;
+        });
+        return entry;
+      });
     }
     
     return [];
   })();
-
-  const hasAdvHistory = isActive && !!trainingStatus?.adv_loss_history;
 
   const handleRunEvaluation = async () => {
     setIsEvaluating(true);
@@ -145,39 +179,20 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
                     itemStyle={{ color: '#fff' }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="loss" 
-                    stroke="#c2ef4e" 
-                    strokeWidth={2.5} 
-                    dot={{ r: 3, fill: '#c2ef4e', strokeWidth: 0 }} 
-                    activeDot={{ r: 5 }} 
-                    animationDuration={300} 
-                    name="Train Loss" 
-                    connectNulls
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="val_loss" 
-                    stroke="#6a5fc1" 
-                    strokeWidth={2} 
-                    dot={{ r: 2, fill: '#6a5fc1', strokeWidth: 0 }} 
-                    strokeDasharray="5 3" 
-                    name="Val Loss" 
-                    connectNulls
-                  />
-                  {hasAdvHistory && (
+                  {charts.map((c) => (
                     <Line 
+                      key={c.key}
                       type="monotone" 
-                      dataKey="adv" 
-                      stroke="#fa7faa" 
-                      strokeWidth={1.5} 
-                      dot={{ r: 2, fill: '#fa7faa', strokeWidth: 0 }} 
-                      strokeDasharray="4 4" 
-                      name="Adv Loss" 
+                      dataKey={c.key} 
+                      stroke={colorMap[c.color] || c.color} 
+                      strokeWidth={c.key === (displayMetadata?.primary_metric || 'loss') ? 2.5 : 1.5} 
+                      dot={{ r: 2, fill: colorMap[c.color] || c.color, strokeWidth: 0 }} 
+                      strokeDasharray={c.dash}
+                      name={c.label} 
                       connectNulls
+                      animationDuration={300}
                     />
-                  )}
+                  ))}
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -206,48 +221,38 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
           {/* Sidebar Metrics (Active Only) */}
           {isActive && (
             <div className="flex-column" style={{ width: '280px', gap: '16px' }}>
-              <div className="glass highlight-card glow-lime" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>VALIDATION PCK</div>
-                <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-lime)', marginTop: '8px' }}>
-                  {(() => {
-                    const metrics = trainingStatus?.current_metrics || {};
-                    // Try current metrics first (if just finished)
-                    let pck: number | string | undefined = metrics.val_pck ?? metrics.pck;
-                    
-                    if (!pck && trainingStatus) {
-                      // Scan history backwards for latest available PCK
-                      const historyDict = trainingStatus.history_dict || {};
-                      const epochs = Object.keys(historyDict).map(Number).sort((a, b) => b - a);
-                      for (const ep of epochs) {
-                        const m = (historyDict[ep] || historyDict[String(ep)]) as HistoryMetrics | undefined;
-                        if (m && (m.val_pck !== undefined || m.pck !== undefined)) {
-                          pck = m.val_pck ?? m.pck;
-                          break;
-                        }
+              {(() => {
+                const metrics = trainingStatus?.current_metrics || {};
+                const historyDict = trainingStatus?.history_dict || {};
+                
+                return highlights.map((h: HighlightConfig, i: number) => {
+                  let val: number | string | null | undefined = metrics[h.key];
+                  // Heuristic for PCK if not in current batch metrics
+                  if (val === undefined && (h.key === 'val_pck' || h.key === 'pck')) {
+                    const epochs = Object.keys(historyDict).map(Number).sort((a, b) => b - a);
+                    for (const ep of epochs) {
+                      const m = historyDict[ep] || historyDict[String(ep)];
+                      if (m && (m.val_pck !== undefined || m.pck !== undefined)) {
+                        val = m.val_pck ?? m.pck;
+                        break;
                       }
                     }
-                    return pck ? `${(Number(pck) * 100).toFixed(2)}%` : '--';
-                  })()}
-                </div>
-              </div>
-              
-              <div className="glass highlight-card glow-purple" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>LAST EPOCH LOSS</div>
-                <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-primary)', marginTop: '8px' }}>
-                  {trainingStatus ? (
-                    (Number(trainingStatus.current_metrics?.loss) || Number(trainingStatus.current_metrics?.loss_pose) || 0).toFixed(4)
-                  ) : '--'}
-                </div>
-              </div>
+                  }
 
-              <div className="glass highlight-card glow-pink" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>SIGMA</div>
-                <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--accent-pink)', marginTop: '8px' }}>
-                  {trainingStatus ? (
-                    (Number(trainingStatus.current_metrics?.sigma) || 2.0).toFixed(3)
-                  ) : '--'}
-                </div>
-              </div>
+                  const displayVal = val !== undefined && val !== null
+                    ? (Number(val) * (h.multiplier || 1)).toFixed(h.key.includes('pck') ? 2 : 4) 
+                    : '--';
+
+                  return (
+                    <div key={i} className="glass highlight-card" style={{ padding: '20px', borderRadius: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                      <div className="micro-label" style={{ opacity: 0.6, fontSize: '0.65rem' }}>{h.label}</div>
+                      <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: colorMap[h.color] || h.color, marginTop: '8px' }}>
+                        {displayVal}{val !== undefined && val !== null ? h.suffix : ''}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           )}
         </div>
@@ -276,7 +281,7 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
               marginTop: '16px'
             }}>
               {Object.entries(trainingStatus.current_metrics)
-                .filter(([key]) => !['loss', 'train_loss', 'adv_loss', 'speed', 'eta', 'elapsed', 'val_pck', 'sigma'].includes(key))
+                .filter(([key]) => !['loss', 'loss_pose', 'train_loss', 'adv_loss', 'cycle_loss', 'id_loss', 'd_loss', 'speed', 'eta', 'elapsed', 'val_pck', 'pck', 'sigma'].includes(key))
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([key, value]) => (
                   <div key={key} style={{ 

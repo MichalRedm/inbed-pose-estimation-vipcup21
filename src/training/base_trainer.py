@@ -76,7 +76,31 @@ class BaseTrainer(ABC):
         """Append a JSON line to the stream file for real-time telemetry."""
         if not self.is_main or not self.streamer:
             return
+
+        # Inject display metadata periodically (start of epoch OR every 10% progress)
+        progress = data.get("progress", 0)
+        is_start = progress <= 0.01
+
+        if not hasattr(self, "_last_metadata_progress"):
+            self._last_metadata_progress = -1.0
+
+        # Send if it's the start, if we haven't sent it yet, or every 10% progress increment
+        if (
+            is_start
+            or not hasattr(self, "_metadata_sent")
+            or (progress - self._last_metadata_progress) >= 0.10
+        ):
+            data["display_metadata"] = self.get_display_metadata()
+            self._metadata_sent = True
+            self._last_metadata_progress = progress
+
         self.streamer.emit(data)
+
+    def get_display_metadata(self) -> Dict[str, Any]:
+        """Return hints for the frontend dashboard on how to display metrics."""
+        from src.utils import get_display_metadata_for_config
+
+        return get_display_metadata_for_config(self.config)
 
     @abstractmethod
     def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:

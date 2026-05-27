@@ -35,6 +35,9 @@ def main():
         "--run_id", type=str, default=None, help="Unique ID for this run"
     )
     parser.add_argument(
+        "--script", type=str, default="scripts/train.py", help="Script to run on remote"
+    )
+    parser.add_argument(
         "--uda", action="store_true", help="Run Adversarial Domain Adaptation training"
     )
     parser.add_argument(
@@ -188,13 +191,22 @@ def main():
 
         master_port = random.randint(20000, 29999)
 
-        training_script = "scripts/train.py"
-        uda_flag = "--uda" if args_cli.uda else ""
-        cmd = (
-            f"cd /root/project && {env_setup} && "
-            f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
-            f"{training_script} --data_root /root/project/data/raw {resume_flag} {run_id_flag} {uda_flag} {passthrough}"
-        )
+        training_script = args_cli.script
+
+        # If running the standard train.py, use torchrun for potential DDP support.
+        # Otherwise (e.g. CycleGAN), use plain python as those scripts might not support DDP yet.
+        if "train.py" in training_script:
+            uda_flag = "--uda" if args_cli.uda else ""
+            cmd = (
+                f"cd /root/project && {env_setup} && "
+                f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
+                f"{training_script} --data_root /root/project/data/raw {resume_flag} {run_id_flag} {uda_flag} {passthrough}"
+            )
+        else:
+            cmd = (
+                f"cd /root/project && {env_setup} && "
+                f"python3 {training_script} --data_dir /root/project/data/raw {resume_flag} {run_id_flag} {passthrough}"
+            )
 
         # --- Step 4: Smart Cleanup & State Tracking ---
         # Determine local and remote paths based on run_id
@@ -269,6 +281,21 @@ def main():
                                 f"Local {fname} is corrupted. Aborting resume upload to prevent overwriting healthy remote checkpoints."
                             )
                         continue
+
+                    # Check if remote file exists and has the same size
+                    remote_path = f"{remote_ckpt_dir}/{fname}"
+                    try:
+                        # Use sftp to check size
+                        sftp = gpu.open_sftp()
+                        remote_stat = sftp.stat(remote_path)
+                        sftp.close()
+                        if remote_stat.st_size == local_path.stat().st_size:
+                            print(
+                                f"[resume] Remote {fname} is already up-to-date. Skipping upload."
+                            )
+                            continue
+                    except Exception:
+                        pass  # Remote file doesn't exist or error, proceed with upload
 
                     print(f"[resume] Uploading local {fname} to remote...")
                     try:

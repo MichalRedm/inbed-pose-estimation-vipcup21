@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Any
 
 
 from src.utils import get_training_config
+from src.training.strategies import get_training_strategy
 
 project_root = Path(__file__).parent.parent.parent
 
@@ -23,6 +24,7 @@ class TrainingManager:
         self.log_history: List[str] = []
         self.status_message = "Idle"
         self.current_metrics: Dict[str, float] = {}
+        self.display_metadata: Dict[str, Any] = {}
         self.current_run_id: Optional[str] = None
         self.last_run_id: Optional[str] = self._detect_last_run_id()
         self._stop_event = threading.Event()
@@ -45,6 +47,12 @@ class TrainingManager:
             return latest_run.name
         except Exception:
             return None
+
+    def _get_initial_display_metadata(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Heuristically determine display metadata based on config before training starts."""
+        from src.utils.config_manager import get_display_metadata_for_config
+
+        return get_display_metadata_for_config(config)
 
     def start_training(self, config_overrides: Optional[Dict] = None):
         config_overrides = config_overrides or {}
@@ -115,6 +123,8 @@ class TrainingManager:
         self._stop_event.clear()
         self.log_history = []
         self.progress = 0.0
+        self.current_metrics = {}
+        self.display_metadata = self._get_initial_display_metadata(final_config)
         self.total_epochs = final_config.get("training", {}).get("epochs", 0)
 
         # Load existing history if resuming
@@ -180,7 +190,12 @@ class TrainingManager:
 
             # Update current metrics
             for k, v in metrics.items():
-                if k not in ["epoch", "progress", "is_summary"]:
+                if k == "display_metadata":
+                    self.display_metadata = v
+                    self.log_history.append(
+                        f"[{time.strftime('%H:%M:%S')}] [Manager] Received display metadata: {list(v.get('loss_labels', {}).keys())}"
+                    )
+                elif k not in ["epoch", "progress", "is_summary"]:
                     self.current_metrics[k] = v
 
             self.current_epoch = metrics.get("epoch", self.current_epoch)
@@ -266,6 +281,7 @@ class TrainingManager:
             "log_history": self.log_history,
             "status_message": self.status_message,
             "current_metrics": self.current_metrics,
+            "display_metadata": self.display_metadata,
         }
 
     def _load_history_dict(self) -> Dict[int, Dict[str, float]]:
@@ -289,6 +305,8 @@ class TrainingManager:
 
                             def sanitize(val):
                                 try:
+                                    if val is None:
+                                        return None
                                     f_val = float(val)
                                     return (
                                         None
@@ -298,11 +316,9 @@ class TrainingManager:
                                 except Exception:
                                     return None
 
+                            # Store all metrics for this epoch
                             result[ep] = {
-                                "loss": sanitize(
-                                    entry.get("loss", entry.get("train_loss", 0.0))
-                                ),
-                                "adv_loss": sanitize(entry.get("adv_loss", 0.0)),
+                                k: sanitize(v) for k, v in entry.items() if k != "epoch"
                             }
                         return result
         except Exception as e:
@@ -364,6 +380,13 @@ class TrainingManager:
                 if self._stop_event.is_set():
                     break
 
+                strategy = get_training_strategy(config_overrides)
+                is_resume = (
+                    retry_count > 0
+                    or config_overrides.get("training", {}).get("resume", False)
+                    or config_overrides.get("resume", False)
+                )
+
                 if is_remote:
                     if retry_count > 0:
                         self.status_message = f"Reconnecting and resuming (attempt {retry_count}/{max_retries})..."
@@ -375,26 +398,33 @@ class TrainingManager:
                         "-u",
                         str(project_root / "scripts" / "remote_train.py"),
                     ]
+
+                    # Pass the script path relative to project root to remote_train.py
+                    script_path = strategy.get_script_path(project_root)
+                    cmd.extend(
+                        [
+                            "--script",
+                            str(script_path.relative_to(project_root).as_posix()),
+                        ]
+                    )
                 else:
                     self.status_message = "Starting local training..."
                     cmd = [
                         sys.executable,
                         "-u",
-                        str(project_root / "scripts" / "train.py"),
+                        str(strategy.get_script_path(project_root)),
                     ]
 
-                if self.current_run_id:
-                    cmd.extend(["--run_id", self.current_run_id])
+                # Add common arguments via strategy
+                cmd.extend(
+                    strategy.get_args(config_overrides, self.current_run_id, is_resume)
+                )
 
                 # Use the frozen config for the run
                 relative_config_path = self.frozen_config_path.relative_to(
                     project_root
                 ).as_posix()
                 cmd.extend(["--config", relative_config_path])
-
-                # If this is a retry, force `--resume` flag to ensure we resume training rather than clean start
-                if retry_count > 0 and "--resume" not in cmd:
-                    cmd.append("--resume")
 
                 print(
                     f"[TrainingManager] Using config: {relative_config_path} (Attempt {retry_count + 1})"

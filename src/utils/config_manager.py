@@ -31,6 +31,64 @@ def get_training_config():
     return training_defaults
 
 
+def get_display_metadata_for_config(config: dict) -> dict:
+    """Heuristically determine display metadata based on config."""
+    uda_cfg = config.get("uda", {})
+    training_type = config.get("training_type", "standard")
+
+    use_uda = training_type == "uda" or uda_cfg.get("enabled", False)
+
+    if use_uda:
+        return {
+            "charts": [
+                {"key": "loss", "label": "Pose Loss", "color": "primary"},
+                {
+                    "key": "adv_loss",
+                    "label": "Domain Adv",
+                    "color": "pink",
+                    "dash": "4 4",
+                },
+                {"key": "val_pck", "label": "Val PCK", "color": "lime", "dash": "5 3"},
+            ],
+            "highlights": [
+                {
+                    "key": "val_pck",
+                    "label": "VALIDATION PCK",
+                    "color": "lime",
+                    "suffix": "%",
+                    "multiplier": 100,
+                },
+                {"key": "loss", "label": "POSE LOSS", "color": "primary"},
+                {"key": "adv_loss", "label": "DOMAIN ADV", "color": "pink"},
+            ],
+            "primary_metric": "val_pck",
+        }
+    else:
+        return {
+            "charts": [
+                {"key": "loss", "label": "Train Loss", "color": "primary"},
+                {
+                    "key": "val_loss",
+                    "label": "Val Loss",
+                    "color": "lime",
+                    "dash": "5 3",
+                },
+            ],
+            "highlights": [
+                {
+                    "key": "val_pck",
+                    "label": "VALIDATION PCK",
+                    "color": "lime",
+                    "suffix": "%",
+                    "multiplier": 100,
+                },
+                {"key": "loss", "label": "TRAIN LOSS", "color": "primary"},
+                {"key": "sigma", "label": "SIGMA", "color": "pink"},
+            ],
+            "primary_metric": "val_pck",
+        }
+
+
 def save_training_config(config):
     """
     Save training configuration overrides to user_training.json.

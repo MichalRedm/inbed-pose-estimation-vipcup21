@@ -502,12 +502,17 @@ class GPUSession:
     ):
         """
         Sync local code to the remote GPU, excluding data, venv, and git.
+        Optimized to avoid redundant large uploads.
         """
         import shutil
         import tempfile
         import tarfile
+        import hashlib
 
-        # 1. Prepare a clean temporary directory with only the necessary files
+        # 1. Determine which large assets to sync separately (size-check based)
+        large_assets = ["pretrained_models"]
+
+        # 2. Prepare a clean temporary directory with only the necessary files
         with tempfile.TemporaryDirectory() as tmp_dir:
             target = os.path.join(tmp_dir, "sync_payload")
             os.makedirs(target)
@@ -517,7 +522,6 @@ class GPUSession:
                 "scripts",
                 "configs",
                 "data",
-                "pretrained_models",
                 "requirements.txt",
                 "README.md",
                 "gpu_connection.json",
@@ -549,24 +553,108 @@ class GPUSession:
                 else:
                     shutil.copy2(src_path, dst_path)
 
-            # 2. Package into a tarball
-            archive_path = os.path.join(tmp_dir, "project.tar.gz")
-            with tarfile.open(archive_path, "w:gz") as tar:
-                tar.add(target, arcname=".")
+            # 3. Compute hash of the 'code' payload to see if it changed
+            # We use a simple hash of all filenames and their mtimes/sizes
+            hasher = hashlib.md5()
+            for root, _, files in os.walk(target):
+                for f in sorted(files):
+                    fpath = os.path.join(root, f)
+                    stat = os.stat(fpath)
+                    hasher.update(f.encode())
+                    hasher.update(str(stat.st_size).encode())
+                    hasher.update(str(stat.st_mtime).encode())
 
-            # 3. Create remote dir and upload
-            self.run(f"mkdir -p {remote_dir}", check=True)
-            print(
-                f"Uploading project tarball ({os.path.getsize(archive_path) / 1024 / 1024:.1f} MB)..."
-            )
-            self.upload(archive_path, f"{remote_dir}/project.tar.gz", recursive=False)
+            project_hash = hasher.hexdigest()
+            remote_hash_path = f"{remote_dir}/.project_hash"
 
-            # 4. Extract on remote
-            print("Extracting project on remote...")
-            self.run(
-                f"cd {remote_dir} && tar -xzf project.tar.gz && rm project.tar.gz",
-                check=True,
+            # Check if remote project is identical
+            try:
+                remote_hash = self.read_file(remote_hash_path).strip()
+            except Exception:
+                remote_hash = None
+
+            if remote_hash == project_hash:
+                print(
+                    f"Project code is already up-to-date on remote ({project_hash[:8]}). Skipping upload."
+                )
+            else:
+                # 4. Package into a tarball
+                archive_path = os.path.join(tmp_dir, "project.tar.gz")
+                with tarfile.open(archive_path, "w:gz") as tar:
+                    tar.add(target, arcname=".")
+
+                # 5. Create remote dir and upload
+                self.run(f"mkdir -p {remote_dir}", check=True)
+                print(
+                    f"Uploading project tarball ({os.path.getsize(archive_path) / 1024 / 1024:.2f} MB)..."
+                )
+                self.upload(
+                    archive_path, f"{remote_dir}/project.tar.gz", recursive=False
+                )
+
+                # 6. Extract on remote
+                print("Extracting project on remote...")
+                self.run(
+                    f"cd {remote_dir} && tar -xzf project.tar.gz && rm project.tar.gz",
+                    check=True,
+                )
+
+                # Update remote hash
+                self.write_file(remote_hash_path, project_hash)
+
+        # 7. Sync large assets separately (only if size differs)
+        for asset in large_assets:
+            local_asset_path = os.path.join(local_dir, asset)
+            if not os.path.exists(local_asset_path):
+                continue
+
+            print(f"Syncing large asset: {asset}...")
+            remote_asset_path = f"{remote_dir}/{asset}"
+            self.run(f"mkdir -p {remote_asset_path}", check=True)
+
+            # Get remote metadata (size and mtime)
+            result = self.run(
+                f"find {remote_asset_path} -type f -exec stat -c '%s %Y %n' {{}} +",
+                stream=False,
             )
+            remote_files = {}
+            for line in result.stdout.splitlines():
+                parts = line.split(maxsplit=2)
+                if len(parts) >= 3:
+                    size = int(parts[0])
+                    mtime = int(parts[1])
+                    path = parts[2]
+                    rel_path = os.path.relpath(path, remote_dir).replace("\\", "/")
+                    remote_files[rel_path] = (size, mtime)
+
+            # Upload missing or changed files
+            for root, _, files in os.walk(local_asset_path):
+                for f in files:
+                    l_path = os.path.join(root, f)
+                    rel_path = os.path.relpath(l_path, local_dir).replace("\\", "/")
+                    stat = os.stat(l_path)
+                    l_size = stat.st_size
+                    l_mtime = int(stat.st_mtime)
+
+                    r_meta = remote_files.get(rel_path)
+                    # Check size OR if local is newer than remote (with 2s tolerance)
+                    needs_upload = False
+                    if not r_meta:
+                        needs_upload = True
+                    else:
+                        r_size, r_mtime = r_meta
+                        if l_size != r_size or l_mtime > (r_mtime + 2):
+                            needs_upload = True
+
+                    if needs_upload:
+                        r_path = f"{remote_dir}/{rel_path}"
+                        print(
+                            f"  Uploading {rel_path} ({l_size / 1024 / 1024:.1f} MB)..."
+                        )
+                        self.run(f"mkdir -p {os.path.dirname(r_path)}", stream=False)
+                        self.upload(l_path, r_path, recursive=False)
+                        # Sync mtime back to remote so future checks work
+                        self.run(f"touch -d @{l_mtime} {r_path}", stream=False)
 
         print(f"Project synced successfully to {remote_dir}")
 

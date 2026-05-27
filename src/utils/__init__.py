@@ -1,5 +1,9 @@
 from .config_loader import load_config
-from .config_manager import get_training_config, save_training_config
+from .config_manager import (
+    get_training_config,
+    save_training_config,
+    get_display_metadata_for_config,
+)
 from .remote_gpu import GPUManager, GPUSession, BackendConfig
 
 try:
@@ -20,6 +24,7 @@ __all__ = [
     "load_config",
     "get_training_config",
     "save_training_config",
+    "get_display_metadata_for_config",
     "GPUManager",
     "GPUSession",
     "BackendConfig",

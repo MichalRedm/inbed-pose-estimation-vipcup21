@@ -289,6 +289,12 @@ async def get_run_details(run_id: str):
         if (run_path / f_name).exists():
             with open(run_path / f_name, "r") as f:
                 details[key] = json.load(f)
+
+    # Add display metadata for frontend
+    if "config" in details:
+        from src.utils.config_manager import get_display_metadata_for_config
+
+        details["display_metadata"] = get_display_metadata_for_config(details["config"])
     eval_file = next(
         (
             f

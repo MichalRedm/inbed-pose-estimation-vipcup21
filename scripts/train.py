@@ -73,7 +73,7 @@ def train():
         "--uda", action="store_true", help="Enable Unsupervised Domain Adaptation"
     )
     parser.add_argument(
-        "--lambda_adv", type=float, default=None, help="UDA Adversarial weight"
+        "--lambda_adv", type=float, default=None, help="Adversarial weight"
     )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--run_id", type=str, default=None)
@@ -179,6 +179,7 @@ def train():
         image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
         in_channels=in_channels,
     )
+    collate_fn = collate_skip_none
 
     train_sampler = (
         torch.utils.data.DistributedSampler(train_dataset) if is_distributed else None
@@ -188,14 +189,14 @@ def train():
         batch_size=config["training"].get("batch_size", 16),
         shuffle=(train_sampler is None),
         sampler=train_sampler,
-        collate_fn=collate_skip_none,
+        collate_fn=collate_fn,
         num_workers=4 if os.name != "nt" else 0,
     )
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=config["training"].get("batch_size", 16),
         shuffle=False,
-        collate_fn=collate_skip_none,
+        collate_fn=collate_fn,
         num_workers=4 if os.name != "nt" else 0,
     )
 
