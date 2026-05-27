@@ -77,7 +77,7 @@ class CUTTrainer(BaseTrainer):
         feat_k = [f.detach() for f in feat_k]
         
         # Features of generated fake_B
-        _, feat_q = self.G(fake_B, return_features=True)
+        feat_q = self.G(fake_B, encode_only=True)
 
         # GAN Loss
         pred_fake = self.D(fake_B)
@@ -91,7 +91,7 @@ class CUTTrainer(BaseTrainer):
         # Identity NCE Loss (Domain B -> Domain B)
         idt_B, feat_k_idt = self.G(real_B, return_features=True)
         feat_k_idt = [f.detach() for f in feat_k_idt]
-        _, feat_q_idt = self.G(idt_B, return_features=True)
+        feat_q_idt = self.G(idt_B, encode_only=True)
 
         pool_q_idt, patch_ids_idt = self.F(feat_q_idt, num_patches=self.num_patches)
         pool_k_idt, _ = self.F(feat_k_idt, patch_ids=patch_ids_idt)
@@ -134,7 +134,7 @@ class CUTTrainer(BaseTrainer):
         with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
             fake_B, feat_k = self.G(real_A, return_features=True)
             feat_k = [f.detach() for f in feat_k]
-            _, feat_q = self.G(fake_B, return_features=True)
+            feat_q = self.G(fake_B, encode_only=True)
 
             loss_G_GAN = self.criterion_GAN(self.D(fake_B), True) * self.lambda_gan
 
@@ -144,7 +144,7 @@ class CUTTrainer(BaseTrainer):
 
             idt_B, feat_k_idt = self.G(real_B, return_features=True)
             feat_k_idt = [f.detach() for f in feat_k_idt]
-            _, feat_q_idt = self.G(idt_B, return_features=True)
+            feat_q_idt = self.G(idt_B, encode_only=True)
 
             pool_q_idt, patch_ids_idt = self.F(feat_q_idt, num_patches=self.num_patches)
             pool_k_idt, _ = self.F(feat_k_idt, patch_ids=patch_ids_idt)
