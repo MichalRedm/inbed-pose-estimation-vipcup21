@@ -113,7 +113,7 @@ class GeneratorResNet(nn.Module):
         except Exception as e:
             print(f"[Generator] Could not load pretrained weights: {e}")
 
-    def forward(self, x, return_features=False, encode_only=False):
+    def forward(self, x, return_features=False, encode_only=False, nce_layers=None):
         if not return_features and not encode_only:
             x = self.encoder(x)
             x = self.resblocks(x)
@@ -139,8 +139,12 @@ class GeneratorResNet(nn.Module):
             # Collect after block 0, 4, 8 -> 256 channels each
             if i in [0, 4, 8]:
                 features.append(feat_x)
-                if encode_only and len(features) == 5:
-                    return features
+
+        if nce_layers is not None:
+            features = [features[i] for i in nce_layers]
+
+        if encode_only:
+            return features
 
         if return_features:
             out = self.decoder(feat_x)

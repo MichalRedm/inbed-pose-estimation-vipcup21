@@ -30,7 +30,12 @@ class CUTTrainer(BaseTrainer):
             input_shape, num_residual_blocks=9, pretrained=pretrained
         ).to(device)
         self.D = Discriminator(input_shape).to(device)
-        self.F = PatchSampleF().to(device)
+        # Determine NCE layers and corresponding channels
+        self.nce_layers = config.get("training", {}).get("nce_layers", [0, 1, 2, 3, 4])
+        default_channels = [128, 256, 256, 256, 256]
+        in_channels_list = [default_channels[i] for i in self.nce_layers]
+
+        self.F = PatchSampleF(in_channels_list=in_channels_list).to(device)
 
         super().__init__(self.G, config, device, rank, world_size)
 
@@ -42,6 +47,7 @@ class CUTTrainer(BaseTrainer):
         self.lambda_nce = train_cfg.get("lambda_nce", 1.0)
         self.lambda_gan = train_cfg.get("lambda_gan", 1.0)
         self.num_patches = train_cfg.get("num_patches", 256)
+        self.use_nce_idt = train_cfg.get("use_nce_idt", False)
 
         # Losses
         self.criterion_GAN = GANLoss().to(device)
@@ -71,12 +77,12 @@ class CUTTrainer(BaseTrainer):
         #  Generator
         # ------------------
         # G(A) -> B
-        fake_B, feat_k = self.G(real_A, return_features=True)
+        fake_B, feat_k = self.G(real_A, return_features=True, nce_layers=self.nce_layers)
         # We detach feat_k to prevent gradients flowing into the encoder for the target
         feat_k = [f.detach() for f in feat_k]
 
         # Features of generated fake_B
-        feat_q = self.G(fake_B, encode_only=True)
+        feat_q = self.G(fake_B, encode_only=True, nce_layers=self.nce_layers)
 
         # GAN Loss
         pred_fake = self.D(fake_B)
@@ -88,13 +94,16 @@ class CUTTrainer(BaseTrainer):
         loss_NCE = self.criterion_NCE(pool_q, pool_k) * self.lambda_nce
 
         # Identity NCE Loss (Domain B -> Domain B)
-        idt_B, feat_k_idt = self.G(real_B, return_features=True)
-        feat_k_idt = [f.detach() for f in feat_k_idt]
-        feat_q_idt = self.G(idt_B, encode_only=True)
+        if self.use_nce_idt:
+            idt_B, feat_k_idt = self.G(real_B, return_features=True, nce_layers=self.nce_layers)
+            feat_k_idt = [f.detach() for f in feat_k_idt]
+            feat_q_idt = self.G(idt_B, encode_only=True, nce_layers=self.nce_layers)
 
-        pool_q_idt, patch_ids_idt = self.F(feat_q_idt, num_patches=self.num_patches)
-        pool_k_idt, _ = self.F(feat_k_idt, patch_ids=patch_ids_idt)
-        loss_NCE_idt = self.criterion_NCE(pool_q_idt, pool_k_idt) * self.lambda_nce
+            pool_q_idt, patch_ids_idt = self.F(feat_q_idt, num_patches=self.num_patches)
+            pool_k_idt, _ = self.F(feat_k_idt, patch_ids=patch_ids_idt)
+            loss_NCE_idt = self.criterion_NCE(pool_q_idt, pool_k_idt) * self.lambda_nce
+        else:
+            loss_NCE_idt = torch.tensor(0.0, device=self.device)
 
         loss_G = loss_G_GAN + loss_NCE + loss_NCE_idt
 
@@ -133,9 +142,9 @@ class CUTTrainer(BaseTrainer):
         with torch.amp.autocast(
             device_type=device_type, dtype=torch.float16, enabled=use_amp
         ):
-            fake_B, feat_k = self.G(real_A, return_features=True)
+            fake_B, feat_k = self.G(real_A, return_features=True, nce_layers=self.nce_layers)
             feat_k = [f.detach() for f in feat_k]
-            feat_q = self.G(fake_B, encode_only=True)
+            feat_q = self.G(fake_B, encode_only=True, nce_layers=self.nce_layers)
 
             loss_G_GAN = self.criterion_GAN(self.D(fake_B), True) * self.lambda_gan
 
@@ -143,13 +152,16 @@ class CUTTrainer(BaseTrainer):
             pool_k, _ = self.F(feat_k, patch_ids=patch_ids)
             loss_NCE = self.criterion_NCE(pool_q, pool_k) * self.lambda_nce
 
-            idt_B, feat_k_idt = self.G(real_B, return_features=True)
-            feat_k_idt = [f.detach() for f in feat_k_idt]
-            feat_q_idt = self.G(idt_B, encode_only=True)
+            if self.use_nce_idt:
+                idt_B, feat_k_idt = self.G(real_B, return_features=True, nce_layers=self.nce_layers)
+                feat_k_idt = [f.detach() for f in feat_k_idt]
+                feat_q_idt = self.G(idt_B, encode_only=True, nce_layers=self.nce_layers)
 
-            pool_q_idt, patch_ids_idt = self.F(feat_q_idt, num_patches=self.num_patches)
-            pool_k_idt, _ = self.F(feat_k_idt, patch_ids=patch_ids_idt)
-            loss_NCE_idt = self.criterion_NCE(pool_q_idt, pool_k_idt) * self.lambda_nce
+                pool_q_idt, patch_ids_idt = self.F(feat_q_idt, num_patches=self.num_patches)
+                pool_k_idt, _ = self.F(feat_k_idt, patch_ids=patch_ids_idt)
+                loss_NCE_idt = self.criterion_NCE(pool_q_idt, pool_k_idt) * self.lambda_nce
+            else:
+                loss_NCE_idt = torch.tensor(0.0, device=self.device)
 
             loss_G = loss_G_GAN + loss_NCE + loss_NCE_idt
 
