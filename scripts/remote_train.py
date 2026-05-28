@@ -318,13 +318,31 @@ def main():
                     except Exception:
                         pass  # Remote file doesn't exist or error, proceed with upload
 
-                    print(f"[resume] Uploading local {fname} to remote...")
+                    print(f"[resume] Uploading local {fname} to remote ({local_path.stat().st_size // 1_000_000} MB)...")
                     try:
-                        gpu.upload(
-                            str(local_path),
-                            f"{remote_ckpt_dir}/{fname}",
-                            recursive=False,
-                        )
+                        # Use SFTP directly with a progress callback so stdout stays live
+                        # (the manager's stop-event check fires on each printed line)
+                        _uploaded = [0]
+                        _last_reported = [0]
+                        _total = local_path.stat().st_size
+
+                        def _progress(transferred, total):
+                            _uploaded[0] = transferred
+                            mb_done = transferred // 10_000_000
+                            if mb_done > _last_reported[0]:
+                                _last_reported[0] = mb_done
+                                pct = int(100 * transferred / total) if total else 0
+                                print(
+                                    f"[resume] Uploading {fname}: {transferred // 1_000_000} MB / {total // 1_000_000} MB ({pct}%)",
+                                    flush=True,
+                                )
+
+                        sftp = gpu.open_sftp()
+                        try:
+                            sftp.put(str(local_path), f"{remote_ckpt_dir}/{fname}", callback=_progress)
+                        finally:
+                            sftp.close()
+                        print(f"[resume] Uploaded {fname} successfully.")
                     except Exception as e:
                         print(
                             f"[resume] Warning: failed to upload {fname} due to {e}. Attempting to reconnect and retry..."
@@ -347,6 +365,7 @@ def main():
                             if fname == "latest_model.pth":
                                 # latest_model.pth is strictly required for resume
                                 raise retry_err
+
                 else:
                     print(f"[resume] Local {fname} not found, skipping.")
 

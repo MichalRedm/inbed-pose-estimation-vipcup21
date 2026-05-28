@@ -29,6 +29,7 @@ class TrainingManager:
         self.last_run_id: Optional[str] = self._detect_last_run_id()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._current_process: Optional[subprocess.Popen] = None
 
     def _detect_last_run_id(self) -> Optional[str]:
         """Scans results/runs for the most recently modified run folder."""
@@ -170,6 +171,13 @@ class TrainingManager:
 
         self._stop_event.set()
         self.status_message = "Stopping..."
+        # Immediately terminate the subprocess if it's blocked (e.g. mid-SFTP upload)
+        proc = self._current_process
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
         return True, "Stop signal sent"
 
     def _handle_metrics_line(self, line: str):
@@ -443,6 +451,7 @@ class TrainingManager:
                     bufsize=1,
                     cwd=str(project_root),
                 )
+                self._current_process = process
                 self.log_history.append(
                     f"[{time.strftime('%H:%M:%S')}] [Manager] Process started (PID: {process.pid}, Attempt: {retry_count + 1})"
                 )
