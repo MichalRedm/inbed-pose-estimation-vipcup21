@@ -150,9 +150,7 @@ def train():
             # If a GPU hangs, the other will timeout and crash, allowing Manager auto-retry to take over.
             from datetime import timedelta
 
-            dist.init_process_group(
-                backend="nccl", timeout=timedelta(minutes=10)
-            )
+            dist.init_process_group(backend="nccl", timeout=timedelta(minutes=10))
         torch.cuda.set_device(local_rank)
         device = torch.device("cuda", local_rank)
     else:
@@ -177,10 +175,10 @@ def train():
         model_name = model_cfg.get("name", "hrnet")
         in_channels = model_cfg.get(model_name, {}).get("in_channels", 1)
 
-        is_translation = (
-            config.get("training_type") in ["cyclegan", "cut"]
-            or config.get("training", {}).get("cyclegan", False)
-        )
+        is_translation = config.get("training_type") in [
+            "cyclegan",
+            "cut",
+        ] or config.get("training", {}).get("cyclegan", False)
 
         if is_translation:
             from src.data.dataset import PairedDataset
@@ -188,7 +186,9 @@ def train():
             # For Translation (CycleGAN/CUT), we want geometric augmentations (flip, rotate, scale)
             # and sensor noise/intensity jitter, but NO blanket simulation!
             gan_aug_cfg = config["training"].get("augmentation", {}).copy()
-            gan_aug_cfg["occlusion_prob"] = 0.0  # Disable mathematical blanket simulation
+            gan_aug_cfg["occlusion_prob"] = (
+                0.0  # Disable mathematical blanket simulation
+            )
             gan_aug_cfg["enabled"] = True
             gan_augmenter = DataAugmenter(gan_aug_cfg)
 
@@ -262,7 +262,9 @@ def train():
             collate_fn = collate_skip_none
 
         train_sampler = (
-            torch.utils.data.DistributedSampler(train_dataset) if is_distributed else None
+            torch.utils.data.DistributedSampler(train_dataset)
+            if is_distributed
+            else None
         )
         train_loader = torch.utils.data.DataLoader(
             train_dataset,
@@ -323,12 +325,16 @@ def train():
 
                 if "optimizer_state_dict" in state and hasattr(trainer, "optimizer"):
                     trainer.optimizer.load_state_dict(state["optimizer_state_dict"])
-                if "optimizer_d_state_dict" in state and hasattr(trainer, "optimizer_d"):
+                if "optimizer_d_state_dict" in state and hasattr(
+                    trainer, "optimizer_d"
+                ):
                     trainer.optimizer_d.load_state_dict(state["optimizer_d_state_dict"])
                 if "discriminator_state_dict" in state and hasattr(
                     trainer, "discriminator"
                 ):
-                    trainer.discriminator.load_state_dict(state["discriminator_state_dict"])
+                    trainer.discriminator.load_state_dict(
+                        state["discriminator_state_dict"]
+                    )
                 if "total_steps" in state and hasattr(trainer, "total_steps"):
                     trainer.total_steps = state["total_steps"]
 

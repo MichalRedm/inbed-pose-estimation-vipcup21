@@ -789,9 +789,7 @@ class DataAugmenter:
 
         self.cut = CUTAugmentation(
             probability=self.config.get("cut_prob", 0.0),
-            checkpoint_path=self.config.get(
-                "cut_path", "models/cut_gen.pth"
-            ),
+            checkpoint_path=self.config.get("cut_path", "models/cut_gen.pth"),
         )
 
         self.cutout = CutoutAugmentation(

@@ -274,7 +274,7 @@ class GPUSession:
             self._ssh.get_transport().set_keepalive(30)
             if self._ssh.get_transport().sock:
                 self._ssh.get_transport().sock.settimeout(300.0)
-        
+
         # Determine remote home directory dynamically
         try:
             _, stdout, _ = self._ssh.exec_command("echo $HOME")
@@ -283,8 +283,10 @@ class GPUSession:
                 self.remote_home_dir = "/root"
         except Exception:
             self.remote_home_dir = "/root"
-        
-        print(f"Connected to [{self.config.name}] (Remote Home: {self.remote_home_dir})")
+
+        print(
+            f"Connected to [{self.config.name}] (Remote Home: {self.remote_home_dir})"
+        )
 
     def _expand_remote_path(self, path: str) -> str:
         """Helper to expand leading tilde (~) into the dynamic remote home directory."""

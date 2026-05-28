@@ -243,7 +243,9 @@ def main():
             local_history_path = local_ckpt_dir / "history.json"
             local_config_path = local_ckpt_dir / "config.json"
             remote_ckpt_dir = f"{remote_project_dir}/models/checkpoints"
-            remote_history_path = f"{remote_project_dir}/models/checkpoints/history.json"
+            remote_history_path = (
+                f"{remote_project_dir}/models/checkpoints/history.json"
+            )
             remote_config_path = f"{remote_project_dir}/models/checkpoints/config.json"
 
         # Track which checkpoints have already been downloaded

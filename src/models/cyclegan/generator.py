@@ -147,7 +147,7 @@ class GeneratorResNet(nn.Module):
             if out.shape[1] == 1:
                 out = out.repeat(1, 3, 1, 1)
             return out, features
-        
+
         # Standard full forward
         out = self.decoder(feat_x)
         if out.shape[1] == 1:

@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 import itertools
 from typing import Dict, Any
 from .base_trainer import BaseTrainer
@@ -25,7 +24,7 @@ class CUTTrainer(BaseTrainer):
     ):
         input_shape = (3, 256, 256)
         pretrained = config.get("training", {}).get("pretrained_gan", True)
-        
+
         # Core Models
         self.G = GeneratorResNet(
             input_shape, num_residual_blocks=9, pretrained=pretrained
@@ -75,7 +74,7 @@ class CUTTrainer(BaseTrainer):
         fake_B, feat_k = self.G(real_A, return_features=True)
         # We detach feat_k to prevent gradients flowing into the encoder for the target
         feat_k = [f.detach() for f in feat_k]
-        
+
         # Features of generated fake_B
         feat_q = self.G(fake_B, encode_only=True)
 
@@ -104,10 +103,10 @@ class CUTTrainer(BaseTrainer):
         # ------------------
         pred_real = self.D(real_B)
         loss_D_real = self.criterion_GAN(pred_real, True)
-        
+
         pred_fake_detach = self.D(fake_B.detach())
         loss_D_fake = self.criterion_GAN(pred_fake_detach, False)
-        
+
         loss_D = (loss_D_real + loss_D_fake) * 0.5
 
         return {
@@ -121,7 +120,7 @@ class CUTTrainer(BaseTrainer):
     def _train_step(self, batch: Any) -> Dict[str, float]:
         device_type = self.device.type
         use_amp = device_type == "cuda"
-        
+
         real_A, real_B = batch
         real_A = real_A.to(self.device)
         real_B = real_B.to(self.device)
@@ -131,7 +130,9 @@ class CUTTrainer(BaseTrainer):
         # ------------------
         self.optimizer_G.zero_grad(set_to_none=True)
 
-        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+        with torch.amp.autocast(
+            device_type=device_type, dtype=torch.float16, enabled=use_amp
+        ):
             fake_B, feat_k = self.G(real_A, return_features=True)
             feat_k = [f.detach() for f in feat_k]
             feat_q = self.G(fake_B, encode_only=True)
@@ -161,7 +162,9 @@ class CUTTrainer(BaseTrainer):
         # -----------------------
         self.optimizer_D.zero_grad(set_to_none=True)
 
-        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+        with torch.amp.autocast(
+            device_type=device_type, dtype=torch.float16, enabled=use_amp
+        ):
             loss_D_real = self.criterion_GAN(self.D(real_B), True)
             loss_D_fake = self.criterion_GAN(self.D(fake_B.detach()), False)
             loss_D = (loss_D_real + loss_D_fake) * 0.5
@@ -183,7 +186,9 @@ class CUTTrainer(BaseTrainer):
     def _val_step(self, batch: Any) -> Dict[str, float]:
         device_type = self.device.type
         use_amp = device_type == "cuda"
-        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+        with torch.amp.autocast(
+            device_type=device_type, dtype=torch.float16, enabled=use_amp
+        ):
             losses = self._calculate_losses(batch)
         return {k: v.item() for k, v in losses.items() if isinstance(v, torch.Tensor)}
 
