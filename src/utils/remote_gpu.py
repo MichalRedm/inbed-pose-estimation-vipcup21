@@ -254,6 +254,17 @@ class GPUSession:
 
         key_path = os.path.expanduser(os.path.expandvars(key_path))
         print(f"  Using SSH key: {key_path} (exists={os.path.exists(key_path)})")
+        
+        # Explicitly load the key to handle format issues (e.g. RSA vs OpenSSH)
+        pkey = None
+        if os.path.exists(key_path):
+            for key_type in [paramiko.RSAKey, paramiko.Ed25519Key, paramiko.ECDSAKey]:
+                try:
+                    pkey = key_type.from_private_key_file(key_path)
+                    break
+                except Exception:
+                    continue
+
         self._ssh = paramiko.SSHClient()
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         print(
@@ -263,9 +274,10 @@ class GPUSession:
             hostname=connect_host,
             port=connect_port,
             username=self.config.ssh_user,
-            key_filename=key_path,
+            pkey=pkey,
+            key_filename=key_path if pkey is None else None,
             allow_agent=True,
-            look_for_keys=False,
+            look_for_keys=True,
             timeout=30,
             banner_timeout=60,
         )
@@ -492,30 +504,89 @@ class GPUSession:
     def upload(self, local_path: str, remote_path: str, recursive: bool = True):
         """
         Upload a local file or directory to the remote GPU.
-        Uses SCP under the hood.
+        Uses SFTP for maximum stability and speed (avoiding Paramiko SCP hangs).
         """
         remote_path = self._expand_remote_path(remote_path)
 
         def _upload():
-            with SCPClient(self._ssh.get_transport()) as scp:
-                scp.put(local_path, remote_path=remote_path, recursive=recursive)
-            print(f"Uploaded {local_path!r} -> {remote_path!r}")
+            sftp = self._ssh.open_sftp()
+            try:
+                if os.path.isdir(local_path):
+                    # Directory upload using SFTP
+                    for root, dirs, files in os.walk(local_path):
+                        rel_path = os.path.relpath(root, local_path)
+                        if rel_path == ".":
+                            r_dir = remote_path
+                        else:
+                            r_dir = os.path.join(remote_path, rel_path).replace("\\", "/")
+                        
+                        try:
+                            sftp.mkdir(r_dir)
+                        except IOError:
+                            pass
+                            
+                        for f in files:
+                            l_file = os.path.join(root, f)
+                            r_file = os.path.join(r_dir, f).replace("\\", "/")
+                            sftp.put(l_file, r_file)
+                else:
+                    # Single file upload using SFTP
+                    parent_remote = os.path.dirname(remote_path).replace("\\", "/")
+                    if parent_remote:
+                        try:
+                            sftp.mkdir(parent_remote)
+                        except IOError:
+                            pass
+                    sftp.put(local_path, remote_path)
+                print(f"Uploaded {local_path!r} -> {remote_path!r}")
+            finally:
+                sftp.close()
 
         return self._execute_with_retry("upload", _upload)
 
     def download(self, remote_path: str, local_path: str, recursive: bool = True):
-        """Download a file or directory from the remote GPU."""
+        """
+        Download a file or directory from the remote GPU.
+        Uses SFTP for maximum stability (avoiding Paramiko SCP hangs).
+        """
         remote_path = self._expand_remote_path(remote_path)
 
         def _download():
-            # Fix: Only create parent directory, not the local_path itself!
-            # Otherwise scp always treats local_path as a destination directory.
             parent = os.path.dirname(local_path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-            with SCPClient(self._ssh.get_transport()) as scp:
-                scp.get(remote_path, local_path=local_path, recursive=recursive)
-            print(f"Downloaded {remote_path!r} -> {local_path!r}")
+                
+            sftp = self._ssh.open_sftp()
+            try:
+                try:
+                    sftp.stat(remote_path)
+                    is_dir = False
+                    try:
+                        sftp.listdir(remote_path)
+                        is_dir = True
+                    except IOError:
+                        pass
+                except IOError:
+                    return
+
+                if is_dir:
+                    os.makedirs(local_path, exist_ok=True)
+                    def _recv_dir(rem_dir, loc_dir):
+                        for entry in sftp.listdir_attr(rem_dir):
+                            r_item = os.path.join(rem_dir, entry.filename).replace("\\", "/")
+                            l_item = os.path.join(loc_dir, entry.filename)
+                            import stat
+                            if stat.S_ISDIR(entry.st_mode):
+                                os.makedirs(l_item, exist_ok=True)
+                                _recv_dir(r_item, l_item)
+                            else:
+                                sftp.get(r_item, l_item)
+                    _recv_dir(remote_path, local_path)
+                else:
+                    sftp.get(remote_path, local_path)
+                print(f"Downloaded {remote_path!r} -> {local_path!r}")
+            finally:
+                sftp.close()
 
         return self._execute_with_retry("download", _download)
 
@@ -530,13 +601,20 @@ class GPUSession:
         Optimized to avoid redundant large uploads.
         """
         remote_dir = self._expand_remote_path(remote_dir)
+        
+        # Resolve local_dir absolutely relative to the project root
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent.resolve()
+        if not os.path.isabs(local_dir):
+            local_dir = str((project_root / local_dir).resolve())
+
         import shutil
         import tempfile
         import tarfile
         import hashlib
 
         # 1. Determine which large assets to sync separately (size-check based)
-        large_assets = ["pretrained_models"]
+        large_assets = [] # ["pretrained_models"]
 
         # 2. Prepare a clean temporary directory with only the necessary files
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -791,6 +869,7 @@ class GPUManager:
                 "tunnel_hostname": data.get("tunnel_hostname", ""),
                 "host": data.get("host", data.get("tunnel_hostname", "")),
                 "ssh_user": data.get("ssh_user", "root"),
+                "ssh_key": data.get("ssh_key", "~/.ssh/id_ed25519"),
                 "port": data.get("port", 22),
                 "meta": {"gpu": data.get("gpu", "unknown")},
             },

@@ -43,10 +43,11 @@ def main():
     backend_name = "remote_gpu"
     mgr.add_backend_from_json(backend_name, json_path)
 
-    # Use the SSH key from the standard location
-    ssh_key = os.path.expandvars(r"%USERPROFILE%\.ssh\id_ed25519")
-    if os.path.exists(ssh_key):
-        mgr._backends[backend_name].ssh_key = ssh_key
+    # Use the SSH key from the standard location only if not specified in JSON
+    if mgr._backends[backend_name].ssh_key == "~/.ssh/id_ed25519":
+        ssh_key = os.path.expandvars(r"%USERPROFILE%\.ssh\id_ed25519")
+        if os.path.exists(ssh_key):
+            mgr._backends[backend_name].ssh_key = ssh_key
 
     print(f"--- Starting Remote Evaluation for {args_cli.run_id} ---")
     with mgr.use(backend_name) as gpu:

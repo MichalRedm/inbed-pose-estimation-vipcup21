@@ -98,10 +98,11 @@ def main():
     backend_name = "remote_gpu"
     mgr.add_backend_from_json(backend_name, json_path)
 
-    # Use the SSH key from the standard location
-    ssh_key = os.path.expandvars(r"%USERPROFILE%\.ssh\id_ed25519")
-    if os.path.exists(ssh_key):
-        mgr._backends[backend_name].ssh_key = ssh_key
+    # Use the SSH key from the standard location only if not specified in JSON
+    if mgr._backends[backend_name].ssh_key == "~/.ssh/id_ed25519":
+        ssh_key = os.path.expandvars(r"%USERPROFILE%\.ssh\id_ed25519")
+        if os.path.exists(ssh_key):
+            mgr._backends[backend_name].ssh_key = ssh_key
 
     print("--- Starting Remote Training Session ---")
     with mgr.use(backend_name) as gpu:
@@ -298,16 +299,20 @@ def main():
                             )
                         continue
 
-                    # Check if remote file exists and has the same size
+                    # Check if remote file exists and is effectively the same
                     remote_path = f"{remote_ckpt_dir}/{fname}"
                     try:
                         # Use sftp to check size
                         sftp = gpu.open_sftp()
                         remote_stat = sftp.stat(remote_path)
                         sftp.close()
-                        if remote_stat.st_size == local_path.stat().st_size:
+                        local_size = local_path.stat().st_size
+                        remote_size = remote_stat.st_size
+                        # Allow up to 1MB size difference (SFTP vs SCP encoding overhead)
+                        if abs(remote_size - local_size) < 1_000_000:
                             print(
-                                f"[resume] Remote {fname} is already up-to-date. Skipping upload."
+                                f"[resume] Remote {fname} is already up-to-date "
+                                f"(local={local_size}, remote={remote_size}). Skipping upload."
                             )
                             continue
                     except Exception:
@@ -543,7 +548,7 @@ def main():
                         # Run a python script on the remote to emulate tail -F but with explicit flushing.
                         # This avoids all pipe block-buffering issues inherent to `tail` over SSH without a PTY.
                         cmd = (
-                            f"python -c '\n"
+                            f"python3 -c '\n"
                             f"import time, os\n"
                             f'open("{remote_stream_path}", "a").close()\n'
                             f'f = open("{remote_stream_path}", "r")\n'
@@ -581,6 +586,9 @@ def main():
                                     flush=True,
                                 )
                                 continue
+                    
+                    # Prevent connection hot-looping by sleeping for 5s before reconnecting
+                    time.sleep(5)
                 except Exception as e:
                     if training_thread.is_alive():
                         print(

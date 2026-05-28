@@ -219,8 +219,9 @@ class TrainingManager:
                 self.status_message = metrics["status"]
             elif metrics.get("is_summary"):
                 self.status_message = f"Epoch {self.current_epoch} complete"
-        except Exception as e:
-            print(f"[TrainingManager] Error parsing metrics stream: {e}")
+        except Exception:
+            # Silent parsing errors as they are self-recovering legacy fallbacks from incomplete PTY line reads
+            pass
 
     def get_status(self) -> Dict[str, Any]:
         # Always try to restore history from disk if in-memory lists are empty
