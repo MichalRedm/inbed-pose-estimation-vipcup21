@@ -29,6 +29,11 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 *   **Small-Data Survival Tip**: Early confirmation bias is fatal on small datasets. Combine this with **Cross-Modal Teacher Distillation**: train the Teacher model on the highly-accurate **RGB** SLP images to generate perfect pseudo-labels, then use those to train the IR Student model. Alternatively, ensure the Teacher is initialized with MS COCO weights + Channel Replication to guarantee strong structural priors.
 *   **ROI Status**: **HIGH (ROI Rank 3)** — Standard state-of-the-art technique for Semi-Supervised pose estimation.
 
+### 4. Unpaired Diffusion-based Domain Translation (CycleDiff / EGSDE)
+*   **Hypothesis**: While GANs (CycleGAN/CUT) suffer from mode collapse and training instability, Diffusion Models offer vastly superior generative fidelity and stable training dynamics. By utilizing state-of-the-art Unpaired Image-to-Image (I2I) Diffusion frameworks (like Dual Diffusion Implicit Bridges or CycleDiff) combined with few-step acceleration (Latent Consistency Models or Adversarial Diffusion), we can synthesize ultra-realistic thermal blankets without requiring paired data.
+*   **Implementation**: Instead of training from scratch (which would overfit our tiny 80-subject dataset), we would leverage a frozen, pre-trained latent diffusion model (e.g., SD1.5 or a smaller variant) and fine-tune it using Energy-Guided Stochastic Differential Equations (EGSDE) or a cycle-consistent diffusion objective. To ensure fast training/inference, we would utilize a 4-step Latent Consistency Model (LCM) distillation. We would also inject our frozen SOTA ViTPose model into the reverse diffusion process to provide gradient guidance, physically anchoring the generated blankets to the skeletal structure.
+*   **ROI Status**: **MEDIUM (ROI Rank 4)** — Massive potential for unprecedented texture realism and structural hallucination, but carries significant complexity in implementation and extreme data-hunger risks if not carefully initialized with pre-trained priors.
+
 ### 4. ViTPose++ Mixture-of-Experts (MoE) for Modality Routing
 *   **Hypothesis**: Our Loop 44 ViTPose model proved that global attention solves the extremity occlusion problem (wrists/ankles reached ~67%, up from 47%). However, mixing clean IR and synthetically blanketed IR forces a single set of FFN weights to model two very different signal-to-noise distributions. Implementing a lightweight ViTPose++ style Mixture-of-Experts (MoE) in the FFN layers (e.g., one "clean" expert and one "occluded" expert) routed by a simple gating network will prevent capacity interference and push PCK past 80%.
 *   **Implementation**: Modify the `vitpose.py` encoder blocks to replace the standard MLP with a 2-expert MoE. Use the visibility/occlusion augmentation flag (or a simple linear probe on the patch tokens) to route tokens.
@@ -84,7 +89,15 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 
 This archive logs all completed experiments that failed to outperform our baseline or introduced regressions, detailing the exact root cause of their failure.
 
-### 1. COCO Pre-trained ViTPose Fine-tuning (Loop 43)
+### 1. Unmodified Contrastive Unpaired Translation (Loop 48 early epochs)
+*   **Result**: The generator degenerated into a near-perfect identity map, tweaking brightness and contrast rather than synthesizing macro-structural blanket occlusions.
+*   **Root Cause**:
+    - **Over-penalization via Identity Loss**: The identity loss term ($L_{nce\_idt}$) heavily penalized the generator for attempting to modify the covered images during the domain B -> domain B pass. Because adding a heavy blanket is a massive structural change, the network learned that outputting the identity (doing nothing) was the safest route to minimize the gradient.
+    - **PatchNCE Resistance to Macro-Structural Changes**: The PatchNCE loss was extracting features from shallow layers, which contain low-level texture details. Adding a thermal blanket completely destroys the local thermal texture of the legs. The network could not reconcile a patch of "exposed hot knee" with a patch of "cool, flat blanket" at the exact same spatial location, heavily penalizing the generator for attempting to "cover" the person.
+    - **Discriminator Convergence**: The discriminator easily spotted the fake thermal blankets early in training, creating a steep loss landscape. The generator retreated to the safety of the input image to keep NCE loss near zero.
+*   **Lesson**: To force macro-structural domain translation in CUT, Identity Loss MUST be slashed or disabled. The receptive field of the NCE patches must be shifted to deeper encoder layers (focusing on macro-semantics rather than textures), and the contrastive loss weight ($\lambda_{X}$) should be modulated to give the GAN loss more authority.
+
+### 2. COCO Pre-trained ViTPose Fine-tuning (Loop 43)
 *   **Result**: **42.30% PCK@0.2**, **28.13 px MPJPE** (Heavily underperformed the 64.3% JSSCA baseline).
 *   **Root Cause**:
     - **Class Token Attention Mismatch**: Prepending a class token (sequence length 193) into transformer self-attention blocks that were pretrained on COCO *without* a class token (sequence length 192) shifted the token indexes and perturbed the attention distribution. The self-attention layers were forced to process an extra token, diluting the keypoint features and ruining the spatial pose routing capabilities of the transformer.
