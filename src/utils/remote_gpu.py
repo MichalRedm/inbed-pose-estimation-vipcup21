@@ -236,6 +236,7 @@ class GPUSession:
         self.config = config
         self._ssh: paramiko.SSHClient | None = None
         self._proxy: CloudflaredProxy | None = None
+        self.remote_home_dir: str | None = None
 
     # ── Connection lifecycle ──────────────────────────────────────────────────
 
@@ -273,7 +274,23 @@ class GPUSession:
             self._ssh.get_transport().set_keepalive(30)
             if self._ssh.get_transport().sock:
                 self._ssh.get_transport().sock.settimeout(300.0)
-        print(f"Connected to [{self.config.name}]")
+        
+        # Determine remote home directory dynamically
+        try:
+            _, stdout, _ = self._ssh.exec_command("echo $HOME")
+            self.remote_home_dir = stdout.read().decode().strip()
+            if not self.remote_home_dir:
+                self.remote_home_dir = "/root"
+        except Exception:
+            self.remote_home_dir = "/root"
+        
+        print(f"Connected to [{self.config.name}] (Remote Home: {self.remote_home_dir})")
+
+    def _expand_remote_path(self, path: str) -> str:
+        """Helper to expand leading tilde (~) into the dynamic remote home directory."""
+        if path.startswith("~") and self.remote_home_dir:
+            return path.replace("~", self.remote_home_dir, 1)
+        return path
 
     def disconnect(self):
         if self._ssh:
@@ -475,6 +492,7 @@ class GPUSession:
         Upload a local file or directory to the remote GPU.
         Uses SCP under the hood.
         """
+        remote_path = self._expand_remote_path(remote_path)
 
         def _upload():
             with SCPClient(self._ssh.get_transport()) as scp:
@@ -485,6 +503,7 @@ class GPUSession:
 
     def download(self, remote_path: str, local_path: str, recursive: bool = True):
         """Download a file or directory from the remote GPU."""
+        remote_path = self._expand_remote_path(remote_path)
 
         def _download():
             # Fix: Only create parent directory, not the local_path itself!
@@ -508,6 +527,7 @@ class GPUSession:
         Sync local code to the remote GPU, excluding data, venv, and git.
         Optimized to avoid redundant large uploads.
         """
+        remote_dir = self._expand_remote_path(remote_dir)
         import shutil
         import tempfile
         import tarfile
@@ -664,6 +684,7 @@ class GPUSession:
 
     def write_file(self, remote_path: str, content: str):
         """Write a text string directly to a file on the remote GPU."""
+        remote_path = self._expand_remote_path(remote_path)
 
         def _write():
             sftp = self.open_sftp()
@@ -675,6 +696,7 @@ class GPUSession:
 
     def read_file(self, remote_path: str) -> str:
         """Read a text file from the remote GPU."""
+        remote_path = self._expand_remote_path(remote_path)
 
         def _read():
             sftp = self.open_sftp()

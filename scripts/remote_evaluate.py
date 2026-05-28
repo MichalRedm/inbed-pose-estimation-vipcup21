@@ -50,9 +50,17 @@ def main():
 
     print(f"--- Starting Remote Evaluation for {args_cli.run_id} ---")
     with mgr.use(backend_name) as gpu:
+        # Determine remote project root dynamically based on who we logged in as
+        home_res = gpu.run("echo $HOME", stream=False)
+        remote_home = home_res.stdout.strip() if home_res.ok() else "/root"
+        if not remote_home:
+            remote_home = "/root"
+        remote_project_dir = f"{remote_home}/project"
+        print(f"Detected remote home directory: {remote_home}")
+        print(f"Using remote project directory: {remote_project_dir}")
         # 1. Sync local code to remote
         gpu.sync_project(
-            remote_dir="/root/project",
+            remote_dir=remote_project_dir,
             exclude=[
                 ".git",
                 ".venv",
@@ -79,7 +87,7 @@ def main():
         # 3. GPU verification
         print("Verifying GPU on remote...")
         gpu.run(
-            f"cd /root/project && {env_setup} && "
+            f"cd {remote_project_dir} && {env_setup} && "
             "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader"
         )
 
@@ -89,7 +97,7 @@ def main():
             "test -d data/raw/train || "
             "(pip install kaggle -q && python3 scripts/download_dataset.py)"
         )
-        gpu.run(f"cd /root/project && {env_setup} && {download_cmd}")
+        gpu.run(f"cd {remote_project_dir} && {env_setup} && {download_cmd}")
 
         # 5. Multi-GPU detection
         gpu_count_res = gpu.run("nvidia-smi -L | wc -l", stream=False)
@@ -107,11 +115,11 @@ def main():
         # 6. Run evaluation
         master_port = random.randint(20000, 29999)
         remote_results_path = (
-            f"/root/project/results/runs/{args_cli.run_id}/evaluation.json"
+            f"{remote_project_dir}/results/runs/{args_cli.run_id}/evaluation.json"
         )
 
         cmd = (
-            f"cd /root/project && {env_setup} && export CHECKPOINT_NAME={args_cli.checkpoint_name} && "
+            f"cd {remote_project_dir} && {env_setup} && export CHECKPOINT_NAME={args_cli.checkpoint_name} && "
             f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
             f"scripts/evaluate.py --run_id {args_cli.run_id} --save_json {remote_results_path} "
             f"{' '.join(other_args)}"
@@ -137,7 +145,7 @@ def main():
 
             # Also download the visual audit image if generated
             checkpoint_stem = Path(args_cli.checkpoint_name).stem
-            remote_audit_path = f"/root/project/results/runs/{args_cli.run_id}/visual_audit_{checkpoint_stem}.png"
+            remote_audit_path = f"{remote_project_dir}/results/runs/{args_cli.run_id}/visual_audit_{checkpoint_stem}.png"
             local_audit_path = local_results_dir / f"visual_audit_{checkpoint_stem}.png"
             try:
                 print(f"[sync] Downloading visual audit to {local_audit_path}...")
