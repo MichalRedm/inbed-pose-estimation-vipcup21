@@ -56,7 +56,9 @@ def main():
             gpu.run(f"mkdir -p {remote_home}/test_sync")
 
             print("\nTesting simple write...")
-            gpu.write_file(f"{remote_home}/test_sync/hello.txt", "Hello from local machine!")
+            gpu.write_file(
+                f"{remote_home}/test_sync/hello.txt", "Hello from local machine!"
+            )
 
             print("\nVerification complete. You are ready to train!")
 
