@@ -13,6 +13,7 @@ interface GPUConfig {
   gpu: string;
   ssh_config_alias: string;
   proxy_command: string;
+  ssh_key?: string;
 }
 
 const Settings: React.FC = () => {
@@ -24,7 +25,8 @@ const Settings: React.FC = () => {
     port: 22,
     gpu: '',
     ssh_config_alias: '',
-    proxy_command: ''
+    proxy_command: '',
+    ssh_key: ''
   });
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
@@ -51,7 +53,8 @@ const Settings: React.FC = () => {
           port: parsed.port || 22,
           gpu: parsed.gpu || '',
           ssh_config_alias: parsed.ssh_config_alias || '',
-          proxy_command: parsed.proxy_command || ''
+          proxy_command: parsed.proxy_command || '',
+          ssh_key: parsed.ssh_key || ''
         };
         
         setConfig(newConfig);
@@ -251,6 +254,18 @@ const Settings: React.FC = () => {
                 onChange={(e) => setConfig({ ...config, port: parseInt(e.target.value) })}
               />
             </div>
+          </div>
+
+          <div className="form-group" style={{ marginBottom: '20px' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>SSH Private Key Path</label>
+            <input 
+              type="text" 
+              className="glass" 
+              style={{ width: '100%', padding: '12px', borderRadius: '8px', color: 'white', border: '1px solid var(--border-light)' }}
+              value={config.ssh_key || ''}
+              onChange={(e) => setConfig({ ...config, ssh_key: e.target.value })}
+              placeholder="e.g. ~/.ssh/id_ed25519"
+            />
           </div>
 
           <div className="form-group" style={{ marginBottom: '20px' }}>

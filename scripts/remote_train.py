@@ -105,9 +105,17 @@ def main():
 
     print("--- Starting Remote Training Session ---")
     with mgr.use(backend_name) as gpu:
+        # Determine remote project root dynamically based on who we logged in as
+        home_res = gpu.run("echo $HOME", stream=False)
+        remote_home = home_res.stdout.strip() if home_res.ok() else "/root"
+        if not remote_home:
+            remote_home = "/root"
+        remote_project_dir = f"{remote_home}/project"
+        print(f"Detected remote home directory: {remote_home}")
+        print(f"Using remote project directory: {remote_project_dir}")
         # 1. Fresh Run Cleanup & Accumulation Prevention (Move BEFORE sync to avoid deleting uploaded configs)
         if args_cli.run_id:
-            remote_run_dir = f"/root/project/results/runs/{args_cli.run_id}"
+            remote_run_dir = f"{remote_project_dir}/results/runs/{args_cli.run_id}"
             if not args_cli.resume:
                 print(f"[clean] Wiping remote directory {remote_run_dir}...")
                 gpu.run(f"rm -rf {remote_run_dir} || true", stream=False)
@@ -123,22 +131,22 @@ def main():
                 "[clean] Cleaning up all other run folders under results/runs/ to prevent disk space accumulation..."
             )
             gpu.run(
-                f"find /root/project/results/runs/ -maxdepth 1 -mindepth 1 -type d ! -name '{args_cli.run_id}' -exec rm -rf {{}} \\; || true",
+                f"find {remote_project_dir}/results/runs/ -maxdepth 1 -mindepth 1 -type d ! -name '{args_cli.run_id}' -exec rm -rf {{}} \\; || true",
                 stream=False,
             )
         else:
             if not args_cli.resume:
-                remote_ckpt_dir = "/root/project/models/checkpoints"
+                remote_ckpt_dir = f"{remote_project_dir}/models/checkpoints"
                 print(f"[clean] Wiping remote checkpoints in {remote_ckpt_dir}...")
                 gpu.run(f"rm -rf {remote_ckpt_dir}/* || true", stream=False)
 
         # 2. Sync local code and configs to remote
-        gpu.sync_project(remote_dir="/root/project")
+        gpu.sync_project(remote_dir=remote_project_dir)
 
         # 2.1 Manually upload config if it's in a directory that was ignored (e.g. results/)
         if config_path and os.path.exists(config_path):
             # Normalize path for remote (forward slashes)
-            remote_cfg_path = f"/root/project/{Path(config_path).as_posix()}"
+            remote_cfg_path = f"{remote_project_dir}/{Path(config_path).as_posix()}"
             print(
                 f"[sync] Manually uploading configuration: {config_path} -> {remote_cfg_path}"
             )
@@ -157,7 +165,7 @@ def main():
         # --- Step 1: GPU verification ---
         print("Verifying GPU on remote...")
         gpu.run(
-            f"cd /root/project && {env_setup} && "
+            f"cd {remote_project_dir} && {env_setup} && "
             "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader && "
             "python3 -c \"import torch; print('CUDA:', torch.cuda.is_available(), "
             "'| Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A')\""
@@ -166,7 +174,7 @@ def main():
         # --- Step 2: Ensure data is present ---
         print("\nEnsuring data is available on remote...")
         download_cmd = "pip install kaggle -q && python3 scripts/download_dataset.py"
-        gpu.run(f"cd /root/project && {env_setup} && {download_cmd}")
+        gpu.run(f"cd {remote_project_dir} && {env_setup} && {download_cmd}")
 
         # --- Step 3: Run training with incremental checkpoint sync ---
         print("\nChecking for multi-GPU setup...")
@@ -204,14 +212,14 @@ def main():
             uda_flag = "--uda" if args_cli.uda else ""
             cyclegan_flag = "--cyclegan" if args_cli.cyclegan else ""
             cmd = (
-                f"cd /root/project && {env_setup} && "
+                f"cd {remote_project_dir} && {env_setup} && "
                 f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
-                f"{training_script} --data_root /root/project/data/raw {resume_flag} {run_id_flag} {uda_flag} {cyclegan_flag} {passthrough}"
+                f"{training_script} --data_root {remote_project_dir}/data/raw {resume_flag} {run_id_flag} {uda_flag} {cyclegan_flag} {passthrough}"
             )
         else:
             cmd = (
-                f"cd /root/project && {env_setup} && "
-                f"python3 {training_script} --data_dir /root/project/data/raw {resume_flag} {run_id_flag} {passthrough}"
+                f"cd {remote_project_dir} && {env_setup} && "
+                f"python3 {training_script} --data_dir {remote_project_dir}/data/raw {resume_flag} {run_id_flag} {passthrough}"
             )
 
         # --- Step 4: Smart Cleanup & State Tracking ---
@@ -222,21 +230,21 @@ def main():
             local_history_path = local_run_dir / "history.json"
             local_config_path = local_run_dir / "config.json"
             remote_ckpt_dir = (
-                f"/root/project/results/runs/{args_cli.run_id}/checkpoints"
+                f"{remote_project_dir}/results/runs/{args_cli.run_id}/checkpoints"
             )
             remote_history_path = (
-                f"/root/project/results/runs/{args_cli.run_id}/history.json"
+                f"{remote_project_dir}/results/runs/{args_cli.run_id}/history.json"
             )
             remote_config_path = (
-                f"/root/project/results/runs/{args_cli.run_id}/config.json"
+                f"{remote_project_dir}/results/runs/{args_cli.run_id}/config.json"
             )
         else:
             local_ckpt_dir = Path("models/checkpoints")
             local_history_path = local_ckpt_dir / "history.json"
             local_config_path = local_ckpt_dir / "config.json"
-            remote_ckpt_dir = "/root/project/models/checkpoints"
-            remote_history_path = "/root/project/models/checkpoints/history.json"
-            remote_config_path = "/root/project/models/checkpoints/config.json"
+            remote_ckpt_dir = f"{remote_project_dir}/models/checkpoints"
+            remote_history_path = f"{remote_project_dir}/models/checkpoints/history.json"
+            remote_config_path = f"{remote_project_dir}/models/checkpoints/config.json"
 
         # Track which checkpoints have already been downloaded
         downloaded: set[str] = set()
@@ -523,7 +531,7 @@ def main():
         def run_streaming():
             # Open a dedicated session for real-time metric streaming
             remote_stream_path = (
-                f"/root/project/results/runs/{args_cli.run_id}/stream.jsonl"
+                f"{remote_project_dir}/results/runs/{args_cli.run_id}/stream.jsonl"
             )
             print(f"[sync] Starting metrics streamer for {remote_stream_path}")
 
@@ -617,10 +625,10 @@ def main():
             print("=" * 40)
 
             eval_results_remote = (
-                f"/root/project/results/runs/{args_cli.run_id}/evaluation.json"
+                f"{remote_project_dir}/results/runs/{args_cli.run_id}/evaluation.json"
             )
             eval_cmd = (
-                f"cd /root/project && {env_setup} && "
+                f"cd {remote_project_dir} && {env_setup} && "
                 f"torchrun --nproc_per_node={num_gpus} --master_port={master_port + 1} "
                 f"scripts/evaluate.py --run_id {args_cli.run_id} --save_json {eval_results_remote}"
             )
@@ -639,7 +647,7 @@ def main():
 
                 # Also download visual audit image
                 try:
-                    remote_audit = f"/root/project/results/runs/{args_cli.run_id}/visual_audit_best_model.png"
+                    remote_audit = f"{remote_project_dir}/results/runs/{args_cli.run_id}/visual_audit_best_model.png"
                     gpu.download(remote_audit, str(local_run_dir), recursive=False)
                     print(f"[sync] Visual audit image downloaded to {local_run_dir}/")
                 except Exception:

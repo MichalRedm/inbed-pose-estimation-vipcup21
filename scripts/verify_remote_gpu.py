@@ -46,11 +46,17 @@ def main():
             print("\nRemote GPU Information:")
             print(gpu.gpu_info())
 
+            # Determine remote home directory
+            home_res = gpu.run("echo $HOME", stream=False)
+            remote_home = home_res.stdout.strip() if home_res.ok() else "/home/zeus"
+            if not remote_home:
+                remote_home = "/home/zeus"
+
             print("\nTesting file sync (creating remote directory)...")
-            gpu.run("mkdir -p /root/test_sync")
+            gpu.run(f"mkdir -p {remote_home}/test_sync")
 
             print("\nTesting simple write...")
-            gpu.write_file("/root/test_sync/hello.txt", "Hello from local machine!")
+            gpu.write_file(f"{remote_home}/test_sync/hello.txt", "Hello from local machine!")
 
             print("\nVerification complete. You are ready to train!")
 
