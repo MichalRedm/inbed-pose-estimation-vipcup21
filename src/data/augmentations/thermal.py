@@ -363,7 +363,7 @@ class AdvancedCoverAugmenter:
 
     def _load_reference_bank(self):
         """Find real covered images in the training set (Subjects 1-80)."""
-        covered_images = []
+        covered_images = set()
 
         # We look for 'cover1' and 'cover2' directories within training subject folders.
         # Training subjects are usually 1-80.
@@ -382,18 +382,24 @@ class AdvancedCoverAugmenter:
             for cover in ["cover1", "cover2"]:
                 # Recursive glob to find images inside cover1/cover2 directories
                 # This is more robust to different nesting levels
-                covered_images.extend(list(root.rglob(f"**/IR/{cover}/*.png")))
-                covered_images.extend(list(root.rglob(f"**/IR/{cover}/*.jpg")))
+                for img_ext in ["*.png", "*.jpg"]:
+                    for img_path in root.rglob(f"**/IR/{cover}/{img_ext}"):
+                        covered_images.add(img_path)
 
                 # Also try without IR subfolder just in case
-                if not covered_images:
-                    covered_images.extend(list(root.rglob(f"**/{cover}/*.png")))
-                    covered_images.extend(list(root.rglob(f"**/{cover}/*.jpg")))
+                # (Note: we check covered_images set here, but it's per cover)
+                # To keep logic similar to before:
+                # if not any(str(p).endswith(f'/{cover}/*.png') for p in covered_images): ...
+                # Actually, let's just always try both paths to be safe.
+                for img_ext in ["*.png", "*.jpg"]:
+                    for img_path in root.rglob(f"**/{cover}/{img_ext}"):
+                        covered_images.add(img_path)
 
         if not covered_images:
             # Fallback: search for any 'cover' folder
-            covered_images.extend(list(self.dataset_root.rglob("**/cover*/*.png")))
-            covered_images.extend(list(self.dataset_root.rglob("**/cover*/*.jpg")))
+            for img_ext in ["*.png", "*.jpg"]:
+                for img_path in self.dataset_root.rglob(f"**/cover*/{img_ext}"):
+                    covered_images.add(img_path)
 
         # Filter for training subjects if possible (1-80)
         # In SLP, subjects 1-80 are training.
