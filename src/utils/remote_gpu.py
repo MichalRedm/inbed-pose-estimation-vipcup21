@@ -791,6 +791,7 @@ class GPUManager:
                 "tunnel_hostname": data.get("tunnel_hostname", ""),
                 "host": data.get("host", data.get("tunnel_hostname", "")),
                 "ssh_user": data.get("ssh_user", "root"),
+                "ssh_key": data.get("ssh_key"),  # Extract ssh_key from JSON
                 "port": data.get("port", 22),
                 "meta": {"gpu": data.get("gpu", "unknown")},
             },
