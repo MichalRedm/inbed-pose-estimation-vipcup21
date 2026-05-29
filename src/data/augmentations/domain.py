@@ -40,14 +40,19 @@ class CycleGANAugmentation:
                     (3, 256, 256)
                 )  # Assuming RGB/Replicated channels
                 if os.path.exists(checkpoint_path):
-                    self.generator.load_state_dict(
-                        torch.load(
-                            checkpoint_path, map_location=self.device, weights_only=True
+                    try:
+                        self.generator.load_state_dict(
+                            torch.load(
+                                checkpoint_path, map_location=self.device, weights_only=True
+                            ),
+                            strict=False # Allow mismatched keys to prevent crash if architecture changed
                         )
-                    )
-                    self.generator = self.generator.to(self.device)
-                    self.generator.eval()
-                    print(f"CycleGAN generator loaded from {checkpoint_path}")
+                        self.generator = self.generator.to(self.device)
+                        self.generator.eval()
+                        print(f"CycleGAN generator loaded from {checkpoint_path}")
+                    except Exception as e:
+                        print(f"Warning: Failed to load CycleGAN checkpoint weights: {e}")
+                        self.enabled = False
                 else:
                     print(
                         f"Warning: CycleGAN checkpoint {checkpoint_path} not found. Augmentation will be a no-op."
@@ -123,14 +128,19 @@ class CUTAugmentation:
                     (3, 256, 256)
                 )  # Assuming RGB/Replicated channels
                 if os.path.exists(checkpoint_path):
-                    self.generator.load_state_dict(
-                        torch.load(
-                            checkpoint_path, map_location=self.device, weights_only=True
+                    try:
+                        self.generator.load_state_dict(
+                            torch.load(
+                                checkpoint_path, map_location=self.device, weights_only=True
+                            ),
+                            strict=False # Allow mismatched keys to prevent crash if architecture changed
                         )
-                    )
-                    self.generator = self.generator.to(self.device)
-                    self.generator.eval()
-                    print(f"CUT generator loaded from {checkpoint_path}")
+                        self.generator = self.generator.to(self.device)
+                        self.generator.eval()
+                        print(f"CUT generator loaded from {checkpoint_path}")
+                    except Exception as e:
+                        print(f"Warning: Failed to load CUT checkpoint weights: {e}")
+                        self.enabled = False
                 else:
                     print(
                         f"Warning: CUT checkpoint {checkpoint_path} not found. Augmentation will be a no-op."
