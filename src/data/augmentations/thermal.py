@@ -4,8 +4,7 @@ import torch
 import torch.fft
 from PIL import Image, ImageDraw, ImageFilter
 import torchvision.transforms.v2 as v2
-from typing import Union, Optional, List
-import os
+from typing import Union, Optional
 from pathlib import Path
 
 def histogram_matching(source: np.ndarray, reference: np.ndarray) -> np.ndarray:
@@ -51,7 +50,8 @@ def fourier_domain_adaptation(src_img: torch.Tensor, trg_img: torch.Tensor, beta
     # Get mask for low frequencies
     _, H, W = src_img.shape
     b = int(np.floor(min(H, W) * beta))
-    if b < 1: b = 1
+    if b < 1:
+        b = 1
     
     cy, cx = H // 2, W // 2
     
@@ -163,9 +163,12 @@ class ThermalDiffusionAugmenter:
             base_y = max(min_allowed_y, base_y)
         else:
             coverage_choices = []
-            if shoulders_y: coverage_choices.append(min(shoulders_y))
-            if hips_y: coverage_choices.append(min(hips_y))
-            if knees_y: coverage_choices.append(min(knees_y))
+            if shoulders_y:
+                coverage_choices.append(min(shoulders_y))
+            if hips_y:
+                coverage_choices.append(min(hips_y))
+            if knees_y:
+                coverage_choices.append(min(knees_y))
             if coverage_choices:
                 base_y = random.choice(coverage_choices)
                 base_y += random.randint(-15, 15)

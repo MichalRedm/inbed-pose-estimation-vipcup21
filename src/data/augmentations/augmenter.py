@@ -2,11 +2,9 @@ import random
 import numpy as np
 import torch
 import inspect
-import sys
 from PIL import Image
-import torchvision.transforms.v2 as v2
 from torchvision import tv_tensors
-from typing import Any, Optional, Union, List
+from typing import Any, Optional, Union
 
 from .geometric import HorizontalFlipAugmentation, AffineAugmentation
 from .intensity import ThermalIntensityJitter, IRSensorNoise
@@ -132,10 +130,14 @@ class DataAugmenter:
         # Occlusion block
         if self.exclusive_occlusion:
             candidates = []
-            if random.random() < self.cyclegan.probability: candidates.append("cyclegan")
-            if random.random() < self.cut.probability: candidates.append("cut")
-            if random.random() < self.advanced_cover.probability: candidates.append("advanced_cover")
-            if random.random() < self.thermal_augmenter.probability: candidates.append("thermal")
+            if random.random() < self.cyclegan.probability:
+                candidates.append("cyclegan")
+            if random.random() < self.cut.probability:
+                candidates.append("cut")
+            if random.random() < self.advanced_cover.probability:
+                candidates.append("advanced_cover")
+            if random.random() < self.thermal_augmenter.probability:
+                candidates.append("thermal")
 
             if candidates:
                 choice = random.choice(candidates)
@@ -225,7 +227,8 @@ def apply_custom_augmentations(image, joints, aug_list, is_ir=False, dataset_roo
         params = aug_cfg.get("params", {})
         if aug_id in all_classes:
             aug_cls = all_classes[aug_id]
-            if "probability" not in params: params["probability"] = 1.0
+            if "probability" not in params:
+                params["probability"] = 1.0
             
             # Special case for AdvancedCoverAugmenter
             if aug_id == "advanced_cover":
