@@ -7,9 +7,7 @@ from src.data.augmentations import (
     DataAugmenter,
     AdvancedCoverAugmenter,
 )
-import os
 import tempfile
-import shutil
 from pathlib import Path
 
 def test_advanced_cover_augmentation():

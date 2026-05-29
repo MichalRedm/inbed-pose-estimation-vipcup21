@@ -248,8 +248,10 @@ class ThermalDiffusionAugmenter:
         dampened = Image.fromarray(np.clip(dampened_np, 0, 255).astype(np.uint8))
         final_image = Image.composite(dampened, img_pil, mask)
 
-        if original_mode != "L": final_image = final_image.convert(original_mode)
-        if is_tensor: return v2.functional.to_image(final_image).to(device)
+        if original_mode != "L":
+            final_image = final_image.convert(original_mode)
+        if is_tensor:
+            return v2.functional.to_image(final_image).to(device)
         return final_image
 
 
@@ -294,7 +296,8 @@ class AdvancedCoverAugmenter:
         ]
         
         for root in search_roots:
-            if not root.exists(): continue
+            if not root.exists():
+                continue
             for cover in ["cover1", "cover2"]:
                 # Recursive glob to find images inside cover1/cover2 directories
                 # This is more robust to different nesting levels
@@ -361,15 +364,21 @@ class AdvancedCoverAugmenter:
         head_y = None
         if joints is not None:
             if torch.is_tensor(joints):
-                if len(joints.shape) == 3: j_np = joints[0].cpu().numpy()
-                elif len(joints.shape) == 2: j_np = (joints[:2, :].T.cpu().numpy() if joints.shape[0] == 3 else joints.cpu().numpy())
-                else: j_np = np.array(joints)
-            else: j_np = np.array(joints)
+                if len(joints.shape) == 3:
+                    j_np = joints[0].cpu().numpy()
+                elif len(joints.shape) == 2:
+                    j_np = (joints[:2, :].T.cpu().numpy() if joints.shape[0] == 3 else joints.cpu().numpy())
+                else:
+                    j_np = np.array(joints)
+            else:
+                j_np = np.array(joints)
             if len(j_np.shape) == 2 and j_np.shape[0] >= 14:
-                if j_np[13, 0] > 0 or j_np[13, 1] > 0: head_y = j_np[13, 1]
+                if j_np[13, 0] > 0 or j_np[13, 1] > 0:
+                    head_y = j_np[13, 1]
 
         min_allowed_y = int(h * 0.15)
-        if head_y is not None: min_allowed_y = max(min_allowed_y, int(head_y + 15))
+        if head_y is not None:
+            min_allowed_y = max(min_allowed_y, int(head_y + 15))
         base_y = int(random.uniform(max(min_allowed_y, h * 0.25), h * 0.7))
 
         # 2. Create wavy mask
@@ -412,6 +421,8 @@ class AdvancedCoverAugmenter:
         # 4. Composite
         final_image = Image.composite(styled_pil, img_pil, mask_pil)
 
-        if original_mode != "L": final_image = final_image.convert(original_mode)
-        if is_tensor: return v2.functional.to_image(final_image).to(device)
+        if original_mode != "L":
+            final_image = final_image.convert(original_mode)
+        if is_tensor:
+            return v2.functional.to_image(final_image).to(device)
         return final_image
