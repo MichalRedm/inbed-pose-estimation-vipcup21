@@ -139,8 +139,8 @@ class TrainingManager:
                 self.adv_loss_history = [None] * max_ep
                 for ep, metrics in file_history_dict.items():
                     idx = ep - 1
-                    self.loss_history[idx] = metrics["loss"]
-                    self.adv_loss_history[idx] = metrics["adv_loss"]
+                    self.loss_history[idx] = metrics.get("loss")
+                    self.adv_loss_history[idx] = metrics.get("adv_loss")
                 self.current_epoch = max_ep
         else:
             self.loss_history = []
@@ -237,8 +237,8 @@ class TrainingManager:
                 for ep, metrics in file_history_dict.items():
                     idx = ep - 1
                     if 0 <= idx < len(self.loss_history):
-                        self.loss_history[idx] = metrics["loss"]
-                        self.adv_loss_history[idx] = metrics["adv_loss"]
+                        self.loss_history[idx] = metrics.get("loss")
+                        self.adv_loss_history[idx] = metrics.get("adv_loss")
 
         # Refresh loss history from file using explicit epoch indices to avoid desyncs
         # (Especially useful for remote training where history.json is synced periodically)
@@ -252,11 +252,15 @@ class TrainingManager:
                 self.adv_loss_history.append(None)
 
             # Merge disk history into in-memory array at explicit indices
-            for ep, metrics in file_history_dict.items():
-                idx = ep - 1
-                if idx >= 0:
-                    self.loss_history[idx] = metrics["loss"]
-                    self.adv_loss_history[idx] = metrics["adv_loss"]
+            for ep_str, metrics in file_history_dict.items():
+                try:
+                    ep = int(ep_str)
+                    idx = ep - 1
+                    if 0 <= idx < len(self.loss_history):
+                        self.loss_history[idx] = metrics.get("loss")
+                        self.adv_loss_history[idx] = metrics.get("adv_loss")
+                except (ValueError, TypeError):
+                    continue
 
         # Calculate overall progress: (completed epochs + current epoch progress) / total epochs
         overall_progress = 0.0
