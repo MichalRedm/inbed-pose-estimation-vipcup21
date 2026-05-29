@@ -98,11 +98,6 @@ def main():
     backend_name = "remote_gpu"
     mgr.add_backend_from_json(backend_name, json_path)
 
-    # Use the SSH key from the standard location
-    ssh_key = os.path.expandvars(r"%USERPROFILE%\.ssh\id_ed25519")
-    if os.path.exists(ssh_key):
-        mgr._backends[backend_name].ssh_key = ssh_key
-
     print("--- Starting Remote Training Session ---")
     with mgr.use(backend_name) as gpu:
         # Determine remote project root dynamically based on who we logged in as
@@ -360,7 +355,28 @@ def main():
 
         def poll_and_download(session):
             """Download any checkpoint not yet synced locally with strict size verification."""
-            # 1. Sync .pth checkpoints
+            # 1. Sync history.json and config.json FIRST (Fast, updates dashboard)
+            for r_path, l_path in [
+                (remote_history_path, local_history_path),
+                (remote_config_path, local_config_path),
+            ]:
+                # Use run_id in the temp filename to avoid collision/stale files in /tmp
+                suffix = args_cli.run_id if args_cli.run_id else "default"
+                tmp_remote = f"/tmp/sync_{suffix}_{os.path.basename(r_path)}"
+                session.run(
+                    f"if [ -f {r_path} ]; then cp {r_path} {tmp_remote}; else rm -f {tmp_remote}; fi",
+                    stream=False,
+                )
+                try:
+                    session.download(
+                        tmp_remote,
+                        str(l_path),
+                        recursive=False,
+                    )
+                except Exception:
+                    pass  # might not exist yet
+
+            # 2. Sync .pth checkpoints
             result = session.run(
                 f"ls {remote_ckpt_dir}/*.pth 2>/dev/null || true",
                 stream=False,
@@ -481,27 +497,6 @@ def main():
                 except Exception:
                     pass
 
-            # 2. Sync history.json and config.json
-            for r_path, l_path in [
-                (remote_history_path, local_history_path),
-                (remote_config_path, local_config_path),
-            ]:
-                # Use run_id in the temp filename to avoid collision/stale files in /tmp
-                suffix = args_cli.run_id if args_cli.run_id else "default"
-                tmp_remote = f"/tmp/sync_{suffix}_{os.path.basename(r_path)}"
-                session.run(
-                    f"if [ -f {r_path} ]; then cp {r_path} {tmp_remote}; else rm -f {tmp_remote}; fi",
-                    stream=False,
-                )
-                try:
-                    session.download(
-                        tmp_remote,
-                        str(l_path),
-                        recursive=False,
-                    )
-                except Exception:
-                    pass  # might not exist yet
-
         # Run training in background thread; poll checkpoints and stream metrics from main thread
         import threading
         import time
@@ -568,7 +563,11 @@ def main():
                                 line = stdout.readline()
                                 if line:
                                     # Print with prefix for TrainingManager to intercept
-                                    print(f"[METRICS] {line.strip()}", flush=True)
+                                    # Check if already prefixed to avoid double-tagging
+                                    if line.strip().startswith("[METRICS]"):
+                                        print(line.strip(), flush=True)
+                                    else:
+                                        print(f"[METRICS] {line.strip()}", flush=True)
                                 else:
                                     # Might be EOF if tail -F was interrupted
                                     break

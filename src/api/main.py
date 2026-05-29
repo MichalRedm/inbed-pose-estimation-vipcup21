@@ -555,6 +555,7 @@ async def apply_augmentations_endpoint(request: AugmentationApplyRequest):
         sample["joints"].get(request.modality),
         request.augmentations,
         is_ir=(request.modality == "IR"),
+        dataset_root=str(ds.root),
     )
     if torch.is_tensor(aug_image):
         aug_image = v2.functional.to_pil_image(aug_image)

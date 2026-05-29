@@ -49,6 +49,12 @@ class VIPCupDataset(Dataset):
             self.covers = covers
         self.transform = transform
         self.augmenter = augmenter
+        if self.augmenter is not None and hasattr(self.augmenter, "dataset_root"):
+            self.augmenter.dataset_root = str(self.root)
+            # Re-initialize reference bank if it's AdvancedCoverAugmenter
+            if hasattr(self.augmenter, "advanced_cover"):
+                self.augmenter.advanced_cover.dataset_root = self.root
+                self.augmenter.advanced_cover._load_reference_bank()
         self.image_size = image_size
         self.heatmap_size = (64, 64)  # HRNet output size
         self.sigma = 2.0

@@ -6,16 +6,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import torch
 from src.data.dataset import VIPCupDataset
-from src.models.hrnet import get_pose_net
+from src.models import build_model
 from src.utils import load_config
 
 
 def test_components():
     config = load_config()
-    model_cfg = config.get("model", {}).get("hrnet", {})
 
     print("Testing Model Instantiation...")
-    model = get_pose_net(model_cfg)
+    # Use build_model instead of legacy get_pose_net
+    model = build_model(config)
     print(
         f"Model created. Total parameters: {sum(p.numel() for p in model.parameters())}"
     )
