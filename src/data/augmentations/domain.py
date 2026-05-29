@@ -15,15 +15,9 @@ class CycleGANAugmentation:
         "name": "CycleGAN Target Translation",
         "description": "Translates clean IR subjects to look like they are under a blanket using a trained CycleGAN generator.",
         "order": 40,
-        "parameters": [
-            {
-                "name": "probability",
-                "type": "float",
-                "default": 0.5,
-                "min": 0.0,
-                "max": 1.0,
-            }
-        ],
+        "params": {
+            "probability": {"type": "float", "min": 0.0, "max": 1.0, "default": 0.5}
+        },
     }
 
     def __init__(
@@ -105,15 +99,9 @@ class CUTAugmentation:
         "name": "CUT Target Translation",
         "description": "Translates clean IR subjects to look like they are under a blanket using a trained CUT generator.",
         "order": 41,
-        "parameters": [
-            {
-                "name": "probability",
-                "type": "float",
-                "default": 0.5,
-                "min": 0.0,
-                "max": 1.0,
-            }
-        ],
+        "params": {
+            "probability": {"type": "float", "min": 0.0, "max": 1.0, "default": 0.5}
+        },
     }
 
     def __init__(
