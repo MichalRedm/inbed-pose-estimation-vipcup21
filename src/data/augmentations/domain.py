@@ -72,16 +72,29 @@ class CycleGANAugmentation:
 
         is_tensor = torch.is_tensor(img)
         img_t = img if is_tensor else v2.functional.to_image(img).float() / 255.0
+        original_channels = img_t.shape[0]
 
         # Generator expects batch dimension and normalized [-1, 1]
         img_t = (img_t * 2) - 1.0
-        img_t = img_t.unsqueeze(0).to(self.device)
+        img_t = img_t.unsqueeze(0)
+        
+        # Ensure 3 channels for the generator
+        if img_t.shape[1] == 1:
+            img_t = img_t.repeat(1, 3, 1, 1)
+            
+        img_t = img_t.to(self.device)
 
         with torch.no_grad():
             fake_target = self.generator(img_t)
 
         # Denormalize [0, 1]
         fake_target = (fake_target.squeeze(0) + 1.0) / 2.0
+        
+        # Convert back to original channel count if needed
+        if original_channels == 1 and fake_target.shape[0] == 3:
+            # We can average or take the first channel. Taking first is common.
+            fake_target = fake_target[0:1, :, :]
+            
         fake_target = torch.clamp(fake_target, 0, 1)
 
         if not is_tensor:
@@ -160,16 +173,29 @@ class CUTAugmentation:
 
         is_tensor = torch.is_tensor(img)
         img_t = img if is_tensor else v2.functional.to_image(img).float() / 255.0
+        original_channels = img_t.shape[0]
 
         # Generator expects batch dimension and normalized [-1, 1]
         img_t = (img_t * 2) - 1.0
-        img_t = img_t.unsqueeze(0).to(self.device)
+        img_t = img_t.unsqueeze(0)
+        
+        # Ensure 3 channels for the generator
+        if img_t.shape[1] == 1:
+            img_t = img_t.repeat(1, 3, 1, 1)
+            
+        img_t = img_t.to(self.device)
 
         with torch.no_grad():
             fake_target = self.generator(img_t)
 
         # Denormalize [0, 1]
         fake_target = (fake_target.squeeze(0) + 1.0) / 2.0
+        
+        # Convert back to original channel count if needed
+        if original_channels == 1 and fake_target.shape[0] == 3:
+            # We can average or take the first channel. Taking first is common.
+            fake_target = fake_target[0:1, :, :]
+            
         fake_target = torch.clamp(fake_target, 0, 1)
 
         if not is_tensor:
