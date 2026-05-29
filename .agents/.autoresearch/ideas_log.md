@@ -8,10 +8,20 @@ This log tracks our prioritized queue of future improvement hypotheses, synthesi
 
 Below is our prioritized queue of strictly **future** improvement hypotheses, ranked by Return on Investment (ROI)—defined as the combined probability of accuracy gains versus simplicity of implementation.
 
-### 1. Contrastive Unpaired Translation (CUT)
-*   **Hypothesis**: Standard CycleGAN training (Loop 47) enforces a strict bijective (one-to-one) constraint due to the cycle-consistency loss. This forces the model to perform "steganographic watermarking" (storing under-blanket pose details in high-frequency noise or stretching contrast to darken regions) to reconstruct the source image perfectly during the cycle. By replacing cycle-consistency with **Patchwise Contrastive Learning (InfoNCE Loss)**, we can achieve "one-way" translation (many-to-one mapping). This will completely resolve the high-frequency checkerboard grid noise and simple contrast-darkening, enabling physically realistic simulation of thermal blankets.
-*   **Implementation**: Discard the backward generator $G_{BA}$ and second discriminator $D_A$ (saving ~50% VRAM and accelerating training by **2x**). Add a patchwise contrastive loss over multi-layer feature maps extracted from the generator's encoder, maximizing mutual information between corresponding source and target patches.
-*   **ROI Status**: **VERY HIGH (ROI Rank 1)** — Directly addresses the fundamental mathematical constraint and steganographic failure modes identified during Loop 47.
+### 1. Task-Consistent Domain Translation (Loop 53+)
+*   **Hypothesis**: Simple offline augmentation with CUT (Loops 50-52) showed marginal gains (0.6pp) that don't justify the computational overhead of running a generator during training. To unlock the true potential of GAN-based data augmentation, the generator must be **geometry-aware**. By using a frozen record-breaking pose estimator (Loop 44/50) as a supervisor, we can enforce a **Pose-Preservation Loss** $\|P(x) - P(G(x))\|_2^2$. This ensures that as the generator learns to synthesize realistic blanket folds, it is strictly forbidden from shifting limb positions to satisfy the pixel-level discriminator.
+*   **Implementation**: Integrate `src/models/vitpose.py` into the `CUTTrainer`. During the $G$ update, pass both real uncovered $x$ and fake covered $G(x)$ through ViTPose and backprop the heatmap MSE to the generator.
+*   **ROI Status**: **VERY HIGH (ROI Rank 1)** — Moves from "style seasoning" to "structural supervision".
+
+... [around line 300] ...
+
+### 21. Offline CUT Augmentation (Loops 50-52)
+*   **Result**: Peak **78.41% PCK@0.2** (Loop 50), failing to consistently outperform the Loop 44 baseline (77.8%).
+*   **Root Cause**:
+    - **Marginality vs Overhead**: The +0.6pp gain is within the margin of variance and doesn't justify the 2x increase in training-time compute (if using real-time inference) or the complexity of offline synthetic dataset management.
+    - **Domain-Shift Noise**: High probability CUT augmentation (Loop 51, 0.7) introduced too much texture noise that the model couldn't map back to the skeletal ground truth, leading to regression.
+    - **Lack of Geometric Integrity**: Without a pose-consistency loss during GAN training (Loop 48/49), the generator occasionally "hallucinates" blanket edges that look realistic to the discriminator but subtly shift the perceived joint heat signature, confusing the downstream pose estimator.
+*   **Lesson**: GAN-based data augmentation for precision tasks must be **Task-Consistent**. Offline "blind" translation is a dead end for pushing past 80%.
 
 ### 2. Semantic & Pose-Consistent Domain Translation (Task-Consistent GAN)
 *   **Hypothesis**: The standard CycleGAN pixel-level cycle consistency loss ($L_{cycle} = \|x - \hat{x}\|_1$) is mathematically over-constrained and counterproductive. Because the uncover-to-cover translation is inherently lossy (mapping clear skin/clothing to flat, thick blanket drapes), forcing the generator to perfectly reconstruct every fine-grained background and skin pixel forces it to hide these details in steganographic noise. Since our ultimate downstream task is **pose estimation**, we only care that **pose geometry** is preserved. Under SOTA literature for task-consistent domain translation (e.g., **Sem-GAN** / Task-Consistent GANs), replacing or augmenting pixel cycle loss with a **Semantic/Pose-Consistent Loss** using a frozen SOTA pose estimator $P$ eliminates the pixel-wise bijection bottleneck. This allows the generator to synthesize highly realistic, lossy fabric structures while strictly anchoring pose geometry.
