@@ -8,10 +8,13 @@ This log tracks our prioritized queue of future improvement hypotheses, synthesi
 
 Below is our prioritized queue of strictly **future** improvement hypotheses, ranked by Return on Investment (ROI)—defined as the combined probability of accuracy gains versus simplicity of implementation.
 
-### 1. Task-Consistent Domain Translation (Loop 53+)
-*   **Hypothesis**: Simple offline augmentation with CUT (Loops 50-52) showed marginal gains (0.6pp) that don't justify the computational overhead of running a generator during training. To unlock the true potential of GAN-based data augmentation, the generator must be **geometry-aware**. By using a frozen record-breaking pose estimator (Loop 44/50) as a supervisor, we can enforce a **Pose-Preservation Loss** $\|P(x) - P(G(x))\|_2^2$. This ensures that as the generator learns to synthesize realistic blanket folds, it is strictly forbidden from shifting limb positions to satisfy the pixel-level discriminator.
-*   **Implementation**: Integrate `src/models/vitpose.py` into the `CUTTrainer`. During the $G$ update, pass both real uncovered $x$ and fake covered $G(x)$ through ViTPose and backprop the heatmap MSE to the generator.
-*   **ROI Status**: **VERY HIGH (ROI Rank 1)** — Moves from "style seasoning" to "structural supervision".
+### 1. Advanced Synthetic Cover Augmentation (Loop 53)
+*   **Hypothesis**: The current synthetic cover augmentation (`ThermalDiffusionAugmenter`) relies on mathematical blurring and darkening, which can look unrealistic. By integrating **Fourier Domain Adaptation (FDA)** and **Histogram Matching**, we can translate the style of real covered images (from a dynamic training bank) onto clean uncovered images while preserving the skeletal structure. Restricting the augmentation to the body region (excluding the head) using keypoint-guided wavy masks further improves realism and prevents head-region artifacts.
+*   **Implementation**: Create `AdvancedCoverAugmenter`. 
+    1. Swaps low-frequency Fourier components (FDA) and aligns color distributions (Histogram Matching) using a randomly sampled reference from a training bank of `cover1`/`cover2` images.
+    2. Composites the styled body with the original head using a wavy semantic mask.
+    3. Integrated into a modularized `src/data/augmentations/` package.
+*   **ROI Status**: **VERY HIGH (ROI Rank 1)** — Direct implementation of VIP Cup winning team ideas (Samaritan), tailored for our SOTA ViTPose baseline.
 
 ... [around line 300] ...
 

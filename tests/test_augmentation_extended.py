@@ -5,8 +5,41 @@ from src.data.augmentations import (
     ThermalIntensityJitter,
     IRSensorNoise,
     DataAugmenter,
+    AdvancedCoverAugmenter,
 )
+import os
+import tempfile
+import shutil
+from pathlib import Path
 
+def test_advanced_cover_augmentation():
+    # Create a dummy dataset structure for reference bank
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        subj_dir = tmp_path / "train" / "Subject_01" / "IR" / "cover1"
+        subj_dir.mkdir(parents=True)
+        
+        # Create a dummy reference image
+        ref_img = Image.fromarray(np.random.randint(0, 256, (256, 256), dtype=np.uint8))
+        ref_img.save(subj_dir / "00001.png")
+        
+        # Initialize augmenter
+        adv_cover = AdvancedCoverAugmenter(dataset_root=tmpdir, probability=1.0)
+        assert len(adv_cover.reference_bank) == 1, "Should have loaded 1 reference image"
+        
+        # Create a source image
+        img = Image.fromarray(np.ones((256, 256), dtype=np.uint8) * 128)
+        
+        # Run augmentation
+        img_aug = adv_cover(img, is_ir=True, fda_prob=1.0, hist_match_prob=1.0)
+        
+        # Verify changes
+        img_aug_np = np.array(img_aug)
+        assert not np.all(img_aug_np == 128), "Image should have been modified by cover styling"
+        
+        # Verify head protection (approximate check: top pixels shouldn't be touched by the mask usually)
+        # Actually, base_y starts from 0.15h + head_y, so top ~20% should be identical
+        assert np.all(img_aug_np[:30, :] == 128), "Top of image (head region) should remain untouched"
 
 def test_cutout_augmentation():
     # Create a 256x256 gray PIL Image

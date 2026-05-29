@@ -163,7 +163,7 @@ def train():
     # 5. Initialize Data
     s_train = dataset_cfg.get("subjects_train", [1, 30])
     s_val = dataset_cfg.get("subjects_val", [81, 90])
-    augmenter = DataAugmenter(config["training"].get("augmentation", {}))
+    augmenter = DataAugmenter(config["training"].get("augmentation", {}), dataset_root=args.data_root)
 
     # Determine in_channels from model config
     model_cfg = config.get("model", {})
