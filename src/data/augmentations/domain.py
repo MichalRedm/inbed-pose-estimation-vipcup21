@@ -4,6 +4,7 @@ import torchvision.transforms.v2 as v2
 from PIL import Image
 from typing import Union
 
+
 class CycleGANAugmentation:
     """
     CycleGAN-based style transfer for data augmentation.
@@ -43,15 +44,19 @@ class CycleGANAugmentation:
                     try:
                         self.generator.load_state_dict(
                             torch.load(
-                                checkpoint_path, map_location=self.device, weights_only=True
+                                checkpoint_path,
+                                map_location=self.device,
+                                weights_only=True,
                             ),
-                            strict=False # Allow mismatched keys to prevent crash if architecture changed
+                            strict=False,  # Allow mismatched keys to prevent crash if architecture changed
                         )
                         self.generator = self.generator.to(self.device)
                         self.generator.eval()
                         print(f"CycleGAN generator loaded from {checkpoint_path}")
                     except Exception as e:
-                        print(f"Warning: Failed to load CycleGAN checkpoint weights: {e}")
+                        print(
+                            f"Warning: Failed to load CycleGAN checkpoint weights: {e}"
+                        )
                         self.enabled = False
                 else:
                     print(
@@ -77,11 +82,11 @@ class CycleGANAugmentation:
         # Generator expects batch dimension and normalized [-1, 1]
         img_t = (img_t * 2) - 1.0
         img_t = img_t.unsqueeze(0)
-        
+
         # Ensure 3 channels for the generator
         if img_t.shape[1] == 1:
             img_t = img_t.repeat(1, 3, 1, 1)
-            
+
         img_t = img_t.to(self.device)
 
         with torch.no_grad():
@@ -89,12 +94,12 @@ class CycleGANAugmentation:
 
         # Denormalize [0, 1]
         fake_target = (fake_target.squeeze(0) + 1.0) / 2.0
-        
+
         # Convert back to original channel count if needed
         if original_channels == 1 and fake_target.shape[0] == 3:
             # We can average or take the first channel. Taking first is common.
             fake_target = fake_target[0:1, :, :]
-            
+
         fake_target = torch.clamp(fake_target, 0, 1)
 
         if not is_tensor:
@@ -144,9 +149,11 @@ class CUTAugmentation:
                     try:
                         self.generator.load_state_dict(
                             torch.load(
-                                checkpoint_path, map_location=self.device, weights_only=True
+                                checkpoint_path,
+                                map_location=self.device,
+                                weights_only=True,
                             ),
-                            strict=False # Allow mismatched keys to prevent crash if architecture changed
+                            strict=False,  # Allow mismatched keys to prevent crash if architecture changed
                         )
                         self.generator = self.generator.to(self.device)
                         self.generator.eval()
@@ -178,11 +185,11 @@ class CUTAugmentation:
         # Generator expects batch dimension and normalized [-1, 1]
         img_t = (img_t * 2) - 1.0
         img_t = img_t.unsqueeze(0)
-        
+
         # Ensure 3 channels for the generator
         if img_t.shape[1] == 1:
             img_t = img_t.repeat(1, 3, 1, 1)
-            
+
         img_t = img_t.to(self.device)
 
         with torch.no_grad():
@@ -190,12 +197,12 @@ class CUTAugmentation:
 
         # Denormalize [0, 1]
         fake_target = (fake_target.squeeze(0) + 1.0) / 2.0
-        
+
         # Convert back to original channel count if needed
         if original_channels == 1 and fake_target.shape[0] == 3:
             # We can average or take the first channel. Taking first is common.
             fake_target = fake_target[0:1, :, :]
-            
+
         fake_target = torch.clamp(fake_target, 0, 1)
 
         if not is_tensor:

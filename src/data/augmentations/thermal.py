@@ -7,6 +7,7 @@ import torchvision.transforms.v2 as v2
 from typing import Union, Optional
 from pathlib import Path
 
+
 def histogram_matching(source: np.ndarray, reference: np.ndarray) -> np.ndarray:
     """
     Matches the histogram of the source image to the reference image.
@@ -19,21 +20,31 @@ def histogram_matching(source: np.ndarray, reference: np.ndarray) -> np.ndarray:
         # Handle cases where reference might have different number of channels
         ref_channels = reference.shape[2] if reference.ndim == 3 else 1
         for i in range(source.shape[2]):
-            ref_chan = reference[:, :, i % ref_channels] if reference.ndim == 3 else reference
+            ref_chan = (
+                reference[:, :, i % ref_channels] if reference.ndim == 3 else reference
+            )
             res[:, :, i] = _match_cumulative_distribution(source[:, :, i], ref_chan)
         return res
 
-def _match_cumulative_distribution(source: np.ndarray, reference: np.ndarray) -> np.ndarray:
-    src_values, src_indices, src_counts = np.unique(source, return_inverse=True, return_counts=True)
+
+def _match_cumulative_distribution(
+    source: np.ndarray, reference: np.ndarray
+) -> np.ndarray:
+    src_values, src_indices, src_counts = np.unique(
+        source, return_inverse=True, return_counts=True
+    )
     ref_values, ref_counts = np.unique(reference, return_counts=True)
-    
+
     src_cdf = np.cumsum(src_counts).astype(np.float64) / source.size
     ref_cdf = np.cumsum(ref_counts).astype(np.float64) / reference.size
-    
+
     interp_values = np.interp(src_cdf, ref_cdf, ref_values)
     return interp_values[src_indices].reshape(source.shape).astype(source.dtype)
 
-def fourier_domain_adaptation(src_img: torch.Tensor, trg_img: torch.Tensor, beta: float = 0.01) -> torch.Tensor:
+
+def fourier_domain_adaptation(
+    src_img: torch.Tensor, trg_img: torch.Tensor, beta: float = 0.01
+) -> torch.Tensor:
     """
     Fourier Domain Adaptation (FDA)
     src_img, trg_img: torch.Tensor [C, H, W]
@@ -42,36 +53,38 @@ def fourier_domain_adaptation(src_img: torch.Tensor, trg_img: torch.Tensor, beta
     # Get FFT
     fft_src = torch.fft.fftn(src_img, dim=(-2, -1))
     fft_trg = torch.fft.fftn(trg_img, dim=(-2, -1))
-    
+
     # Shift to center
     fft_src_shifted = torch.fft.fftshift(fft_src, dim=(-2, -1))
     fft_trg_shifted = torch.fft.fftshift(fft_trg, dim=(-2, -1))
-    
+
     # Get mask for low frequencies
     _, H, W = src_img.shape
     b = int(np.floor(min(H, W) * beta))
     if b < 1:
         b = 1
-    
+
     cy, cx = H // 2, W // 2
-    
+
     # Original FDA paper swaps the amplitude and keeps the phase of src.
     amp_src = torch.abs(fft_src_shifted)
     pha_src = torch.angle(fft_src_shifted)
     amp_trg = torch.abs(fft_trg_shifted)
-    
+
     # Apply swap to amplitude
     # We clone to avoid modifying original tensors if they are reused
     amp_src_mutated = amp_src.clone()
-    amp_src_mutated[:, cy-b:cy+b, cx-b:cx+b] = amp_trg[:, cy-b:cy+b, cx-b:cx+b]
-    
+    amp_src_mutated[:, cy - b : cy + b, cx - b : cx + b] = amp_trg[
+        :, cy - b : cy + b, cx - b : cx + b
+    ]
+
     # Reconstruct
     fft_src_mutated = amp_src_mutated * torch.exp(1j * pha_src)
-    
+
     # Inverse shift and inverse FFT
     fft_src_mutated = torch.fft.ifftshift(fft_src_mutated, dim=(-2, -1))
     src_in_trg = torch.fft.ifftn(fft_src_mutated, dim=(-2, -1)).real
-    
+
     return src_in_trg
 
 
@@ -209,40 +222,101 @@ class ThermalDiffusionAugmenter:
         for _ in range(random.randint(3, 6)):
             fx1, fy1 = random.randint(-40, w + 40), random.randint(base_y - 40, h + 40)
             fx2, fy2 = random.randint(-40, w + 40), fy1 + random.randint(80, 250)
-            cx, cy = random.randint(min(fx1, fx2) - 50, max(fx1, fx2) + 50), (fy1 + fy2) // 2 + random.randint(-20, 20)
-            pts = [ (int((1-t)**2*fx1 + 2*(1-t)*t*cx + t**2*fx2), int((1-t)**2*fy1 + 2*(1-t)*t*cy + t**2*fy2)) for t in np.linspace(0, 1, 15)]
-            drape_draw.line(pts, fill=random.randint(40, 120), width=random.randint(25, 50), joint="round")
-        drape_np = np.array(drape_mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(10.0, 18.0)))).astype(np.float32) / 255.0
+            cx, cy = (
+                random.randint(min(fx1, fx2) - 50, max(fx1, fx2) + 50),
+                (fy1 + fy2) // 2 + random.randint(-20, 20),
+            )
+            pts = [
+                (
+                    int((1 - t) ** 2 * fx1 + 2 * (1 - t) * t * cx + t**2 * fx2),
+                    int((1 - t) ** 2 * fy1 + 2 * (1 - t) * t * cy + t**2 * fy2),
+                )
+                for t in np.linspace(0, 1, 15)
+            ]
+            drape_draw.line(
+                pts,
+                fill=random.randint(40, 120),
+                width=random.randint(25, 50),
+                joint="round",
+            )
+        drape_np = (
+            np.array(
+                drape_mask.filter(
+                    ImageFilter.GaussianBlur(radius=random.uniform(10.0, 18.0))
+                )
+            ).astype(np.float32)
+            / 255.0
+        )
 
         wrinkle_mask = Image.new("L", img_pil.size, 255)
         wrinkle_draw = ImageDraw.Draw(wrinkle_mask)
         for _ in range(random.randint(4, 8)):
             fx1, fy1 = random.randint(-40, w + 40), random.randint(base_y - 20, h + 40)
             fx2, fy2 = fx1 + random.randint(-60, 60), fy1 + random.randint(40, 180)
-            cx, cy = (fx1 + fx2) // 2 + random.randint(-15, 15), (fy1 + fy2) // 2 + random.randint(-10, 10)
-            pts = [ (int((1-t)**2*fx1 + 2*(1-t)*t*cx + t**2*fx2), int((1-t)**2*fy1 + 2*(1-t)*t*cy + t**2*fy2)) for t in np.linspace(0, 1, 10)]
-            wrinkle_draw.line(pts, fill=random.randint(80, 160), width=random.randint(3, 7), joint="round")
-        wrinkle_np = np.array(wrinkle_mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(2.0, 4.5)))).astype(np.float32) / 255.0
+            cx, cy = (
+                (fx1 + fx2) // 2 + random.randint(-15, 15),
+                (fy1 + fy2) // 2 + random.randint(-10, 10),
+            )
+            pts = [
+                (
+                    int((1 - t) ** 2 * fx1 + 2 * (1 - t) * t * cx + t**2 * fx2),
+                    int((1 - t) ** 2 * fy1 + 2 * (1 - t) * t * cy + t**2 * fy2),
+                )
+                for t in np.linspace(0, 1, 10)
+            ]
+            wrinkle_draw.line(
+                pts,
+                fill=random.randint(80, 160),
+                width=random.randint(3, 7),
+                joint="round",
+            )
+        wrinkle_np = (
+            np.array(
+                wrinkle_mask.filter(
+                    ImageFilter.GaussianBlur(radius=random.uniform(2.0, 4.5))
+                )
+            ).astype(np.float32)
+            / 255.0
+        )
 
         combined_drape_np = drape_np * wrinkle_np
-        blanket_base = ambient_est + (combined_drape_np - 0.85) * 12.0 + np.random.normal(0, 1.5, img_np.shape).astype(np.float32)
+        blanket_base = (
+            ambient_est
+            + (combined_drape_np - 0.85) * 12.0
+            + np.random.normal(0, 1.5, img_np.shape).astype(np.float32)
+        )
 
         # 6. Simulate body heat
         body_heat = np.maximum(img_np - ambient_est, 0.0)
         body_heat_norm = body_heat / (np.max(body_heat) + 1e-5)
         body_heat_boosted = np.power(body_heat_norm, 1.3) * np.max(body_heat)
         heat_pil = Image.fromarray(np.clip(body_heat_boosted, 0, 255).astype(np.uint8))
-        bloom_np = np.array(heat_pil.filter(ImageFilter.GaussianBlur(radius=random.uniform(8.0, 16.0)))).astype(np.float32)
-        contact_np = np.array(heat_pil.filter(ImageFilter.GaussianBlur(radius=random.uniform(2.5, 5.0)))).astype(np.float32)
-        mixed_heat_np = bloom_np * (1.0 - combined_drape_np) + contact_np * combined_drape_np
+        bloom_np = np.array(
+            heat_pil.filter(ImageFilter.GaussianBlur(radius=random.uniform(8.0, 16.0)))
+        ).astype(np.float32)
+        contact_np = np.array(
+            heat_pil.filter(ImageFilter.GaussianBlur(radius=random.uniform(2.5, 5.0)))
+        ).astype(np.float32)
+        mixed_heat_np = (
+            bloom_np * (1.0 - combined_drape_np) + contact_np * combined_drape_np
+        )
 
         damp_factor = kwargs.get("damp_factor", random.uniform(0.18, 0.42))
         dampened_np = blanket_base + mixed_heat_np * damp_factor * combined_drape_np
 
         # 8. Shadow
         shadow_mask = Image.new("L", img_pil.size, 0)
-        ImageDraw.Draw(shadow_mask).line(wavy_points, fill=255, width=random.randint(4, 8), joint="round")
-        shadow_np = np.array(shadow_mask.filter(ImageFilter.GaussianBlur(radius=random.uniform(2, 5)))).astype(np.float32) / 255.0
+        ImageDraw.Draw(shadow_mask).line(
+            wavy_points, fill=255, width=random.randint(4, 8), joint="round"
+        )
+        shadow_np = (
+            np.array(
+                shadow_mask.filter(
+                    ImageFilter.GaussianBlur(radius=random.uniform(2, 5))
+                )
+            ).astype(np.float32)
+            / 255.0
+        )
         dampened_np = dampened_np * (1.0 - shadow_np * random.uniform(0.03, 0.08))
 
         dampened = Image.fromarray(np.clip(dampened_np, 0, 255).astype(np.uint8))
@@ -268,12 +342,19 @@ class AdvancedCoverAugmenter:
         "params": {
             "probability": {"type": "float", "min": 0.0, "max": 1.0, "default": 0.5},
             "fda_prob": {"type": "float", "min": 0.0, "max": 1.0, "default": 0.5},
-            "hist_match_prob": {"type": "float", "min": 0.0, "max": 1.0, "default": 0.5},
+            "hist_match_prob": {
+                "type": "float",
+                "min": 0.0,
+                "max": 1.0,
+                "default": 0.5,
+            },
             "fda_beta": {"type": "float", "min": 0.001, "max": 0.1, "default": 0.01},
         },
     }
 
-    def __init__(self, dataset_root: str, probability: float = 0.5, bank_size: int = 100):
+    def __init__(
+        self, dataset_root: str, probability: float = 0.5, bank_size: int = 100
+    ):
         self.probability = probability
         self.bank_size = bank_size
         self.dataset_root = Path(dataset_root)
@@ -283,18 +364,18 @@ class AdvancedCoverAugmenter:
     def _load_reference_bank(self):
         """Find real covered images in the training set (Subjects 1-80)."""
         covered_images = []
-        
+
         # We look for 'cover1' and 'cover2' directories within training subject folders.
-        # Training subjects are usually 1-80. 
+        # Training subjects are usually 1-80.
         # Structure can be: root/train/Subject_XX/IR/coverX/ or root/train/train/000XX/IR/coverX/
-        
+
         # Search all possible training directories
         search_roots = [
             self.dataset_root / "train",
             self.dataset_root / "train" / "train",
-            self.dataset_root
+            self.dataset_root,
         ]
-        
+
         for root in search_roots:
             if not root.exists():
                 continue
@@ -303,7 +384,7 @@ class AdvancedCoverAugmenter:
                 # This is more robust to different nesting levels
                 covered_images.extend(list(root.rglob(f"**/IR/{cover}/*.png")))
                 covered_images.extend(list(root.rglob(f"**/IR/{cover}/*.jpg")))
-                
+
                 # Also try without IR subfolder just in case
                 if not covered_images:
                     covered_images.extend(list(root.rglob(f"**/{cover}/*.png")))
@@ -313,7 +394,7 @@ class AdvancedCoverAugmenter:
             # Fallback: search for any 'cover' folder
             covered_images.extend(list(self.dataset_root.rglob("**/cover*/*.png")))
             covered_images.extend(list(self.dataset_root.rglob("**/cover*/*.jpg")))
-        
+
         # Filter for training subjects if possible (1-80)
         # In SLP, subjects 1-80 are training.
         # Paths usually contain Subject_XX or 000XX.
@@ -328,12 +409,16 @@ class AdvancedCoverAugmenter:
             final_images.append(img_path)
 
         if not final_images:
-            print(f"Warning: AdvancedCoverAugmenter found no reference images in {self.dataset_root}")
+            print(
+                f"Warning: AdvancedCoverAugmenter found no reference images in {self.dataset_root}"
+            )
             return
 
         random.shuffle(final_images)
-        self.reference_bank = final_images[:self.bank_size]
-        print(f"AdvancedCoverAugmenter initialized with {len(self.reference_bank)} reference images.")
+        self.reference_bank = final_images[: self.bank_size]
+        print(
+            f"AdvancedCoverAugmenter initialized with {len(self.reference_bank)} reference images."
+        )
 
     def __call__(
         self,
@@ -344,7 +429,11 @@ class AdvancedCoverAugmenter:
     ) -> Union[Image.Image, torch.Tensor]:
         force = kwargs.get("force_apply", False)
         prob = kwargs.get("probability", self.probability)
-        if not is_ir or not self.reference_bank or (not force and random.random() > prob):
+        if (
+            not is_ir
+            or not self.reference_bank
+            or (not force and random.random() > prob)
+        ):
             return image
 
         is_tensor = torch.is_tensor(image)
@@ -367,7 +456,11 @@ class AdvancedCoverAugmenter:
                 if len(joints.shape) == 3:
                     j_np = joints[0].cpu().numpy()
                 elif len(joints.shape) == 2:
-                    j_np = (joints[:2, :].T.cpu().numpy() if joints.shape[0] == 3 else joints.cpu().numpy())
+                    j_np = (
+                        joints[:2, :].T.cpu().numpy()
+                        if joints.shape[0] == 3
+                        else joints.cpu().numpy()
+                    )
                 else:
                     j_np = np.array(joints)
             else:
@@ -386,7 +479,11 @@ class AdvancedCoverAugmenter:
         draw = ImageDraw.Draw(mask_pil)
         wavy_points = []
         num_points = 20
-        freq, amp, phase = random.uniform(1.5, 3.5), random.uniform(4, 15), random.uniform(0, 2 * np.pi)
+        freq, amp, phase = (
+            random.uniform(1.5, 3.5),
+            random.uniform(4, 15),
+            random.uniform(0, 2 * np.pi),
+        )
         for i in range(num_points + 1):
             x = int(i * w / num_points)
             y = int(base_y + amp * np.sin(freq * (x / w) * 2 * np.pi + phase))
@@ -394,30 +491,34 @@ class AdvancedCoverAugmenter:
             wavy_points.append((x, y))
         polygon_points = list(wavy_points) + [(w, h), (0, h)]
         draw.polygon(polygon_points, fill=255)
-        mask_pil = mask_pil.filter(ImageFilter.GaussianBlur(radius=random.uniform(3, 7)))
+        mask_pil = mask_pil.filter(
+            ImageFilter.GaussianBlur(radius=random.uniform(3, 7))
+        )
 
         # 3. Select reference image and apply styles
         ref_path = random.choice(self.reference_bank)
         ref_pil = Image.open(ref_path).convert("L").resize((w, h))
-        
+
         src_np = np.array(img_pil).astype(np.float32)
         ref_np = np.array(ref_pil).astype(np.float32)
-        
+
         styled_np = src_np.copy()
 
         # Histogram Matching
         if random.random() < kwargs.get("hist_match_prob", 0.5):
             styled_np = histogram_matching(styled_np, ref_np)
-            
+
         # FDA
         if random.random() < kwargs.get("fda_prob", 0.5):
             styled_t = torch.from_numpy(styled_np).unsqueeze(0) / 255.0
             ref_t = torch.from_numpy(ref_np).unsqueeze(0) / 255.0
-            styled_t = fourier_domain_adaptation(styled_t, ref_t, beta=kwargs.get("fda_beta", 0.01))
+            styled_t = fourier_domain_adaptation(
+                styled_t, ref_t, beta=kwargs.get("fda_beta", 0.01)
+            )
             styled_np = (styled_t.squeeze(0).numpy() * 255.0).clip(0, 255)
 
         styled_pil = Image.fromarray(styled_np.astype(np.uint8))
-        
+
         # 4. Composite
         final_image = Image.composite(styled_pil, img_pil, mask_pil)
 

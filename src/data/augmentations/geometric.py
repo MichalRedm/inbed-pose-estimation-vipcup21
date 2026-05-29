@@ -3,6 +3,7 @@ import torch
 import torchvision.transforms.v2 as v2
 from torchvision import tv_tensors
 
+
 class HorizontalFlipAugmentation:
     """
     Randomly flips the image horizontally and reorders the joints for symmetry.

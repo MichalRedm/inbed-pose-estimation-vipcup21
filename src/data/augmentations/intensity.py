@@ -5,6 +5,7 @@ from PIL import Image
 import torchvision.transforms.v2 as v2
 from typing import Union
 
+
 class ThermalIntensityJitter:
     """
     Randomly dampens or slightly boosts contrast and brightness to simulate thermal attenuation.

@@ -12,12 +12,18 @@ from .thermal import ThermalDiffusionAugmenter, AdvancedCoverAugmenter
 from .occlusion import CutoutAugmentation
 from .domain import CycleGANAugmentation, CUTAugmentation
 
+
 class DataAugmenter:
     """
     Optimized Data Augmentation using torchvision.transforms.v2.
     """
 
-    def __init__(self, config: Optional[dict] = None, is_training: bool = True, dataset_root: Optional[str] = None):
+    def __init__(
+        self,
+        config: Optional[dict] = None,
+        is_training: bool = True,
+        dataset_root: Optional[str] = None,
+    ):
         self.config = config or {}
         self.enabled = self.config.get("enabled", False)
         self.is_training = is_training
@@ -49,11 +55,11 @@ class DataAugmenter:
             probability=self.config.get("occlusion_prob", 0.5),
             is_training=self.is_training,
         )
-        
+
         self.advanced_cover = AdvancedCoverAugmenter(
             dataset_root=self.dataset_root,
             probability=self.config.get("advanced_cover_prob", 0.0),
-            bank_size=self.config.get("advanced_cover_bank_size", 100)
+            bank_size=self.config.get("advanced_cover_bank_size", 100),
         )
 
         self.cyclegan = CycleGANAugmentation(
@@ -90,17 +96,17 @@ class DataAugmenter:
         # 1. Prepare Keypoints
         if joints is not None:
             if torch.is_tensor(joints):
-                 # Assume (3, 14) or (N, 2)
-                 if joints.shape[0] == 3:
-                     coords = joints[:2, :].T.unsqueeze(0)
-                     vis = joints[2, :]
-                 else:
-                     coords = joints.unsqueeze(0)
-                     vis = torch.ones(joints.shape[0])
+                # Assume (3, 14) or (N, 2)
+                if joints.shape[0] == 3:
+                    coords = joints[:2, :].T.unsqueeze(0)
+                    vis = joints[2, :]
+                else:
+                    coords = joints.unsqueeze(0)
+                    vis = torch.ones(joints.shape[0])
             else:
                 coords = torch.from_numpy(joints[:2, :].T).float().unsqueeze(0)
                 vis = torch.from_numpy(joints[2, :]).float()
-            
+
             w, h = (
                 (image.width, image.height)
                 if hasattr(image, "width")
@@ -146,19 +152,30 @@ class DataAugmenter:
                 elif choice == "cut":
                     image = self.cut(image, force_apply=True)
                 elif choice == "advanced_cover":
-                    image = self.advanced_cover(image, joints=kpts, is_ir=is_ir, force_apply=True, 
-                                                fda_prob=self.config.get("fda_prob", 0.5),
-                                                hist_match_prob=self.config.get("hist_match_prob", 0.5),
-                                                fda_beta=self.config.get("fda_beta", 0.01))
+                    image = self.advanced_cover(
+                        image,
+                        joints=kpts,
+                        is_ir=is_ir,
+                        force_apply=True,
+                        fda_prob=self.config.get("fda_prob", 0.5),
+                        hist_match_prob=self.config.get("hist_match_prob", 0.5),
+                        fda_beta=self.config.get("fda_beta", 0.01),
+                    )
                 elif choice == "thermal":
-                    image = self.thermal_augmenter(image, joints=kpts, is_ir=is_ir, force_apply=True)
+                    image = self.thermal_augmenter(
+                        image, joints=kpts, is_ir=is_ir, force_apply=True
+                    )
         else:
             image = self.cyclegan(image)
             image = self.cut(image)
-            image = self.advanced_cover(image, joints=kpts, is_ir=is_ir,
-                                        fda_prob=self.config.get("fda_prob", 0.5),
-                                        hist_match_prob=self.config.get("hist_match_prob", 0.5),
-                                        fda_beta=self.config.get("fda_beta", 0.01))
+            image = self.advanced_cover(
+                image,
+                joints=kpts,
+                is_ir=is_ir,
+                fda_prob=self.config.get("fda_prob", 0.5),
+                hist_match_prob=self.config.get("hist_match_prob", 0.5),
+                fda_beta=self.config.get("fda_beta", 0.01),
+            )
             image = self.thermal_augmenter(image, joints=kpts, is_ir=is_ir)
 
         image = self.cutout(image)
@@ -187,7 +204,7 @@ def get_available_augmentations():
     import src.data.augmentations.thermal as therm
     import src.data.augmentations.occlusion as occ
     import src.data.augmentations.domain as dom
-    
+
     for module in [geo, intense, therm, occ, dom]:
         for name, obj in inspect.getmembers(module):
             if inspect.isclass(obj) and hasattr(obj, "METADATA"):
@@ -206,7 +223,7 @@ def apply_custom_augmentations(image, joints, aug_list, is_ir=False, dataset_roo
     import src.data.augmentations.thermal as therm
     import src.data.augmentations.occlusion as occ
     import src.data.augmentations.domain as dom
-    
+
     all_classes = {}
     for module in [geo, intense, therm, occ, dom]:
         for name, obj in inspect.getmembers(module):
@@ -217,7 +234,11 @@ def apply_custom_augmentations(image, joints, aug_list, is_ir=False, dataset_roo
     if joints is not None:
         coords = torch.from_numpy(joints[:2, :].T).float().unsqueeze(0)
         vis = torch.from_numpy(joints[2, :]).float()
-        w, h = (image.width, image.height) if hasattr(image, "width") else (image.shape[-1], image.shape[-2])
+        w, h = (
+            (image.width, image.height)
+            if hasattr(image, "width")
+            else (image.shape[-1], image.shape[-2])
+        )
         kpts = tv_tensors.KeyPoints(coords, canvas_size=(h, w))
     else:
         kpts = None
@@ -229,7 +250,7 @@ def apply_custom_augmentations(image, joints, aug_list, is_ir=False, dataset_roo
             aug_cls = all_classes[aug_id]
             if "probability" not in params:
                 params["probability"] = 1.0
-            
+
             # Special case for AdvancedCoverAugmenter
             if aug_id == "advanced_cover":
                 inst = aug_cls(dataset_root=dataset_root or "data/SLP")

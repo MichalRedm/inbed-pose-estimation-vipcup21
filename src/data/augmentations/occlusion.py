@@ -4,6 +4,7 @@ from PIL import Image, ImageDraw
 import torchvision.transforms.v2 as v2
 from typing import Union
 
+
 class CutoutAugmentation:
     """
     Zeros out a randomly placed rectangular region.
