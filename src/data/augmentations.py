@@ -865,7 +865,9 @@ class DataAugmenter:
                 elif choice == "cut":
                     image = self.cut(image, force_apply=True)
                 elif choice == "thermal":
-                    image = self.thermal_augmenter(image, joints=kpts, is_ir=is_ir, force_apply=True)
+                    image = self.thermal_augmenter(
+                        image, joints=kpts, is_ir=is_ir, force_apply=True
+                    )
         else:
             # Apply cyclegan/cut before thermal augmenter so thermal can add extra physical properties if both are on
             image = self.cyclegan(image)
