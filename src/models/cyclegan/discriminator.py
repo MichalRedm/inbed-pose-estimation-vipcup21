@@ -1,3 +1,7 @@
+"""
+PatchGAN Discriminator architectures for CycleGAN and CUT.
+"""
+
 import torch
 import torch.nn as nn
 from typing import Tuple, List, cast
@@ -10,6 +14,12 @@ class Discriminator(nn.Module):
     """
 
     def __init__(self, input_shape: Tuple[int, int, int]) -> None:
+        """
+        Initializes the discriminator.
+
+        Args:
+            input_shape: Shape of the input image (C, H, W).
+        """
         super(Discriminator, self).__init__()
 
         channels, height, width = input_shape
@@ -39,4 +49,13 @@ class Discriminator(nn.Module):
         )
 
     def forward(self, img: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Args:
+            img: Input image tensor.
+
+        Returns:
+            Patch-wise real/fake classification.
+        """
         return cast(torch.Tensor, self.model(img))
