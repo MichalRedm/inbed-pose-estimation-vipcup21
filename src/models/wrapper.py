@@ -1,3 +1,7 @@
+"""
+Inference wrappers for making models self-contained.
+"""
+
 import torch
 import torch.nn as nn
 from typing import Tuple, Union
@@ -17,6 +21,15 @@ class PoseDecodingWrapper(nn.Module):
         temperature: float = 10.0,
         image_size: Tuple[int, int] = (256, 256),
     ) -> None:
+        """
+        Initializes the wrapper.
+
+        Args:
+            model: The underlying pose estimation model.
+            decode_method: Method used to decode heatmaps ('argmax' or 'soft-argmax').
+            temperature: Temperature parameter for soft-argmax.
+            image_size: Target image resolution for coordinate scaling.
+        """
         super().__init__()
         self.model = model
         self.decode_method = decode_method
@@ -33,15 +46,27 @@ class PoseDecodingWrapper(nn.Module):
 
     @property
     def in_channels(self) -> int:
+        """Returns the number of input channels expected by the backbone."""
         return int(getattr(self.model, "in_channels", 1))
 
     @property
     def output_type(self) -> str:
+        """Returns the output type (always 'coordinates' for the wrapper)."""
         return "coordinates"
 
     def forward(
         self, x: torch.Tensor, return_heatmaps: bool = False
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        """
+        Performs forward pass and decodes heatmaps if necessary.
+
+        Args:
+            x: Input image tensor.
+            return_heatmaps: If True, also returns the raw heatmaps.
+
+        Returns:
+            Joint coordinates, or a tuple of (coordinates, heatmaps, ...)
+        """
         outputs = self.model(x)
 
         if isinstance(outputs, tuple):
