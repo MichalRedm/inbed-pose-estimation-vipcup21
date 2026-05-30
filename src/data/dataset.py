@@ -1,3 +1,8 @@
+"""
+Dataset implementations for the Simultaneously-collected Multimodal Lying Pose (SLP) dataset.
+Supports multiple modalities (RGB, IR, Depth) and covers (uncover, cover1, cover2).
+"""
+
 import torch
 import numpy as np
 from typing import Optional, List, Dict, Any, Tuple, Union, Iterable, cast, Sized
@@ -14,8 +19,15 @@ def collate_skip_none(
 ) -> Optional[Dict[str, Any]]:
     """
     Custom collate_fn that drops samples missing a target heatmap.
+    
     Required because unannotated samples (covered subjects without labels)
     return target=None, which PyTorch's default collate cannot handle.
+
+    Args:
+        batch: List of samples from the dataset.
+
+    Returns:
+        Collated batch, or None if the batch is empty after filtering.
     """
     clean_batch = [
         item for item in batch if item is not None and item.get("target") is not None
@@ -28,6 +40,7 @@ def collate_skip_none(
 class VIPCupDataset(Dataset):
     """
     Simultaneously-collected Multimodal Lying Pose (SLP) dataset for IEEE VIP Cup 2021.
+    Handles subject splits, modalities, covers, and Gaussian heatmap generation.
     """
 
     root: Path
@@ -57,6 +70,21 @@ class VIPCupDataset(Dataset):
         in_channels: int = 1,
         return_joints: bool = True,
     ) -> None:
+        """
+        Initializes the VIPCupDataset.
+
+        Args:
+            root: Root directory of the SLP dataset.
+            subjects: Iterable of subject IDs to include.
+            modalities: List of modalities to load (e.g., ['RGB', 'IR']).
+            covers: List of cover types to include (e.g., ['uncover', 'cover1']).
+            split: Dataset split ('train' or 'valid').
+            transform: torchvision transforms to apply to images.
+            augmenter: Custom DataAugmenter for geometric and domain augmentations.
+            image_size: Target image resolution (Height, Width).
+            in_channels: Number of input channels (1 for grayscale IR, 3 for RGB).
+            return_joints: If True, returns joint coordinates and heatmaps.
+        """
         self.root = Path(root)
         self.split = split  # "train" or "valid"
         self.subjects = subjects
@@ -89,10 +117,22 @@ class VIPCupDataset(Dataset):
             )
 
     def set_sigma(self, sigma: float) -> None:
-        """Update the Gaussian sigma for heatmap generation (dynamic scheduling)."""
+        """
+        Updates the Gaussian sigma for heatmap generation.
+        Used for dynamic sigma curriculum during training.
+
+        Args:
+            sigma: New standard deviation for Gaussian peaks.
+        """
         self.sigma = sigma
 
     def _prepare_samples(self) -> List[Dict[str, Any]]:
+        """
+        Scans the filesystem and groups images with their corresponding annotations.
+
+        Returns:
+            List of sample dictionaries containing paths and joint data.
+        """
         samples: List[Dict[str, Any]] = []
         # Determine which top-level split folder to search first
         split_order = (
@@ -181,9 +221,20 @@ class VIPCupDataset(Dataset):
         return samples
 
     def __len__(self) -> int:
+        """Returns the total number of samples in the dataset."""
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
+        """
+        Retrieves a sample from the dataset.
+        Handles image loading, augmentation, resizing, and heatmap generation.
+
+        Args:
+            idx: Index of the sample.
+
+        Returns:
+            Dictionary containing image, joints, heatmaps, and metadata.
+        """
         sample = self.samples[idx]
 
         # Default to IR for training/evaluation as requested
