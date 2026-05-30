@@ -331,7 +331,10 @@ class StandardTrainer(BaseTrainer):
 
     def fit(self, train_loader, val_loader=None):
         from .lightning_module import PoseLightningModule
-        from .lightning_callbacks import DashboardTelemetryCallback, ProgressiveUnfreezingCallback
+        from .lightning_callbacks import (
+            DashboardTelemetryCallback,
+            ProgressiveUnfreezingCallback,
+        )
 
         # 1. Instantiate Lightning Module
         lightning_module = PoseLightningModule(
@@ -350,7 +353,9 @@ class StandardTrainer(BaseTrainer):
 
         # 3. Configure Trainer options
         # We automate device placement, DDP strategy, etc.
-        accelerator = "gpu" if torch.cuda.is_available() and self.device.type == "cuda" else "cpu"
+        accelerator = (
+            "gpu" if torch.cuda.is_available() and self.device.type == "cuda" else "cpu"
+        )
         devices = 1
         if self.device.type == "cuda" and self.device.index is not None:
             devices = [self.device.index]
@@ -362,7 +367,7 @@ class StandardTrainer(BaseTrainer):
 
         # PyTorch Lightning Trainer setup
         import pytorch_lightning as pl
-        
+
         # Avoid print banner / progress bar spam if we are running in headless / DDP logs
         trainer = pl.Trainer(
             max_epochs=self.epochs,
@@ -377,9 +382,12 @@ class StandardTrainer(BaseTrainer):
 
         # 4. Fit using PL Trainer
         if self.is_main:
-            print(f"[StandardTrainer] Starting refactored PyTorch Lightning training loop...")
-            print(f"[StandardTrainer] Accelerator: {accelerator}, Devices: {devices}, Strategy: {strategy}")
+            print(
+                "[StandardTrainer] Starting refactored PyTorch Lightning training loop..."
+            )
+            print(
+                f"[StandardTrainer] Accelerator: {accelerator}, Devices: {devices}, Strategy: {strategy}"
+            )
 
         # Start training
         trainer.fit(lightning_module, train_loader, val_loader)
-

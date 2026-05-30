@@ -520,7 +520,7 @@ def main():
                         time.sleep(poll_interval)
                         try:
                             poll_metadata(metadata_session)
-                        except Exception as exc:
+                        except Exception:
                             pass
             except Exception as e:
                 print(f"[sync] Background metadata poller crashed: {e}")
@@ -605,8 +605,12 @@ def main():
                         break
 
         # Start background helper threads
-        metadata_poller_thread = threading.Thread(target=run_metadata_polling, daemon=True)
-        ckpt_poller_thread = threading.Thread(target=run_checkpoint_polling, daemon=True)
+        metadata_poller_thread = threading.Thread(
+            target=run_metadata_polling, daemon=True
+        )
+        ckpt_poller_thread = threading.Thread(
+            target=run_checkpoint_polling, daemon=True
+        )
         streamer_thread = threading.Thread(target=run_streaming, daemon=True)
 
         metadata_poller_thread.start()

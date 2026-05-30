@@ -139,7 +139,11 @@ class TrainingManager:
                 self.adv_loss_history = [None] * max_ep
                 for ep, metrics in file_history_dict.items():
                     idx = ep - 1
-                    self.loss_history[idx] = metrics.get("loss") or metrics.get("train_loss") or metrics.get("loss_pose")
+                    self.loss_history[idx] = (
+                        metrics.get("loss")
+                        or metrics.get("train_loss")
+                        or metrics.get("loss_pose")
+                    )
                     self.adv_loss_history[idx] = metrics.get("adv_loss")
                 self.current_epoch = max_ep
         else:
@@ -237,7 +241,11 @@ class TrainingManager:
                 for ep, metrics in file_history_dict.items():
                     idx = ep - 1
                     if 0 <= idx < len(self.loss_history):
-                        self.loss_history[idx] = metrics.get("loss") or metrics.get("train_loss") or metrics.get("loss_pose")
+                        self.loss_history[idx] = (
+                            metrics.get("loss")
+                            or metrics.get("train_loss")
+                            or metrics.get("loss_pose")
+                        )
                         self.adv_loss_history[idx] = metrics.get("adv_loss")
 
         # Refresh loss history from file using explicit epoch indices to avoid desyncs
@@ -257,7 +265,11 @@ class TrainingManager:
                     ep = int(ep_str)
                     idx = ep - 1
                     if 0 <= idx < len(self.loss_history):
-                        self.loss_history[idx] = metrics.get("loss") or metrics.get("train_loss") or metrics.get("loss_pose")
+                        self.loss_history[idx] = (
+                            metrics.get("loss")
+                            or metrics.get("train_loss")
+                            or metrics.get("loss_pose")
+                        )
                         self.adv_loss_history[idx] = metrics.get("adv_loss")
                 except (ValueError, TypeError):
                     continue
@@ -517,7 +529,11 @@ class TrainingManager:
                         for ep, metrics in file_history_dict.items():
                             idx = ep - 1
                             if 0 <= idx < len(self.loss_history):
-                                self.loss_history[idx] = metrics.get("loss") or metrics.get("train_loss") or metrics.get("loss_pose")
+                                self.loss_history[idx] = (
+                                    metrics.get("loss")
+                                    or metrics.get("train_loss")
+                                    or metrics.get("loss_pose")
+                                )
                                 self.adv_loss_history[idx] = metrics.get("adv_loss")
 
                     # Successfully completed, so exit the retry loop

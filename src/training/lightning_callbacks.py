@@ -1,8 +1,4 @@
-import torch
 import pytorch_lightning as pl
-import json
-import os
-from typing import Dict, Any
 
 from src.training.factory import build_optimizer
 
@@ -30,7 +26,7 @@ class DashboardTelemetryCallback(pl.Callback):
                 return
 
             self.step_count += 1
-            
+
             # Get metrics from PoseLightningModule
             metrics = getattr(pl_module, "last_step_metrics", None)
             if not metrics:
@@ -46,7 +42,14 @@ class DashboardTelemetryCallback(pl.Callback):
                 try:
                     total_batches = trainer.num_training_batches
                     if total_batches <= 0 or total_batches == float("inf"):
-                        total_batches = len(trainer.train_dataloader) if (hasattr(trainer, "train_dataloader") and trainer.train_dataloader) else 1
+                        total_batches = (
+                            len(trainer.train_dataloader)
+                            if (
+                                hasattr(trainer, "train_dataloader")
+                                and trainer.train_dataloader
+                            )
+                            else 1
+                        )
                 except Exception:
                     total_batches = 1
 
@@ -57,7 +60,7 @@ class DashboardTelemetryCallback(pl.Callback):
                     "progress": progress,
                 }
                 stream_payload.update(metrics)
-                
+
                 # Print [METRICS] and write to stream.jsonl via base class streamer
                 self.parent._stream_metric(stream_payload)
         except Exception as e:
@@ -68,14 +71,17 @@ class DashboardTelemetryCallback(pl.Callback):
         try:
             # Average training metrics
             avg_train_metrics = {
-                k: v / max(self.step_count, 1) for k, v in self.epoch_train_metrics.items()
+                k: v / max(self.step_count, 1)
+                for k, v in self.epoch_train_metrics.items()
             }
 
             # Save to SQLite telemetry database if on main rank
             if self.parent.is_main:
                 run_name = self.parent.config.get("run_id", "unnamed_run")
                 for k, v in avg_train_metrics.items():
-                    self.parent.tracker.log_metric(run_name, trainer.current_epoch + 1, k, v)
+                    self.parent.tracker.log_metric(
+                        run_name, trainer.current_epoch + 1, k, v
+                    )
 
             # Fetch validation metrics compiled in on_validation_epoch_end
             val_metrics = getattr(pl_module, "last_val_metrics", {})
@@ -100,17 +106,19 @@ class DashboardTelemetryCallback(pl.Callback):
                 val_pck = val_metrics.get("val_pck", -1.0)
                 val_loss = val_metrics.get("val_loss", float("inf"))
                 is_best = val_pck > self.parent.best_val_pck
-                
+
                 if is_best:
                     self.parent.best_val_pck = val_pck
-                
+
                 if val_loss < self.parent.best_val_loss:
                     self.parent.best_val_loss = val_loss
 
                 # 3. Save atomic, backward-compatible checkpoint (.pth format)
                 # This uses the raw model and exactly the old dictionary layout
                 try:
-                    self.parent.save_checkpoint(f"epoch_{trainer.current_epoch + 1}", is_best=is_best)
+                    self.parent.save_checkpoint(
+                        f"epoch_{trainer.current_epoch + 1}", is_best=is_best
+                    )
                 except Exception as save_err:
                     if self.parent.is_main:
                         print(f"[Callback Error] Error saving checkpoint: {save_err}")
@@ -125,7 +133,9 @@ class DashboardTelemetryCallback(pl.Callback):
                     self.parent.update_history(epoch_data)
                 except Exception as hist_err:
                     if self.parent.is_main:
-                        print(f"[Callback Error] Error updating history.json: {hist_err}")
+                        print(
+                            f"[Callback Error] Error updating history.json: {hist_err}"
+                        )
         except Exception as e:
             if self.parent.is_main:
                 print(f"[Callback Error] Error in on_train_epoch_end: {e}")
@@ -159,14 +169,18 @@ class DashboardTelemetryCallback(pl.Callback):
             # Compute PCK@0.2 using the parent trainer's implementation
             # Set self.parent's current_epoch to match the lightning trainer's epoch
             self.parent.current_epoch = trainer.current_epoch
-            
-            decode_method = self.parent.config.get("training", {}).get("decode_method", "argmax")
-            val_pck = self.parent.compute_val_pck(val_dataloader, decode_method=decode_method)
+
+            decode_method = self.parent.config.get("training", {}).get(
+                "decode_method", "argmax"
+            )
+            val_pck = self.parent.compute_val_pck(
+                val_dataloader, decode_method=decode_method
+            )
 
             # Store on pl_module to be fetched by on_train_epoch_end
             pl_module.last_val_metrics = {
                 "val_pck": val_pck,
-                **{f"val_{k}": v for k, v in val_metrics.items()}
+                **{f"val_{k}": v for k, v in val_metrics.items()},
             }
         except Exception as e:
             if self.parent.is_main:
@@ -189,7 +203,7 @@ class ProgressiveUnfreezingCallback(pl.Callback):
 
             # 2. Rebuild optimizer
             new_optimizer = build_optimizer(raw_model, pl_module, pl_module.config)
-            
+
             # 3. Replace in Trainer
             trainer.optimizers[0] = new_optimizer
 

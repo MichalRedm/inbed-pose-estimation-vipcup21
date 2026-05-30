@@ -129,7 +129,7 @@ class PoseTrainer:
             joints = batch["joints"]  # (B, 3, 14)
 
             outputs = self.model(images)
-            
+
             if self.model.output_type == "heatmap":
                 targets = batch["target"].to(self.device)
                 loss = self.criterion(outputs, targets)

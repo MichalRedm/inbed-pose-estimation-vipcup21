@@ -15,7 +15,9 @@ class PoseLightningModule(pl.LightningModule):
     and consolidating all the training steps, loss terms, and optimizer construction logic.
     """
 
-    def __init__(self, model: nn.Module, config: Dict[str, Any], criterion: nn.Module = None):
+    def __init__(
+        self, model: nn.Module, config: Dict[str, Any], criterion: nn.Module = None
+    ):
         super().__init__()
         self.model = model
         self.config = config
@@ -92,7 +94,10 @@ class PoseLightningModule(pl.LightningModule):
 
         # Dynamically set dataset sigma for matching the curriculum
         # PL loader accesses the dataset directly.
-        if hasattr(self.trainer, "train_dataloader") and self.trainer.train_dataloader is not None:
+        if (
+            hasattr(self.trainer, "train_dataloader")
+            and self.trainer.train_dataloader is not None
+        ):
             dataset = getattr(self.trainer.train_dataloader, "dataset", None)
             if dataset is not None and hasattr(dataset, "set_sigma"):
                 dataset.set_sigma(sigma)
@@ -175,7 +180,7 @@ class PoseLightningModule(pl.LightningModule):
             metrics.update(weighted_metrics)
 
         metrics["loss"] = loss.item()
-        
+
         # Log to lightning
         for k, v in metrics.items():
             self.log(k, v, on_step=True, on_epoch=True, prog_bar=True, logger=False)
@@ -269,12 +274,15 @@ class PoseLightningModule(pl.LightningModule):
 
         # Log validation metrics prefixed with val_
         for k, v in metrics.items():
-            self.log(f"val_{k}", v, on_step=False, on_epoch=True, prog_bar=True, logger=False)
+            self.log(
+                f"val_{k}", v, on_step=False, on_epoch=True, prog_bar=True, logger=False
+            )
 
         return loss
 
     def configure_optimizers(self):
         from src.training.factory import build_optimizer
+
         # We pass self as the trainer/mock-trainer to retain full factory compatibility
         optimizer = build_optimizer(self.model, self, self.config)
         return optimizer
