@@ -1,8 +1,10 @@
 import torch
+import torch.nn as nn
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
+from typing import List, Dict, Any, Optional, Tuple, Union, cast
 
 from src.utils import load_config, decode_heatmaps
 from src.utils.pose import compute_pck, draw_pose
@@ -10,14 +12,19 @@ from src.models import build_model
 from src.data.dataset import VIPCupDataset, collate_skip_none
 
 
-def optimize_checkpoint(checkpoint_path, val_loader, device, num_samples=100):
+def optimize_checkpoint(
+    checkpoint_path: Union[str, Path],
+    val_loader: DataLoader,
+    device: torch.device,
+    num_samples: int = 100,
+) -> None:
     print(f"\nOptimizing: {checkpoint_path}")
-    checkpoint_path = Path(checkpoint_path)
+    path_obj = Path(checkpoint_path)
 
     # Load state
-    state = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    state = cast(Dict[str, Any], torch.load(path_obj, map_location=device, weights_only=False))
     if isinstance(state, dict) and "config" in state:
-        config = state["config"]
+        config = cast(Dict[str, Any], state["config"])
     else:
         config = load_config()
 
@@ -29,15 +36,16 @@ def optimize_checkpoint(checkpoint_path, val_loader, device, num_samples=100):
         model.load_state_dict(state)
     model.eval()
 
-    image_size = tuple(config.get("dataset", {}).get("image_size", [256, 256]))
+    image_size_list: List[int] = config.get("dataset", {}).get("image_size", [256, 256])
+    image_size = (image_size_list[0], image_size_list[1])
 
     # If it's not a heatmap model, we don't need to optimize decoding
-    if not hasattr(model, "output_type") or model.output_type != "heatmap":
+    if not hasattr(model, "output_type") or getattr(model, "output_type") != "heatmap":
         print("Not a heatmap model, skipping.")
         return
 
     # Decoding strategies to test
-    strategies = [
+    strategies: List[Dict[str, Any]] = [
         {"method": "argmax", "temperature": 1.0},
         {"method": "soft-argmax", "temperature": 1.0},
         {"method": "soft-argmax", "temperature": 5.0},
@@ -51,10 +59,10 @@ def optimize_checkpoint(checkpoint_path, val_loader, device, num_samples=100):
     best_strategy = strategies[0]
 
     # Collect predictions for a subset of samples
-    all_outputs = []
-    all_gts = []
-    all_vis = []
-    all_images = []
+    all_outputs: List[torch.Tensor] = []
+    all_gts: List[np.ndarray] = []
+    all_vis: List[np.ndarray] = []
+    all_images: List[torch.Tensor] = []
 
     count = 0
     with torch.no_grad():
@@ -73,20 +81,21 @@ def optimize_checkpoint(checkpoint_path, val_loader, device, num_samples=100):
             if count >= num_samples:
                 break
 
-    all_outputs = torch.cat(all_outputs)
-    all_gts = np.concatenate(all_gts)
-    all_vis = np.concatenate(all_vis)
+    all_outputs_t = torch.cat(all_outputs)
+    all_gts_np = np.concatenate(all_gts)
+    all_vis_np = np.concatenate(all_vis)
 
     # Test each strategy
     for strategy in strategies:
         preds = decode_heatmaps(
-            all_outputs,
+            all_outputs_t,
             image_size,
-            method=strategy["method"],
-            temperature=strategy["temperature"],
+            method=str(strategy["method"]),
+            temperature=float(strategy["temperature"]),
         ).numpy()
 
-        pck, _ = compute_pck(preds, all_gts, visibility=all_vis)
+        p_pck, _ = compute_pck(torch.from_numpy(preds), torch.from_numpy(all_gts_np).permute(0, 2, 1), visibility=torch.from_numpy(all_vis_np))
+        pck = float(p_pck.mean().item())
         print(
             f"  {strategy['method']} (temp={strategy['temperature']}): PCK@0.5 = {pck:.4f}"
         )
@@ -108,24 +117,24 @@ def optimize_checkpoint(checkpoint_path, val_loader, device, num_samples=100):
     }
     state["best_optimized_pck"] = best_pck
 
-    torch.save(state, checkpoint_path)
-    print(f"  Saved optimized decoding config to {checkpoint_path}")
+    torch.save(state, path_obj)
+    print(f"  Saved optimized decoding config to {path_obj}")
 
     # Visual Check
     visual_check_path = (
-        checkpoint_path.parent / f"decoding_audit_{checkpoint_path.stem}.png"
+        path_obj.parent / f"decoding_audit_{path_obj.stem}.png"
     )
 
     # Take first sample
     img = all_images[0][0]  # (1, H, W)
-    gt = all_gts[0]
+    gt = all_gts_np[0]
 
     # Decode with best strategy
     best_preds = decode_heatmaps(
-        all_outputs[0:1],
+        all_outputs_t[0:1],
         image_size,
-        method=best_strategy["method"],
-        temperature=best_strategy["temperature"],
+        method=str(best_strategy["method"]),
+        temperature=float(best_strategy["temperature"]),
     )[0].numpy()
 
     plt.figure(figsize=(10, 10))
@@ -135,7 +144,7 @@ def optimize_checkpoint(checkpoint_path, val_loader, device, num_samples=100):
         plt.gca(), best_preds, color="red", label=f"Pred ({best_strategy['method']})"
     )
     plt.title(
-        f"Decoding Audit: {checkpoint_path.name}\nMethod: {best_strategy['method']} Temp: {best_strategy['temperature']} PCK: {best_pck:.4f}"
+        f"Decoding Audit: {path_obj.name}\nMethod: {best_strategy['method']} Temp: {best_strategy['temperature']} PCK: {best_pck:.4f}"
     )
     plt.legend()
     plt.axis("off")
@@ -144,13 +153,13 @@ def optimize_checkpoint(checkpoint_path, val_loader, device, num_samples=100):
     print(f"  Visual check saved to {visual_check_path}")
 
 
-def main():
+def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     config = load_config()
 
     # Load validation dataset
-    dataset_cfg = config.get("dataset", {})
-    root_path = Path(dataset_cfg.get("root", "data/raw"))
+    dataset_cfg: Dict[str, Any] = config.get("dataset", {})
+    root_path = Path(str(dataset_cfg.get("root", "data/raw")))
 
     val_ds = VIPCupDataset(
         root=root_path,
@@ -165,7 +174,7 @@ def main():
 
     # Find all checkpoints
     project_root = Path(__file__).parent.parent
-    checkpoints = []
+    checkpoints: List[Path] = []
 
     # runs/
     runs_dir = project_root / "results" / "runs"

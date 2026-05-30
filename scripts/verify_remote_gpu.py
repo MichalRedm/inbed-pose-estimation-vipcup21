@@ -16,7 +16,7 @@ except ImportError:
     sys.exit(1)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Verify remote Kaggle GPU connection")
     parser.add_argument(
         "--json", default="gpu_connection.json", help="Path to gpu_connection.json"

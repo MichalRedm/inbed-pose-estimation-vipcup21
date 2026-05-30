@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import sys
 import os
+from typing import Dict, Any, List, Optional, Tuple, Union, cast
 
 # Add project root to sys.path
 project_root = Path(__file__).parent.parent
@@ -14,7 +15,7 @@ from src.models import build_model  # noqa: E402
 from src.utils import decode_heatmaps, draw_pose  # noqa: E402
 
 
-def verify_inference(run_id, image_path, output_dir="results/debug_inference"):
+def verify_inference(run_id: str, image_path: str, output_dir: str = "results/debug_inference") -> None:
     os.makedirs(output_dir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -33,7 +34,7 @@ def verify_inference(run_id, image_path, output_dir="results/debug_inference"):
 
     model = build_model(config).to(device)
     print(f"Loading checkpoint: {checkpoint_path}")
-    state = torch.load(checkpoint_path, map_location=device)
+    state = cast(Dict[str, Any], torch.load(checkpoint_path, map_location=device))
     if isinstance(state, dict) and "model_state_dict" in state:
         model.load_state_dict(state["model_state_dict"])
     else:
@@ -41,16 +42,17 @@ def verify_inference(run_id, image_path, output_dir="results/debug_inference"):
     model.eval()
 
     # Load and preprocess image
-    model_cfg = config.get("model", {})
-    model_name = model_cfg.get("name", "hrnet")
-    in_channels = model_cfg.get(model_name, {}).get("in_channels", 1)
+    model_cfg: Dict[str, Any] = config.get("model", {})
+    model_name = str(model_cfg.get("name", "hrnet"))
+    in_channels = int(model_cfg.get(model_name, {}).get("in_channels", 1))
 
     image = Image.open(image_path)
     if in_channels == 3:
         image = image.convert("RGB")
     else:
         image = image.convert("L")
-    model_image_size = tuple(config.get("dataset", {}).get("image_size", [256, 256]))
+    model_image_size_list: List[int] = config.get("dataset", {}).get("image_size", [256, 256])
+    model_image_size = (model_image_size_list[0], model_image_size_list[1])
 
     img_resized = image.resize(model_image_size)
     if in_channels == 3:
@@ -81,7 +83,8 @@ def verify_inference(run_id, image_path, output_dir="results/debug_inference"):
         )
 
     # Plotting
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig, axes_raw = plt.subplots(1, 3, figsize=(18, 6))
+    axes = cast(np.ndarray, axes_raw)
 
     axes[0].imshow(img_resized, cmap="gray")
     draw_pose(axes[0], preds_argmax[0], color="red", label="Argmax")

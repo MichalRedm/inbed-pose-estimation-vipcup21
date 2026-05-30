@@ -23,10 +23,12 @@ import argparse
 
 import torch
 import torch.distributed as dist
-from torch.utils.data import DataLoader, DistributedSampler
+import numpy as np
+from torch.utils.data import DataLoader, DistributedSampler, Sampler
 
 import matplotlib.pyplot as plt
 from pathlib import Path
+from typing import Dict, Any, List, Optional, Tuple, Union, cast
 
 # Add project root to sys.path
 project_root = Path(__file__).parent.parent
@@ -45,7 +47,9 @@ R_SHOULDER = 8
 L_HIP = 3
 
 
-def compute_pck(pred_joints, gt_joints, threshold=0.2):
+def compute_pck(
+    pred_joints: torch.Tensor, gt_joints: torch.Tensor, threshold: float = 0.2
+) -> Tuple[torch.Tensor, torch.Tensor, float]:
     """
     Compute PCK@threshold per joint.
 
@@ -57,9 +61,9 @@ def compute_pck(pred_joints, gt_joints, threshold=0.2):
     Joints with vis==2 (out-of-frame/unannotated) are excluded.
 
     Returns:
-      per_joint_pck: (J,) tensor, proportion correct per joint
-      per_joint_count: (J,) tensor, number of valid samples per joint
-      mean_pck: scalar, mean PCK across all valid joints
+      per_joint_pck: (J) tensor, proportion correct per joint
+      per_joint_count: (J) tensor, number of valid samples per joint
+      mean_pck: float, mean PCK across all valid joints
     """
     N, J, _ = pred_joints.shape
 
@@ -72,12 +76,12 @@ def compute_pck(pred_joints, gt_joints, threshold=0.2):
     shoulder_mid = (gt_xy[:, 8, :] + gt_xy[:, 9, :]) / 2.0
     hip_mid = (gt_xy[:, 2, :] + gt_xy[:, 3, :]) / 2.0
     torso_dist = torch.norm(shoulder_mid - hip_mid, dim=-1, keepdim=True)  # (N, 1)
-    torso_dist = torso_dist.unsqueeze(1).expand(N, J, 1)  # (N, J, 1)
-    torso_dist = torso_dist.clamp(min=1e-6)
+    torso_dist_expanded = torso_dist.unsqueeze(1).expand(N, J, 1)  # (N, J, 1)
+    torso_dist_final = torso_dist_expanded.clamp(min=1e-6)
 
     # Euclidean distance per joint
     dists = torch.norm(pred_joints - gt_xy, dim=-1)  # (N, J)
-    correct = dists <= threshold * torso_dist.squeeze(-1)
+    correct = dists <= threshold * torso_dist_final.squeeze(-1)
 
     # Include visible (0) AND occluded (1) joints; exclude unannotated (2)
     valid = gt_vis <= 1  # (N, J)
@@ -86,32 +90,32 @@ def compute_pck(pred_joints, gt_joints, threshold=0.2):
     per_joint_pck = per_joint_correct / per_joint_count
 
     valid_joints = valid.any(dim=0)
-    mean_pck = per_joint_pck[valid_joints].mean().item()
+    mean_pck = float(per_joint_pck[valid_joints].mean().item())
 
     return per_joint_pck, per_joint_count, mean_pck
 
 
-def load_run_config(checkpoint_path: Path):
+def load_run_config(checkpoint_path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     """
     Load the config embedded in the checkpoint (authoritative) or fall back
     to the run's config.json, then the global default.
     """
     if checkpoint_path.exists():
-        state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        state = cast(Dict[str, Any], torch.load(checkpoint_path, map_location="cpu", weights_only=False))
         if isinstance(state, dict) and "config" in state:
-            return state["config"], state
+            return cast(Dict[str, Any], state["config"]), state
     # Fallback: run-level config.json
     run_config = checkpoint_path.parent.parent / "config.json"
     if run_config.exists():
         with open(run_config) as f:
-            cfg = json.load(f)
+            cfg = cast(Dict[str, Any], json.load(f))
         return cfg, None
     from src.utils import load_config
 
     return load_config(), None
 
 
-def calculate_skeleton_spread(joints):
+def calculate_skeleton_spread(joints: torch.Tensor) -> float:
     """
     joints: (J, 2)
     Returns: area of bounding box
@@ -119,10 +123,17 @@ def calculate_skeleton_spread(joints):
     min_coords = torch.min(joints, dim=0)[0]
     max_coords = torch.max(joints, dim=0)[0]
     diff = max_coords - min_coords
-    return (diff[0] * diff[1]).item()
+    return float((diff[0] * diff[1]).item())
 
 
-def visualize_audit(model, dataset, device, image_size, decode_method, save_path):
+def visualize_audit(
+    model: torch.nn.Module,
+    dataset: Any,
+    device: torch.device,
+    image_size: Tuple[int, int],
+    decode_method: str,
+    save_path: Path,
+) -> None:
     """
     Generates a set of sample inferences for visual verification.
     """
@@ -141,8 +152,10 @@ def visualize_audit(model, dataset, device, image_size, decode_method, save_path
     fig, axes = plt.subplots(
         1, len(samples_to_show), figsize=(5 * len(samples_to_show), 5)
     )
-    if len(samples_to_show) == 1:
-        axes = [axes]
+    if not isinstance(axes, (list, np.ndarray)):
+        axes_list = [axes]
+    else:
+        axes_list = list(axes)
 
     with torch.no_grad():
         for i, idx in enumerate(samples_to_show):
@@ -158,13 +171,13 @@ def visualize_audit(model, dataset, device, image_size, decode_method, save_path
 
             # Use original image for background if possible
             img_np = batch["image"][0].cpu().numpy()
-            axes[i].imshow(img_np, cmap="gray")
+            axes_list[i].imshow(img_np, cmap="gray")
 
             # Draw GT (Green) and Pred (Red)
-            draw_pose(axes[i], gt_joints[:2, :].T, color="green", alpha=0.5, label="GT")
-            draw_pose(axes[i], pred_joints, color="red", label="Pred")
-            axes[i].set_title(f"Sample {idx} ({cover})")
-            axes[i].axis("off")
+            draw_pose(axes_list[i], gt_joints[:2, :].T, color="green", alpha=0.5, label="GT")
+            draw_pose(axes_list[i], pred_joints, color="red", label="Pred")
+            axes_list[i].set_title(f"Sample {idx} ({cover})")
+            axes_list[i].axis("off")
 
     plt.tight_layout()
     plt.savefig(save_path)
@@ -173,13 +186,13 @@ def visualize_audit(model, dataset, device, image_size, decode_method, save_path
 
 
 def evaluate(
-    checkpoint_path,
-    data_root=None,
-    batch_size=16,
-    pck_threshold=0.2,
-    save_json=None,
-    decode_method_override=None,
-):
+    checkpoint_path: Union[str, Path],
+    data_root: Optional[str] = None,
+    batch_size: int = 16,
+    pck_threshold: float = 0.2,
+    save_json: Optional[str] = None,
+    decode_method_override: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
     checkpoint_path = Path(checkpoint_path)
 
     # Load config from checkpoint (run-specific, authoritative)
@@ -199,7 +212,7 @@ def evaluate(
         from src.models.cyclegan.generator import GeneratorResNet
 
         input_shape = (3, 256, 256)
-        model = GeneratorResNet(input_shape, num_residual_blocks=6).to(device)
+        model: torch.nn.Module = GeneratorResNet(input_shape, num_residual_blocks=6).to(device)
 
         if state is None:
             state = torch.load(checkpoint_path, map_location=device, weights_only=False)
@@ -215,11 +228,11 @@ def evaluate(
         model.load_state_dict(filtered_state)
         model.eval()
 
-        dataset_cfg = config.get("dataset", {})
+        dataset_cfg: Dict[str, Any] = config.get("dataset", {})
         data_root = data_root or dataset_cfg.get("root", "data/raw")
 
         val_dataset = VIPCupDataset(
-            root=data_root,
+            root=data_root or "data/raw",
             subjects=range(1, 31),
             covers=["uncover"],
             modalities=dataset_cfg.get("modalities", ["IR"]),
@@ -233,9 +246,10 @@ def evaluate(
         )
 
         num_samples = min(5, len(val_dataset))
-        fig, axes = plt.subplots(num_samples, 2, figsize=(10, 5 * num_samples))
+        fig, axes_raw = plt.subplots(num_samples, 2, figsize=(10, 5 * num_samples))
+        axes = cast(np.ndarray, axes_raw)
         if num_samples == 1:
-            axes = [axes]
+            axes = axes.reshape(1, 2)
 
         with torch.no_grad():
             for i in range(num_samples):
@@ -263,7 +277,7 @@ def evaluate(
 
         if rank <= 0:
             print(f"CycleGAN Visual Audit saved to {audit_path}")
-            metrics = {
+            metrics: Dict[str, Any] = {
                 "model_type": "cyclegan",
                 "run_id": config.get("run_id", "loop47_cyclegan"),
                 "status": "success",
@@ -283,7 +297,7 @@ def evaluate(
     dataset_cfg = config.get("dataset", {})
     image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
     data_root = data_root or dataset_cfg.get("root", "data/raw")
-    s_val = dataset_cfg.get("subjects_val", [81, 90])
+    s_val: List[int] = dataset_cfg.get("subjects_val", [81, 90])
     # Use decoding config from checkpoint if available, otherwise default
     decode_method = decode_method_override
     decode_temp = 10.0
@@ -323,9 +337,9 @@ def evaluate(
         print(f"Loading: {checkpoint_path}")
 
     # Determine in_channels from model config
-    model_cfg = config.get("model", {})
-    model_name = model_cfg.get("name", "hrnet")
-    in_channels = model_cfg.get(model_name, {}).get("in_channels", 1)
+    model_cfg: Dict[str, Any] = config.get("model", {})
+    model_name = str(model_cfg.get("name", "hrnet"))
+    in_channels = int(model_cfg.get(model_name, {}).get("in_channels", 1))
 
     if state is None:
         state = torch.load(checkpoint_path, map_location=device, weights_only=False)
@@ -386,7 +400,7 @@ def evaluate(
 
     # Setup Dataset — include uncover for sanity, plus cover1/2
     val_dataset = VIPCupDataset(
-        root=data_root,
+        root=data_root or "data/raw",
         subjects=range(s_val[0], s_val[1] + 1),
         modalities=dataset_cfg.get("modalities", ["IR"]),
         covers=["uncover", "cover1", "cover2"],
@@ -400,9 +414,9 @@ def evaluate(
             print(
                 "WARNING: Validation set is empty. Check data_root and covers configuration."
             )
-        return
+        return None
 
-    val_sampler = (
+    val_sampler: Optional[Sampler] = (
         DistributedSampler(val_dataset, shuffle=False) if is_distributed else None
     )
 
@@ -457,12 +471,12 @@ def evaluate(
 
             if targets is not None:
                 # Use heatmaps for loss calculation
-                total_loss += criterion(outputs, targets).item()
+                total_loss += float(criterion(outputs, targets).item())
                 num_batches += 1
 
             if not using_refined:
                 raw_model = model.module if is_distributed else model
-                if raw_model.output_type == "heatmap":
+                if getattr(raw_model, "output_type", "heatmap") == "heatmap":
                     preds = decode_heatmaps(
                         outputs,
                         image_size,
@@ -515,14 +529,14 @@ def evaluate(
         avg_loss = total_loss / max(num_batches, 1)
         mean_spread_ratio = total_spread_ratio / max(num_spread_samples, 1)
 
-        per_joint_pck = (
+        per_joint_pck_np = (
             (per_joint_correct_total / per_joint_count_total.clamp(min=1)).cpu().numpy()
         )
-        per_joint_error = (
+        per_joint_error_np = (
             (per_joint_error_total / per_joint_count_total.clamp(min=1)).cpu().numpy()
         )
-        mean_pck = per_joint_pck.mean()
-        mean_mpjpe = per_joint_error.mean()
+        mean_pck = per_joint_pck_np.mean()
+        mean_mpjpe = per_joint_error_np.mean()
 
         print(f"\n=== Evaluation Results (MPJPE: {mean_mpjpe:.1f}px) ===")
         print(f"Skeleton Spread Ratio: {mean_spread_ratio:.2f} (Target: >0.7)")
@@ -531,7 +545,7 @@ def evaluate(
         print(f"=== PCK@{pck_threshold} Results ===")
         print(f"{'Joint':<15} {'PCK':>6} {'MPJPE':>8}")
         print("-" * 32)
-        for name, pck, err in zip(JOINT_NAMES, per_joint_pck, per_joint_error):
+        for name, pck, err in zip(JOINT_NAMES, per_joint_pck_np, per_joint_error_np):
             print(f"{name:<15} {pck * 100:>5.1f}% {err:>8.1f}px")
         print("-" * 32)
         print(f"{'Mean':<15} {mean_pck * 100:>5.1f}% {mean_mpjpe:>8.1f}px")
@@ -551,8 +565,8 @@ def evaluate(
             "skeleton_spread_ratio": mean_spread_ratio,
             "decode_method": decode_method,
             "image_size": list(image_size),
-            "per_joint_pck": per_joint_pck.tolist(),
-            "per_joint_mpjpe": per_joint_error.tolist(),
+            "per_joint_pck": per_joint_pck_np.tolist(),
+            "per_joint_mpjpe": per_joint_error_np.tolist(),
             "joint_names": JOINT_NAMES,
             "visual_audit": str(
                 audit_path.resolve().relative_to(project_root.resolve())
@@ -614,25 +628,26 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Resolve checkpoint path
+    checkpoint_path_str: str
     if args.run_id:
         if os.path.isabs(args.checkpoint):
-            checkpoint_path = args.checkpoint
+            checkpoint_path_str = args.checkpoint
         else:
-            checkpoint_path = (
+            checkpoint_path_str = (
                 f"results/runs/{args.run_id}/checkpoints/{args.checkpoint}"
             )
         # Default save_json to the run directory
         if args.save_json is None:
             args.save_json = f"results/runs/{args.run_id}/eval_results.json"
     else:
-        checkpoint_path = args.checkpoint
+        checkpoint_path_str = args.checkpoint
 
-    if not os.path.exists(checkpoint_path):
-        print(f"Checkpoint not found: {checkpoint_path}")
+    if not os.path.exists(checkpoint_path_str):
+        print(f"Checkpoint not found: {checkpoint_path_str}")
         sys.exit(1)
 
     evaluate(
-        checkpoint_path,
+        checkpoint_path_str,
         data_root=args.data_root,
         batch_size=args.batch_size,
         pck_threshold=args.threshold,

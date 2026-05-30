@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-def main():
+def main() -> None:
     print("=" * 60)
     print("GPU ENVIRONMENT VERIFICATION")
     print("=" * 60)

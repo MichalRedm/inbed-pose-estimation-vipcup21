@@ -4,8 +4,9 @@ import torch
 import argparse
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
-
 from pathlib import Path
+from typing import Dict, Any, List, Optional, Tuple, Union, cast
+import numpy as np
 
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -15,11 +16,12 @@ from src.data.dataset import VIPCupDataset, collate_skip_none
 from src.models import build_model
 
 
-def visualize_samples(checkpoint_path, num_samples=3):
+def visualize_samples(checkpoint_path: str, num_samples: int = 3) -> None:
     # 1. Load Configuration
     config = load_config()
-    dataset_cfg = config.get("dataset", {})
-    image_size = tuple(dataset_cfg.get("image_size", [256, 256]))
+    dataset_cfg: Dict[str, Any] = config.get("dataset", {})
+    image_size_list: List[int] = dataset_cfg.get("image_size", [256, 256])
+    image_size = (image_size_list[0], image_size_list[1])
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -27,17 +29,17 @@ def visualize_samples(checkpoint_path, num_samples=3):
     # 2. Initialize Model using factory
     model = build_model(config).to(device)
     print(f"Loading checkpoint: {checkpoint_path}")
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-        model.load_state_dict(checkpoint["model_state_dict"])
+    checkpoint_state = cast(Dict[str, Any], torch.load(checkpoint_path, map_location=device))
+    if isinstance(checkpoint_state, dict) and "model_state_dict" in checkpoint_state:
+        model.load_state_dict(checkpoint_state["model_state_dict"])
     else:
-        model.load_state_dict(checkpoint)
+        model.load_state_dict(checkpoint_state)
     model.eval()
 
     # 3. Setup Dataset
-    s_train = dataset_cfg.get("subjects_train", [1, 30])
+    s_train: List[int] = dataset_cfg.get("subjects_train", [1, 30])
     dataset = VIPCupDataset(
-        root=dataset_cfg.get("root", "data/raw"),
+        root=str(dataset_cfg.get("root", "data/raw")),
         subjects=[s_train[0]],  # Use the first training subject as a sample
         modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
         image_size=image_size,
@@ -63,14 +65,14 @@ def visualize_samples(checkpoint_path, num_samples=3):
             gt_joints = batch["joints"][0].cpu().numpy().T
 
             output = model(image)
-            if model.output_type == "heatmap":
+            if getattr(model, "output_type", "heatmap") == "heatmap":
                 pred_joints = decode_heatmaps(output, image_size)[0]  # (J, 2)
             else:
                 pred_joints = output[0].cpu()  # (J, 2)
 
             # Convert image to numpy for plotting
             img_np = image[0].cpu().numpy().transpose(1, 2, 0)
-            img_np = (img_np - img_np.min()) / (img_np.max() - img_np.min())
+            img_np = (img_np - img_np.min()) / (img_np.max() - img_np.min() + 1e-6)
 
             # Plot
             fig, axes = plt.subplots(1, 2, figsize=(12, 6))

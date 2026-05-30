@@ -6,7 +6,14 @@ import requests
 API_URL = "http://localhost:8000"
 
 
-def start_training(run_id, config_path, remote, resume, auto_eval, cyclegan=False):
+def start_training(
+    run_id: str,
+    config_path: str | None,
+    remote: bool,
+    resume: bool,
+    auto_eval: bool,
+    cyclegan: bool = False,
+) -> None:
     payload = {
         "run_id": run_id,
         "config_path": config_path,
@@ -25,7 +32,7 @@ def start_training(run_id, config_path, remote, resume, auto_eval, cyclegan=Fals
         sys.exit(1)
 
 
-def stop_training():
+def stop_training() -> None:
     try:
         response = requests.post(f"{API_URL}/training/stop")
         response.raise_for_status()
@@ -35,7 +42,7 @@ def stop_training():
         sys.exit(1)
 
 
-def get_status():
+def get_status() -> None:
     try:
         response = requests.get(f"{API_URL}/training/status")
         response.raise_for_status()
@@ -55,7 +62,7 @@ def get_status():
         sys.exit(1)
 
 
-def get_logs(last_n=20):
+def get_logs(last_n: int = 20) -> None:
     try:
         response = requests.get(f"{API_URL}/training/status")
         response.raise_for_status()
@@ -67,7 +74,7 @@ def get_logs(last_n=20):
         sys.exit(1)
 
 
-def monitor(interval=2):
+def monitor(interval: int = 2) -> None:
     import time
 
     try:
@@ -100,7 +107,7 @@ def monitor(interval=2):
         sys.exit(1)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="In-Bed Pose API CLI")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 

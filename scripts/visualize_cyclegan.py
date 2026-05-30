@@ -12,7 +12,7 @@ from src.models.cyclegan.generator import GeneratorResNet
 from src.data.dataset import VIPCupDataset
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Visualize CycleGAN translation")
     parser.add_argument(
         "--run_id", type=str, required=True, help="Run ID of the trained CycleGAN"

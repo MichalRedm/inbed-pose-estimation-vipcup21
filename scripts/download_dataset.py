@@ -1,6 +1,9 @@
 import argparse
 from pathlib import Path
 import sys
+import os
+import subprocess
+from typing import List, Dict, Any, Optional, cast
 
 # Add project root to sys.path to allow importing src
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -8,15 +11,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.utils import load_config
 
 
-def download_dataset(dry_run=False):
+def download_dataset(dry_run: bool = False) -> None:
     """
     Download and extract the VIP Cup 2021 dataset from Kaggle.
     """
     config = load_config()
-    dataset_slug = config.get("dataset", {}).get(
+    dataset_slug: str = str(config.get("dataset", {}).get(
         "kaggle_slug", "vsharma1/ieee-vip-cup-2021"
-    )
-    target_dir = Path(config.get("dataset", {}).get("root", "data/raw"))
+    ))
+    target_dir = Path(str(config.get("dataset", {}).get("root", "data/raw")))
 
     print(f"Dataset: {dataset_slug}")
     print(f"Target:  {target_dir}")
@@ -46,12 +49,9 @@ def download_dataset(dry_run=False):
         shutil.rmtree(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
-    import subprocess
-    import os
-
     # Map user's custom KAGGLE_API_TOKEN to standard KAGGLE_KEY if provided
     if os.getenv("KAGGLE_API_TOKEN") and not os.getenv("KAGGLE_KEY"):
-        os.environ["KAGGLE_KEY"] = os.getenv("KAGGLE_API_TOKEN")
+        os.environ["KAGGLE_KEY"] = cast(str, os.getenv("KAGGLE_API_TOKEN"))
 
     print(f"Downloading {dataset_slug} to {target_dir} using Kaggle CLI...")
     try:
@@ -108,4 +108,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    download_dataset(dry_run=args.dry_run)
+    download_dataset(dry_run=bool(args.dry_run))
