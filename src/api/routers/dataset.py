@@ -112,7 +112,7 @@ async def get_sample_detail(split: str, idx: int) -> Dict[str, Any]:
     }
 
 
-@router.get("/dataset/image/{split}/{idx}")
+@router.get("/dataset/image/{split}/{idx}", response_model=None)
 async def get_dataset_image(
     split: str, idx: int, modality: str = "IR", augment: bool = False
 ) -> Union[FileResponse, StreamingResponse]:
