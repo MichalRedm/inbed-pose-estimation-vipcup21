@@ -1,3 +1,7 @@
+"""
+Models package providing architecture definitions, registration, and loading utilities.
+"""
+
 from typing import Dict, Any, Optional
 import torch
 import torch.nn as nn
@@ -8,13 +12,16 @@ from .registry import MODEL_REGISTRY, register_model  # noqa: F401
 
 def build_model(config: Dict[str, Any]) -> nn.Module:
     """
-    Build a model based on the configuration.
+    Builds a model based on the configuration dictionary.
 
     Args:
-        config: Full project configuration dictionary.
+        config: Full project configuration.
 
     Returns:
         An instantiated PyTorch model.
+
+    Raises:
+        ValueError: If model name is not specified or not found in registry.
     """
     model_cfg = config.get("model", {})
     name = model_cfg.get("name")
@@ -45,8 +52,24 @@ def load_model_for_inference(
     checkpoint_path: str, device: torch.device, config: Optional[Dict[str, Any]] = None
 ) -> nn.Module:
     """
-    Loads a model from a checkpoint and automatically wraps it in PoseDecodingWrapper
-    if it's a heatmap-based model. Handles transient file corruption with retries.
+    Loads a model from a checkpoint and wraps it for inference.
+    
+    Automatically handles:
+      - PoseDecodingWrapper application for heatmap models.
+      - Transient file corruption with retries.
+      - Structural remapping for backward compatibility.
+      - Configuration extraction from checkpoint.
+
+    Args:
+        checkpoint_path: Path to the .pth checkpoint file.
+        device: Torch device to load the model onto.
+        config: Optional configuration override.
+
+    Returns:
+        A model ready for evaluation/inference.
+
+    Raises:
+        RuntimeError: If loading fails after multiple attempts.
     """
     import time
 
