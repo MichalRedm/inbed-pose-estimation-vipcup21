@@ -1,3 +1,8 @@
+"""
+Factory module for instantiating trainers and optimizers based on configuration.
+Supports Standard, UDA, and CycleGAN training modes.
+"""
+
 from typing import Dict, Any, Tuple
 import torch
 import torch.nn as nn
@@ -13,8 +18,16 @@ def build_optimizer(
     model: nn.Module, trainer: Any, config: Dict[str, Any], rank: int = 0
 ) -> optim.Optimizer:
     """
-    Builds the Adam optimizer with support for discriminative learning rates
-    and only includes trainable parameters.
+    Builds the Adam optimizer with support for discriminative learning rates.
+
+    Args:
+        model: The model whose parameters are being optimized.
+        trainer: The trainer instance (used to extract auxiliary parameters).
+        config: Full project configuration.
+        rank: Process rank.
+
+    Returns:
+        An instantiated Adam optimizer.
     """
     train_cfg: Dict[str, Any] = config.get("training", {})
     lr = float(train_cfg.get("lr", 0.0001))
@@ -73,8 +86,16 @@ def create_trainer(
     config: Dict[str, Any], device: torch.device, rank: int = 0, world_size: int = 1
 ) -> Tuple[Any, nn.Module]:
     """
-    Factory function to create the appropriate trainer based on config.
-    Returns (trainer_instance, model_instance).
+    Factory function to create the appropriate trainer and model.
+
+    Args:
+        config: Full project configuration.
+        device: Torch device to use.
+        rank: Process rank.
+        world_size: Total number of processes.
+
+    Returns:
+        A tuple of (trainer_instance, model_instance).
     """
     # 1. Build Model
     model = build_model(config).to(device)
