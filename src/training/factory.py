@@ -1,4 +1,4 @@
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List, Optional
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -16,10 +16,10 @@ def build_optimizer(
     Builds the Adam optimizer with support for discriminative learning rates
     and only includes trainable parameters.
     """
-    train_cfg = config.get("training", {})
-    lr = train_cfg.get("lr", 0.0001)
-    weight_decay = train_cfg.get("weight_decay", 0.0001)
-    backbone_lr_ratio = train_cfg.get("backbone_lr_ratio", 1.0)
+    train_cfg: Dict[str, Any] = config.get("training", {})
+    lr = float(train_cfg.get("lr", 0.0001))
+    weight_decay = float(train_cfg.get("weight_decay", 0.0001))
+    backbone_lr_ratio = float(train_cfg.get("backbone_lr_ratio", 1.0))
 
     params = list(model.parameters())
     if hasattr(trainer, "uncertainty_loss") and trainer.uncertainty_loss is not None:
@@ -80,21 +80,21 @@ def create_trainer(
     model = build_model(config).to(device)
 
     # 2. Extract Configs
-    train_cfg = config.get("training", {})
-    uda_cfg = config.get("uda", {})
+    train_cfg: Dict[str, Any] = config.get("training", {})
+    uda_cfg: Dict[str, Any] = config.get("uda", {})
 
     # 3. Setup Optimizer & Criterion
-    lr = train_cfg.get("lr", 0.0001)
-    weight_decay = train_cfg.get("weight_decay", 0.0001)
+    lr = float(train_cfg.get("lr", 0.0001))
+    weight_decay = float(train_cfg.get("weight_decay", 0.0001))
     criterion = nn.MSELoss()
 
     # 4. Decide Trainer Type
     training_type = config.get("training_type", "standard")
-    use_uda = training_type == "uda" or uda_cfg.get("enabled", False)
-    use_cyclegan = training_type == "cyclegan" or train_cfg.get("cyclegan", False)
+    use_uda = training_type == "uda" or bool(uda_cfg.get("enabled", False))
+    use_cyclegan = training_type == "cyclegan" or bool(train_cfg.get("cyclegan", False))
 
     if use_cyclegan:
-        trainer = CycleGANTrainer(
+        trainer: Any = CycleGANTrainer(
             config=config, device=device, rank=rank, world_size=world_size
         )
         # For CycleGAN, 'model' returned by factory is G_AB (contained in trainer)

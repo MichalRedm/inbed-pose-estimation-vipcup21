@@ -1,4 +1,6 @@
 import torch
+import torch.nn as nn
+from typing import Dict, Any, List, Optional, Tuple, Union
 from src.utils import decode_heatmaps, compute_mpjpe, compute_pck
 from tqdm import tqdm
 
@@ -13,24 +15,37 @@ class PoseTrainer:
     Real implementation using Heatmap MSE loss.
     """
 
+    model: nn.Module
+    optimizer: torch.optim.Optimizer
+    criterion: nn.Module
+    device: Union[str, torch.device]
+    config: Dict[str, Any]
+    epochs: int
+    save_dir: str
+
     def __init__(
-        self, model, optimizer=None, criterion=None, device="cpu", config=None
-    ):
+        self,
+        model: nn.Module,
+        optimizer: Optional[torch.optim.Optimizer] = None,
+        criterion: Optional[nn.Module] = None,
+        device: Union[str, torch.device] = "cpu",
+        config: Optional[Dict[str, Any]] = None,
+    ) -> None:
         self.model = model.to(device)
-        self.optimizer = optimizer
+        if optimizer is not None:
+            self.optimizer = optimizer
         self.criterion = criterion or torch.nn.MSELoss()
         self.device = device
         self.config = config or {}
-        self.epochs = self.config.get("training", {}).get("epochs", 10)
-        self.save_dir = self.config.get("training", {}).get(
-            "save_dir", "models/checkpoints"
-        )
+        training_cfg: Dict[str, Any] = self.config.get("training", {})
+        self.epochs = int(training_cfg.get("epochs", 10))
+        self.save_dir = str(training_cfg.get("save_dir", "models/checkpoints"))
         os.makedirs(self.save_dir, exist_ok=True)
 
-    def train_epoch(self, dataloader, epoch):
+    def train_epoch(self, dataloader: Any, epoch: int) -> float:
         self.model.train()
         pbar = tqdm(dataloader, desc=f"Epoch {epoch + 1}/{self.epochs}")
-        total_loss = 0
+        total_loss = 0.0
 
         for batch in pbar:
             if batch is None:
@@ -38,11 +53,12 @@ class PoseTrainer:
 
             images = batch["image"].to(self.device)
 
-            image_size = self.config.get("dataset", {}).get("image_size", (256, 256))
+            image_size: Tuple[int, int] = self.config.get("dataset", {}).get("image_size", (256, 256))
             outputs = self.model(images)
 
             # Loss calculation
-            if self.model.output_type == "heatmap":
+            output_type = getattr(self.model, "output_type", "heatmap")
+            if output_type == "heatmap":
                 targets = batch["target"].to(self.device)
                 loss = self.criterion(outputs, targets)
             else:
@@ -63,7 +79,7 @@ class PoseTrainer:
         avg_loss = total_loss / max(len(dataloader), 1)
         return avg_loss
 
-    def fit(self, train_loader, val_loader=None):
+    def fit(self, train_loader: Any, val_loader: Any = None) -> None:
         print(f"Starting training on {self.device}...")
         history_path = os.path.join(self.save_dir, "history.json")
         model_name = self.config.get("model", {}).get("name", "model")
@@ -92,8 +108,8 @@ class PoseTrainer:
                     os.path.join(self.save_dir, f"{model_name}_epoch_{epoch + 1}.pth"),
                 )
 
-    def _update_history(self, path, epoch, train_loss, val_loss):
-        history = []
+    def _update_history(self, path: str, epoch: int, train_loss: float, val_loss: Optional[float]) -> None:
+        history: List[Dict[str, Any]] = []
         if os.path.exists(path):
             try:
                 with open(path, "r") as f:
@@ -111,16 +127,16 @@ class PoseTrainer:
             json.dump(history, f, indent=4)
 
     @torch.no_grad()
-    def evaluate(self, dataloader):
+    def evaluate(self, dataloader: Any) -> Dict[str, Any]:
         self.model.eval()
-        total_loss = 0
+        total_loss = 0.0
         batches = 0
 
-        all_preds = []
-        all_gts = []
-        all_visibility = []
+        all_preds_list: List[torch.Tensor] = []
+        all_gts_list: List[torch.Tensor] = []
+        all_visibility_list: List[torch.Tensor] = []
 
-        image_size = self.config.get("dataset", {}).get("image_size", (256, 256))
+        image_size: Tuple[int, int] = self.config.get("dataset", {}).get("image_size", (256, 256))
 
         for batch in dataloader:
             if batch is None:
@@ -130,7 +146,8 @@ class PoseTrainer:
 
             outputs = self.model(images)
 
-            if self.model.output_type == "heatmap":
+            output_type = getattr(self.model, "output_type", "heatmap")
+            if output_type == "heatmap":
                 targets = batch["target"].to(self.device)
                 loss = self.criterion(outputs, targets)
             else:
@@ -144,7 +161,7 @@ class PoseTrainer:
             batches += 1
 
             # Decode predictions
-            if self.model.output_type == "heatmap":
+            if output_type == "heatmap":
                 preds = decode_heatmaps(
                     outputs, image_size, method="soft-argmax"
                 ).cpu()  # (B, 14, 2)
@@ -152,20 +169,20 @@ class PoseTrainer:
                 # If coordinates are predicted directly, they are already (B, 14, 2)
                 preds = outputs.cpu()
 
-            all_preds.append(preds)
-            all_gts.append(
+            all_preds_list.append(preds)
+            all_gts_list.append(
                 joints[:, :2, :].permute(0, 2, 1)
             )  # (B, 3, 14) -> (B, 14, 2)
-            all_visibility.append(joints)  # (B, 3, 14)
+            all_visibility_list.append(joints)  # (B, 3, 14)
 
         avg_loss = total_loss / max(batches, 1)
 
-        if not all_preds:
+        if not all_preds_list:
             return {"loss": avg_loss}
 
-        all_preds = torch.cat(all_preds, dim=0)
-        all_gts = torch.cat(all_gts, dim=0)
-        all_visibility = torch.cat(all_visibility, dim=0)
+        all_preds = torch.cat(all_preds_list, dim=0)
+        all_gts = torch.cat(all_gts_list, dim=0)
+        all_visibility = torch.cat(all_visibility_list, dim=0)
 
         mpjpe, per_joint_error = compute_mpjpe(all_preds, all_gts, all_visibility)
         pck, per_joint_pck = compute_pck(all_preds, all_gts, all_visibility)

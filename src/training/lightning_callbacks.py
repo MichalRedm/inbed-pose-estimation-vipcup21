@@ -1,5 +1,6 @@
 import pytorch_lightning as pl
-
+import torch
+from typing import Dict, Any, Optional, List, cast
 from src.training.factory import build_optimizer
 
 
@@ -10,17 +11,28 @@ class DashboardTelemetryCallback(pl.Callback):
     It also handles PCK computation and backward-compatible checkpoint saving.
     """
 
-    def __init__(self, parent_trainer):
+    parent: Any  # BaseTrainer
+    epoch_train_metrics: Dict[str, float]
+    step_count: int
+
+    def __init__(self, parent_trainer: Any) -> None:
         super().__init__()
         self.parent = parent_trainer
         self.epoch_train_metrics = {}
         self.step_count = 0
 
-    def on_train_epoch_start(self, trainer, pl_module):
+    def on_train_epoch_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
         self.step_count = 0
         self.epoch_train_metrics = {}
 
-    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+    def on_train_batch_end(
+        self,
+        trainer: pl.Trainer,
+        pl_module: pl.LightningModule,
+        outputs: Any,
+        batch: Any,
+        batch_idx: int,
+    ) -> None:
         try:
             if batch is None:
                 return
@@ -28,7 +40,7 @@ class DashboardTelemetryCallback(pl.Callback):
             self.step_count += 1
 
             # Get metrics from PoseLightningModule
-            metrics = getattr(pl_module, "last_step_metrics", None)
+            metrics: Optional[Dict[str, float]] = getattr(pl_module, "last_step_metrics", None)
             if not metrics:
                 return
 
@@ -40,9 +52,9 @@ class DashboardTelemetryCallback(pl.Callback):
             if self.parent.is_main:
                 # Calculate batch progress
                 try:
-                    total_batches = trainer.num_training_batches
-                    if total_batches <= 0 or total_batches == float("inf"):
-                        total_batches = (
+                    num_batches = trainer.num_training_batches
+                    if num_batches <= 0 or num_batches == float("inf"):
+                        total_batches = float(
                             len(trainer.train_dataloader)
                             if (
                                 hasattr(trainer, "train_dataloader")
@@ -50,12 +62,14 @@ class DashboardTelemetryCallback(pl.Callback):
                             )
                             else 1
                         )
+                    else:
+                        total_batches = float(num_batches)
                 except Exception:
-                    total_batches = 1
+                    total_batches = 1.0
 
-                progress = self.step_count / max(total_batches, 1)
+                progress = self.step_count / max(total_batches, 1.0)
 
-                stream_payload = {
+                stream_payload: Dict[str, Any] = {
                     "epoch": trainer.current_epoch + 1,
                     "progress": progress,
                 }
@@ -67,7 +81,7 @@ class DashboardTelemetryCallback(pl.Callback):
             if self.parent.is_main:
                 print(f"[Callback Error] Error in on_train_batch_end: {e}")
 
-    def on_train_epoch_end(self, trainer, pl_module):
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
         try:
             # Average training metrics
             avg_train_metrics = {
@@ -77,14 +91,14 @@ class DashboardTelemetryCallback(pl.Callback):
 
             # Save to SQLite telemetry database if on main rank
             if self.parent.is_main:
-                run_name = self.parent.config.get("run_id", "unnamed_run")
+                run_name: str = self.parent.config.get("run_id", "unnamed_run")
                 for k, v in avg_train_metrics.items():
                     self.parent.tracker.log_metric(
                         run_name, trainer.current_epoch + 1, k, v
                     )
 
             # Fetch validation metrics compiled in on_validation_epoch_end
-            val_metrics = getattr(pl_module, "last_val_metrics", {})
+            val_metrics: Dict[str, float] = getattr(pl_module, "last_val_metrics", {})
 
             # Reset last_val_metrics on pl_module to prevent carryover
             if hasattr(pl_module, "last_val_metrics"):
@@ -93,7 +107,7 @@ class DashboardTelemetryCallback(pl.Callback):
             # Only on main process do we log, stream summaries, and save checkpoints
             if self.parent.is_main:
                 # 1. Stream comprehensive final epoch summary payload (so dashboard updates)
-                summary_payload = {
+                summary_payload: Dict[str, Any] = {
                     "epoch": trainer.current_epoch + 1,
                     "progress": 1.0,
                     "is_summary": True,
@@ -103,8 +117,8 @@ class DashboardTelemetryCallback(pl.Callback):
                 self.parent._stream_metric(summary_payload)
 
                 # 2. Determine if it is the best model checkpoint
-                val_pck = val_metrics.get("val_pck", -1.0)
-                val_loss = val_metrics.get("val_loss", float("inf"))
+                val_pck = float(val_metrics.get("val_pck", -1.0))
+                val_loss = float(val_metrics.get("val_loss", float("inf")))
                 is_best = val_pck > self.parent.best_val_pck
 
                 if is_best:
@@ -125,7 +139,7 @@ class DashboardTelemetryCallback(pl.Callback):
 
                 # 4. Update local history.json
                 try:
-                    epoch_data = {
+                    epoch_data: Dict[str, Any] = {
                         "epoch": trainer.current_epoch + 1,
                         **avg_train_metrics,
                         **val_metrics,
@@ -140,7 +154,7 @@ class DashboardTelemetryCallback(pl.Callback):
             if self.parent.is_main:
                 print(f"[Callback Error] Error in on_train_epoch_end: {e}")
 
-    def on_validation_epoch_end(self, trainer, pl_module):
+    def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
         # Ignore validation runs triggered by sanity checking
         if getattr(trainer, "sanity_checking", False):
             return
@@ -159,18 +173,18 @@ class DashboardTelemetryCallback(pl.Callback):
                 return
 
             # Compute validation loss
-            val_metrics = {}
+            val_metrics: Dict[str, float] = {}
             for k, v in trainer.callback_metrics.items():
                 if k.startswith("val_"):
                     # Clean key
                     clean_k = k[4:]
-                    val_metrics[clean_k] = v.item()
+                    val_metrics[clean_k] = float(v.item())
 
             # Compute PCK@0.2 using the parent trainer's implementation
             # Set self.parent's current_epoch to match the lightning trainer's epoch
             self.parent.current_epoch = trainer.current_epoch
 
-            decode_method = self.parent.config.get("training", {}).get(
+            decode_method: str = self.parent.config.get("training", {}).get(
                 "decode_method", "argmax"
             )
             val_pck = self.parent.compute_val_pck(
@@ -178,10 +192,10 @@ class DashboardTelemetryCallback(pl.Callback):
             )
 
             # Store on pl_module to be fetched by on_train_epoch_end
-            pl_module.last_val_metrics = {
+            setattr(pl_module, "last_val_metrics", {
                 "val_pck": val_pck,
                 **{f"val_{k}": v for k, v in val_metrics.items()},
-            }
+            })
         except Exception as e:
             if self.parent.is_main:
                 print(f"[Callback Error] Error in on_validation_epoch_end: {e}")
@@ -193,16 +207,20 @@ class ProgressiveUnfreezingCallback(pl.Callback):
     rebuilds the optimizer dynamically at a specific epoch (Phase 2 Fine-Tuning).
     """
 
-    def on_train_epoch_start(self, trainer, pl_module):
-        unfreeze_epoch = pl_module.unfreeze_epoch
+    def on_train_epoch_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        from src.training.lightning_module import PoseLightningModule
+        pose_module = cast(PoseLightningModule, pl_module)
+
+        unfreeze_epoch: Optional[int] = pose_module.unfreeze_epoch
         if unfreeze_epoch is not None and trainer.current_epoch == unfreeze_epoch:
             # 1. Unfreeze backbone parameters
-            raw_model = pl_module.model
+            raw_model = pose_module.model
             if hasattr(raw_model, "unfreeze_all"):
-                raw_model.unfreeze_all()
+                # Use cast or ignore if unfreeze_all is not in nn.Module but in our HRNet
+                getattr(raw_model, "unfreeze_all")()
 
             # 2. Rebuild optimizer
-            new_optimizer = build_optimizer(raw_model, pl_module, pl_module.config)
+            new_optimizer = build_optimizer(raw_model, pose_module, pose_module.config)
 
             # 3. Replace in Trainer
             trainer.optimizers[0] = new_optimizer

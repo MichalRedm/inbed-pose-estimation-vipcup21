@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import Dict, Any
+from typing import Dict, Any, Tuple, List, Optional, cast
 import torch.nn.functional as F
 from .base_trainer import BaseTrainer
 from .losses import AnatomicalLoss, UncertaintyWeighting
@@ -8,7 +8,10 @@ from ..models.layers import SoftArgmax2D
 
 
 def generate_pytorch_heatmaps(
-    joints: torch.Tensor, heatmap_size=(64, 64), image_size=(256, 256), sigma=2.0
+    joints: torch.Tensor,
+    heatmap_size: Tuple[int, int] = (64, 64),
+    image_size: Tuple[int, int] = (256, 256),
+    sigma: float = 2.0,
 ) -> torch.Tensor:
     """
     Generate 2D Gaussian heatmaps on PyTorch tensors directly on the target device.
@@ -70,31 +73,50 @@ class StandardTrainer(BaseTrainer):
     Standard supervised trainer for pose estimation with optional anatomical constraints.
     """
 
+    optimizer: torch.optim.Optimizer
+    criterion: nn.Module
+    unfreeze_epoch: Optional[int]
+    backbone_lr_ratio: float
+    lambda_anatomical: float
+    warmup_epochs: int
+    anatomical_mode: str
+    lambda_coord: float
+    lambda_coord_occluded: float
+    sigma_start: float
+    sigma_end: float
+    soft_argmax: SoftArgmax2D
+    anatomical_criterion: AnatomicalLoss
+    use_uncertainty: bool
+    tasks: List[str]
+    uncertainty_loss: UncertaintyWeighting
+
     def __init__(
         self,
         model: nn.Module,
-        optimizer: torch.optim.Optimizer,
+        optimizer: Optional[torch.optim.Optimizer],
         criterion: nn.Module,
         config: Dict[str, Any],
         device: torch.device,
         rank: int = 0,
         world_size: int = 1,
-    ):
+    ) -> None:
         super().__init__(model, config, device, rank, world_size)
-        self.optimizer = optimizer
+        if optimizer is not None:
+            self.optimizer = optimizer
         self.criterion = criterion
 
         # Anatomical constraints setup
-        training_cfg = config.get("training", {})
-        self.unfreeze_epoch = training_cfg.get("unfreeze_epoch", None)
-        self.backbone_lr_ratio = training_cfg.get("backbone_lr_ratio", 1.0)
-        self.lambda_anatomical = training_cfg.get("lambda_anatomical", 0.0)
-        self.warmup_epochs = training_cfg.get("warmup_epochs", 10)
-        self.anatomical_mode = training_cfg.get("anatomical_mode", "hinge")
-        self.lambda_coord = training_cfg.get("lambda_coord", 0.0)
-        self.lambda_coord_occluded = training_cfg.get("lambda_coord_occluded", 0.0)
-        self.sigma_start = training_cfg.get("sigma_start", 2.0)
-        self.sigma_end = training_cfg.get("sigma_end", 2.0)
+        training_cfg: Dict[str, Any] = config.get("training", {})
+        self.unfreeze_epoch = training_cfg.get("unfreeze_epoch")
+        self.backbone_lr_ratio = float(training_cfg.get("backbone_lr_ratio", 1.0))
+        self.lambda_anatomical = float(training_cfg.get("lambda_anatomical", 0.0))
+        self.warmup_epochs = int(training_cfg.get("warmup_epochs", 10))
+        self.anatomical_mode = str(training_cfg.get("anatomical_mode", "hinge"))
+        self.lambda_coord = float(training_cfg.get("lambda_coord", 0.0))
+        self.lambda_coord_occluded = float(training_cfg.get("lambda_coord_occluded", 0.0))
+        self.sigma_start = float(training_cfg.get("sigma_start", 2.0))
+        self.sigma_end = float(training_cfg.get("sigma_end", 2.0))
+
         if (
             self.lambda_anatomical > 0
             or self.lambda_coord > 0
@@ -105,11 +127,11 @@ class StandardTrainer(BaseTrainer):
 
         if self.lambda_anatomical > 0:
             self.anatomical_criterion = AnatomicalLoss(
-                device=device, mode=self.anatomical_mode
+                device=str(device), mode=self.anatomical_mode
             ).to(device)
 
         # Multi-task uncertainty weighting
-        self.use_uncertainty = training_cfg.get("use_uncertainty_weighting", False)
+        self.use_uncertainty = bool(training_cfg.get("use_uncertainty_weighting", False))
         if self.use_uncertainty:
             # Determine tasks
             self.tasks = ["pose"]
@@ -134,7 +156,7 @@ class StandardTrainer(BaseTrainer):
         return self.lambda_anatomical
 
     def _get_current_sigma(self, epoch: int) -> float:
-        num_epochs = self.config.get("training", {}).get("epochs", 30)
+        num_epochs: int = int(self.config.get("training", {}).get("epochs", 30))
         if num_epochs <= 1:
             return self.sigma_start
 
@@ -144,7 +166,7 @@ class StandardTrainer(BaseTrainer):
         )  # Reach sigma_end at 70% of training
         return self.sigma_start + (self.sigma_end - self.sigma_start) * progress
 
-    def train_epoch(self, dataloader, epoch: int) -> Dict[str, float]:
+    def train_epoch(self, dataloader: Any, epoch: int) -> Dict[str, float]:
         self.current_epoch = epoch  # Store current epoch for steps
 
         # Dynamic Sigma Scheduling (moved to Dataset)
@@ -329,7 +351,7 @@ class StandardTrainer(BaseTrainer):
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         return {"optimizer_state_dict": self.optimizer.state_dict()}
 
-    def fit(self, train_loader, val_loader=None):
+    def fit(self, train_loader: Any, val_loader: Any = None) -> None:
         from .lightning_module import PoseLightningModule
         from .lightning_callbacks import (
             DashboardTelemetryCallback,
@@ -347,7 +369,7 @@ class StandardTrainer(BaseTrainer):
         lightning_module.unfreeze_epoch = self.unfreeze_epoch
 
         # 2. Instantiate custom callbacks
-        callbacks = [DashboardTelemetryCallback(self)]
+        callbacks: List[Any] = [DashboardTelemetryCallback(self)]
         if self.unfreeze_epoch is not None:
             callbacks.append(ProgressiveUnfreezingCallback())
 
@@ -356,11 +378,11 @@ class StandardTrainer(BaseTrainer):
         accelerator = (
             "gpu" if torch.cuda.is_available() and self.device.type == "cuda" else "cpu"
         )
-        devices = 1
+        devices: Any = 1
         if self.device.type == "cuda" and self.device.index is not None:
             devices = [self.device.index]
 
-        strategy = "auto"
+        strategy: Any = "auto"
         if self.world_size > 1:
             strategy = "ddp"
             devices = self.world_size

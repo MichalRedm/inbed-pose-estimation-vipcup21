@@ -4,7 +4,7 @@ import sys
 import time
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple, Union
 
 
 from src.utils import get_training_config
@@ -14,27 +14,43 @@ project_root = Path(__file__).parent.parent.parent
 
 
 class TrainingManager:
-    def __init__(self):
+    is_running: bool
+    progress: float
+    current_epoch: int
+    total_epochs: int
+    loss_history: List[Optional[float]]
+    adv_loss_history: List[Optional[float]]
+    log_history: List[str]
+    status_message: str
+    current_metrics: Dict[str, float]
+    display_metadata: Dict[str, Any]
+    current_run_id: Optional[str]
+    last_run_id: Optional[str]
+    _stop_event: threading.Event
+    _thread: Optional[threading.Thread]
+    frozen_config_path: Path
+
+    def __init__(self) -> None:
         self.is_running = False
         self.progress = 0.0
         self.current_epoch = 0
         self.total_epochs = 0
-        self.loss_history: List[float] = []
-        self.adv_loss_history: List[float] = []
-        self.log_history: List[str] = []
+        self.loss_history = []
+        self.adv_loss_history = []
+        self.log_history = []
         self.status_message = "Idle"
-        self.current_metrics: Dict[str, float] = {}
-        self.display_metadata: Dict[str, Any] = {}
-        self.current_run_id: Optional[str] = None
-        self.last_run_id: Optional[str] = self._detect_last_run_id()
+        self.current_metrics = {}
+        self.display_metadata = {}
+        self.current_run_id = None
+        self.last_run_id = self._detect_last_run_id()
         self._stop_event = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread = None
 
     def _detect_last_run_id(self) -> Optional[str]:
         """Scans results/runs for the most recently modified run folder."""
         try:
-            project_root = Path(__file__).parent.parent.parent
-            runs_dir = project_root / "results" / "runs"
+            project_root_path = Path(__file__).parent.parent.parent
+            runs_dir = project_root_path / "results" / "runs"
             if not runs_dir.exists():
                 return None
 
@@ -54,7 +70,7 @@ class TrainingManager:
 
         return get_display_metadata_for_config(config)
 
-    def start_training(self, config_overrides: Optional[Dict] = None):
+    def start_training(self, config_overrides: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
         config_overrides = config_overrides or {}
         if self.is_running:
             return False, "Training already in progress"
@@ -62,7 +78,7 @@ class TrainingManager:
         # 1. Start with full default config from disk
         from src.utils import load_config
 
-        final_config = load_config()
+        final_config: Dict[str, Any] = load_config()
 
         # 2. Merge user_training.json (legacy/frontend settings)
         user_settings = get_training_config()
@@ -83,7 +99,7 @@ class TrainingManager:
             if config_overrides.get("config_path"):
                 # Load special config WITHOUT user overrides to preserve YAML values
                 special_cfg = load_config(
-                    config_overrides["config_path"], use_user_overrides=False
+                    str(config_overrides["config_path"]), use_user_overrides=False
                 )
                 final_config.update(special_cfg)
 
@@ -105,9 +121,13 @@ class TrainingManager:
 
         # Priority: 1. Payload run_id, 2. Config file run_id, 3. Timestamp
         self.current_run_id = (
-            config_overrides.get("run_id")
-            or final_config.get("run_id")
-            or f"run_{time.strftime('%Y%m%d_%H%M%S')}"
+            str(config_overrides.get("run_id"))
+            if config_overrides.get("run_id")
+            else (
+                str(final_config.get("run_id"))
+                if final_config.get("run_id")
+                else f"run_{time.strftime('%Y%m%d_%H%M%S')}"
+            )
         )
         self.last_run_id = self.current_run_id
 
@@ -125,12 +145,12 @@ class TrainingManager:
         self.progress = 0.0
         self.current_metrics = {}
         self.display_metadata = self._get_initial_display_metadata(final_config)
-        self.total_epochs = final_config.get("training", {}).get("epochs", 0)
+        self.total_epochs = int(final_config.get("training", {}).get("epochs", 0))
 
         # Load existing history if resuming
-        is_resume = final_config.get("training", {}).get("resume") or final_config.get(
+        is_resume = bool(final_config.get("training", {}).get("resume") or final_config.get(
             "resume"
-        )
+        ))
         if is_resume:
             file_history_dict = self._load_history_dict()
             if file_history_dict:
@@ -168,7 +188,7 @@ class TrainingManager:
         self._thread.start()
         return True, "Training started"
 
-    def stop_training(self):
+    def stop_training(self) -> Tuple[bool, str]:
         if not self.is_running:
             return False, "No training in progress"
 
@@ -176,7 +196,7 @@ class TrainingManager:
         self.status_message = "Stopping..."
         return True, "Stop signal sent"
 
-    def _handle_metrics_line(self, line: str):
+    def _handle_metrics_line(self, line: str) -> None:
         """Parse a dedicated metrics JSON line and update internal state."""
         try:
             # Expected format: [METRICS] {"epoch": 1, "loss": 0.5, ...}
@@ -202,8 +222,8 @@ class TrainingManager:
                 elif k not in ["epoch", "progress", "is_summary"]:
                     self.current_metrics[k] = v
 
-            self.current_epoch = metrics.get("epoch", self.current_epoch)
-            self.progress = metrics.get("progress", self.progress)
+            self.current_epoch = int(metrics.get("epoch", self.current_epoch))
+            self.progress = float(metrics.get("progress", self.progress))
 
             if metrics.get("is_summary"):
                 idx = self.current_epoch - 1
@@ -220,7 +240,7 @@ class TrainingManager:
 
             # Update status message from metrics if available
             if "status" in metrics:
-                self.status_message = metrics["status"]
+                self.status_message = str(metrics["status"])
             elif metrics.get("is_summary"):
                 self.status_message = f"Epoch {self.current_epoch} complete"
         except Exception as e:
@@ -260,9 +280,8 @@ class TrainingManager:
                 self.adv_loss_history.append(None)
 
             # Merge disk history into in-memory array at explicit indices
-            for ep_str, metrics in file_history_dict.items():
+            for ep, metrics in file_history_dict.items():
                 try:
-                    ep = int(ep_str)
                     idx = ep - 1
                     if 0 <= idx < len(self.loss_history):
                         self.loss_history[idx] = (
@@ -300,26 +319,26 @@ class TrainingManager:
             "display_metadata": self.display_metadata,
         }
 
-    def _load_history_dict(self) -> Dict[int, Dict[str, float]]:
+    def _load_history_dict(self) -> Dict[int, Dict[str, Optional[float]]]:
         """Loads history from disk and returns a dict mapping explicit epoch number to metrics."""
         try:
-            project_root = Path(__file__).parent.parent.parent
+            project_root_path = Path(__file__).parent.parent.parent
             run_id = self.current_run_id or self.last_run_id
             if run_id:
                 history_path = (
-                    project_root / "results" / "runs" / run_id / "history.json"
+                    project_root_path / "results" / "runs" / run_id / "history.json"
                 )
                 if history_path.exists():
                     with open(history_path, "r", encoding="utf-8") as f:
-                        history = json.load(f)
-                        result = {}
+                        history: List[Dict[str, Any]] = json.load(f)
+                        result: Dict[int, Dict[str, Optional[float]]] = {}
                         import math
 
                         for i, entry in enumerate(history):
                             # Fallback to index-based epoch if 'epoch' key is missing
-                            ep = entry.get("epoch", i + 1)
+                            ep: int = int(entry.get("epoch", i + 1))
 
-                            def sanitize(val):
+                            def sanitize(val: Any) -> Optional[float]:
                                 try:
                                     if val is None:
                                         return None
@@ -341,19 +360,19 @@ class TrainingManager:
             print(f"[TrainingManager] Error loading history: {e}")
         return {}
 
-    def _load_history_dual(self) -> tuple[List[float], List[float]]:
+    def _load_history_dual(self) -> Tuple[List[float], List[float]]:
         try:
-            project_root = Path(__file__).parent.parent.parent
+            project_root_path = Path(__file__).parent.parent.parent
             if self.current_run_id:
                 history_path = (
-                    project_root
+                    project_root_path
                     / "results"
                     / "runs"
                     / self.current_run_id
                     / "history.json"
                 )
             else:
-                history_path = project_root / "models" / "checkpoints" / "history.json"
+                history_path = project_root_path / "models" / "checkpoints" / "history.json"
 
             if history_path.exists():
                 with open(history_path, "r", encoding="utf-8") as f:
@@ -375,17 +394,17 @@ class TrainingManager:
             print(f"[TrainingManager] Error loading history: {e}")
         return [], []
 
-    def _run_training(self, config_overrides):
+    def _run_training(self, config_overrides: Dict[str, Any]) -> None:
         try:
             self.status_message = "Initializing..."
-            project_root = Path(__file__).parent.parent.parent
+            project_root_path = Path(__file__).parent.parent.parent
 
             # Extract remote flag from multiple possible locations in the config
             is_remote = False
             if config_overrides:
                 remote_cfg = config_overrides.get("remote", {})
                 if isinstance(remote_cfg, dict):
-                    is_remote = remote_cfg.get("use_remote", False)
+                    is_remote = bool(remote_cfg.get("use_remote", False))
                 else:
                     is_remote = bool(remote_cfg)
 
@@ -399,8 +418,8 @@ class TrainingManager:
                 strategy = get_training_strategy(config_overrides)
                 is_resume = (
                     retry_count > 0
-                    or config_overrides.get("training", {}).get("resume", False)
-                    or config_overrides.get("resume", False)
+                    or bool(config_overrides.get("training", {}).get("resume", False))
+                    or bool(config_overrides.get("resume", False))
                 )
 
                 if is_remote:
@@ -412,15 +431,15 @@ class TrainingManager:
                     cmd = [
                         sys.executable,
                         "-u",
-                        str(project_root / "scripts" / "remote_train.py"),
+                        str(project_root_path / "scripts" / "remote_train.py"),
                     ]
 
                     # Pass the script path relative to project root to remote_train.py
-                    script_path = strategy.get_script_path(project_root)
+                    script_path = strategy.get_script_path(project_root_path)
                     cmd.extend(
                         [
                             "--script",
-                            str(script_path.relative_to(project_root).as_posix()),
+                            str(script_path.relative_to(project_root_path).as_posix()),
                         ]
                     )
                 else:
@@ -428,7 +447,7 @@ class TrainingManager:
                     cmd = [
                         sys.executable,
                         "-u",
-                        str(strategy.get_script_path(project_root)),
+                        str(strategy.get_script_path(project_root_path)),
                     ]
 
                 # Add common arguments via strategy
@@ -438,7 +457,7 @@ class TrainingManager:
 
                 # Use the frozen config for the run
                 relative_config_path = self.frozen_config_path.relative_to(
-                    project_root
+                    project_root_path
                 ).as_posix()
                 cmd.extend(["--config", relative_config_path])
 
@@ -456,49 +475,50 @@ class TrainingManager:
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
-                    cwd=str(project_root),
+                    cwd=str(project_root_path),
                 )
                 self.log_history.append(
                     f"[{time.strftime('%H:%M:%S')}] [Manager] Process started (PID: {process.pid}, Attempt: {retry_count + 1})"
                 )
 
-                for line in process.stdout:
-                    if self._stop_event.is_set():
-                        process.terminate()
-                        self.status_message = "Stopping training..."
-                        break
+                if process.stdout:
+                    for line in process.stdout:
+                        if self._stop_event.is_set():
+                            process.terminate()
+                            self.status_message = "Stopping training..."
+                            break
 
-                    line = line.strip()
-                    if line:
-                        # Robust JSON Metrics Stream (skip log history)
-                        if "[METRICS]" in line:
-                            self._handle_metrics_line(line)
-                            continue
+                        line_str = line.strip()
+                        if line_str:
+                            # Robust JSON Metrics Stream (skip log history)
+                            if "[METRICS]" in line_str:
+                                self._handle_metrics_line(line_str)
+                                continue
 
-                        # Add to log history with timestamp
-                        timestamp = time.strftime("%H:%M:%S")
-                        log_line = f"[{timestamp}] {line}"
-                        print(f"[TrainingManager] {line}")  # For backend debugging
-                        self.log_history.append(log_line)
-                        if len(self.log_history) > 1000:
-                            self.log_history.pop(0)
+                            # Add to log history with timestamp
+                            timestamp = time.strftime("%H:%M:%S")
+                            log_line = f"[{timestamp}] {line_str}"
+                            print(f"[TrainingManager] {line_str}")  # For backend debugging
+                            self.log_history.append(log_line)
+                            if len(self.log_history) > 1000:
+                                self.log_history.pop(0)
 
-                        # Persistence: Write to run-specific log file
-                        if self.current_run_id:
-                            log_dir = (
-                                project_root / "results" / "runs" / self.current_run_id
-                            )
-                            log_dir.mkdir(parents=True, exist_ok=True)
-                            with open(
-                                log_dir / "training.log", "a", encoding="utf-8"
-                            ) as f:
-                                f.write(log_line + "\n")
+                            # Persistence: Write to run-specific log file
+                            if self.current_run_id:
+                                log_dir = (
+                                    project_root_path / "results" / "runs" / self.current_run_id
+                                )
+                                log_dir.mkdir(parents=True, exist_ok=True)
+                                with open(
+                                    log_dir / "training.log", "a", encoding="utf-8"
+                                ) as f:
+                                    f.write(log_line + "\n")
 
-                        # --- Meaningful Status Extraction (Legacy Fallback) ---
-                        if "Epoch" in line and "/" in line and ":" not in line:
-                            self.status_message = line.strip()
-                        elif "Training complete" in line:
-                            self.status_message = "Training complete"
+                            # --- Meaningful Status Extraction (Legacy Fallback) ---
+                            if "Epoch" in line_str and "/" in line_str and ":" not in line_str:
+                                self.status_message = line_str.strip()
+                            elif "Training complete" in line_str:
+                                self.status_message = "Training complete"
 
                 process.wait()
 
@@ -510,7 +530,7 @@ class TrainingManager:
                     self.progress = 0.95  # Almost done
 
                     # Trigger evaluation
-                    success = self._run_evaluation(is_remote, self.current_run_id)
+                    success = self._run_evaluation(is_remote, str(self.current_run_id))
 
                     if success:
                         self.status_message = "Finished"
@@ -563,8 +583,8 @@ class TrainingManager:
 
                     found_keywords = []
                     attempt_logs = self.log_history[start_log_idx:]
-                    for line in reversed(attempt_logs):
-                        line_lower = line.lower()
+                    for log_line in reversed(attempt_logs):
+                        line_lower = log_line.lower()
                         # Capture the last traceback or error statement
                         if (
                             "error:" in line_lower
@@ -575,7 +595,7 @@ class TrainingManager:
                                 "Failed (exit"
                             ):
                                 clean_err = (
-                                    line.split("] ", 1)[-1] if "] " in line else line
+                                    log_line.split("] ", 1)[-1] if "] " in log_line else log_line
                                 )
                                 error_msg = f"Error: {clean_err}"
 
@@ -616,11 +636,11 @@ class TrainingManager:
     def _run_evaluation(self, is_remote: bool, run_id: str) -> bool:
         """Runs evaluation script for a specific run_id."""
         try:
-            project_root = Path(__file__).parent.parent.parent
+            project_root_path = Path(__file__).parent.parent.parent
             if is_remote:
                 cmd = [
                     sys.executable,
-                    str(project_root / "scripts" / "remote_evaluate.py"),
+                    str(project_root_path / "scripts" / "remote_evaluate.py"),
                     "--run_id",
                     run_id,
                 ]
@@ -630,11 +650,11 @@ class TrainingManager:
                 # scripts/evaluate.py handles DDP if RANK env is set.
                 cmd = [
                     sys.executable,
-                    str(project_root / "scripts" / "evaluate.py"),
+                    str(project_root_path / "scripts" / "evaluate.py"),
                     "--run_id",
                     run_id,
                     "--save_json",
-                    str(project_root / "results" / "runs" / run_id / "evaluation.json"),
+                    str(project_root_path / "results" / "runs" / run_id / "evaluation.json"),
                 ]
 
             print(f"[TrainingManager] Running evaluation: {' '.join(cmd)}")
@@ -646,20 +666,21 @@ class TrainingManager:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                cwd=str(project_root),
+                cwd=str(project_root_path),
             )
 
-            for line in eval_process.stdout:
-                if self._stop_event.is_set():
-                    eval_process.terminate()
-                    return False
+            if eval_process.stdout:
+                for line in eval_process.stdout:
+                    if self._stop_event.is_set():
+                        eval_process.terminate()
+                        return False
 
-                line = line.strip()
-                if line:
-                    timestamp = time.strftime("%H:%M:%S")
-                    self.log_history.append(f"[{timestamp}] [Eval] {line}")
-                    if "PCK@" in line or "Mean PCK" in line:
-                        self.status_message = f"Evaluating: {line}"
+                    line_str = line.strip()
+                    if line_str:
+                        timestamp = time.strftime("%H:%M:%S")
+                        self.log_history.append(f"[{timestamp}] [Eval] {line_str}")
+                        if "PCK@" in line_str or "Mean PCK" in line_str:
+                            self.status_message = f"Evaluating: {line_str}"
 
             eval_process.wait()
             return eval_process.returncode == 0
