@@ -539,7 +539,7 @@ def main():
                         # Run a python script on the remote to emulate tail -F but with explicit flushing.
                         # This avoids all pipe block-buffering issues inherent to `tail` over SSH without a PTY.
                         cmd = (
-                            f"python -c '\n"
+                            f"python3 -c '\n"
                             f"import time, os\n"
                             f'open("{remote_stream_path}", "a").close()\n'
                             f'f = open("{remote_stream_path}", "r")\n'
