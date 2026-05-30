@@ -95,13 +95,18 @@ def compute_pck(
     return per_joint_pck, per_joint_count, mean_pck
 
 
-def load_run_config(checkpoint_path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+def load_run_config(
+    checkpoint_path: Path,
+) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     """
     Load the config embedded in the checkpoint (authoritative) or fall back
     to the run's config.json, then the global default.
     """
     if checkpoint_path.exists():
-        state = cast(Dict[str, Any], torch.load(checkpoint_path, map_location="cpu", weights_only=False))
+        state = cast(
+            Dict[str, Any],
+            torch.load(checkpoint_path, map_location="cpu", weights_only=False),
+        )
         if isinstance(state, dict) and "config" in state:
             return cast(Dict[str, Any], state["config"]), state
     # Fallback: run-level config.json
@@ -174,7 +179,9 @@ def visualize_audit(
             axes_list[i].imshow(img_np, cmap="gray")
 
             # Draw GT (Green) and Pred (Red)
-            draw_pose(axes_list[i], gt_joints[:2, :].T, color="green", alpha=0.5, label="GT")
+            draw_pose(
+                axes_list[i], gt_joints[:2, :].T, color="green", alpha=0.5, label="GT"
+            )
             draw_pose(axes_list[i], pred_joints, color="red", label="Pred")
             axes_list[i].set_title(f"Sample {idx} ({cover})")
             axes_list[i].axis("off")
@@ -212,7 +219,9 @@ def evaluate(
         from src.models.cyclegan.generator import GeneratorResNet
 
         input_shape = (3, 256, 256)
-        model: torch.nn.Module = GeneratorResNet(input_shape, num_residual_blocks=6).to(device)
+        model: torch.nn.Module = GeneratorResNet(input_shape, num_residual_blocks=6).to(
+            device
+        )
 
         if state is None:
             state = torch.load(checkpoint_path, map_location=device, weights_only=False)

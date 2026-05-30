@@ -2,7 +2,7 @@
 
 import torch
 import pytest
-from typing import Dict, Any, List, Optional, Tuple, Union, cast
+from typing import Dict, Any
 from src.models import build_model, MODEL_REGISTRY
 from src.models.base import BaseModel
 from src.models.hrnet import HRNet

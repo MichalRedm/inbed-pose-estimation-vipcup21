@@ -1,6 +1,5 @@
 import pytorch_lightning as pl
-import torch
-from typing import Dict, Any, Optional, List, cast
+from typing import Dict, Any, Optional, cast
 from src.training.factory import build_optimizer
 
 
@@ -21,7 +20,9 @@ class DashboardTelemetryCallback(pl.Callback):
         self.epoch_train_metrics = {}
         self.step_count = 0
 
-    def on_train_epoch_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+    def on_train_epoch_start(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
         self.step_count = 0
         self.epoch_train_metrics = {}
 
@@ -40,7 +41,9 @@ class DashboardTelemetryCallback(pl.Callback):
             self.step_count += 1
 
             # Get metrics from PoseLightningModule
-            metrics: Optional[Dict[str, float]] = getattr(pl_module, "last_step_metrics", None)
+            metrics: Optional[Dict[str, float]] = getattr(
+                pl_module, "last_step_metrics", None
+            )
             if not metrics:
                 return
 
@@ -81,7 +84,9 @@ class DashboardTelemetryCallback(pl.Callback):
             if self.parent.is_main:
                 print(f"[Callback Error] Error in on_train_batch_end: {e}")
 
-    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+    def on_train_epoch_end(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
         try:
             # Average training metrics
             avg_train_metrics = {
@@ -154,7 +159,9 @@ class DashboardTelemetryCallback(pl.Callback):
             if self.parent.is_main:
                 print(f"[Callback Error] Error in on_train_epoch_end: {e}")
 
-    def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+    def on_validation_epoch_end(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
         # Ignore validation runs triggered by sanity checking
         if getattr(trainer, "sanity_checking", False):
             return
@@ -192,10 +199,14 @@ class DashboardTelemetryCallback(pl.Callback):
             )
 
             # Store on pl_module to be fetched by on_train_epoch_end
-            setattr(pl_module, "last_val_metrics", {
-                "val_pck": val_pck,
-                **{f"val_{k}": v for k, v in val_metrics.items()},
-            })
+            setattr(
+                pl_module,
+                "last_val_metrics",
+                {
+                    "val_pck": val_pck,
+                    **{f"val_{k}": v for k, v in val_metrics.items()},
+                },
+            )
         except Exception as e:
             if self.parent.is_main:
                 print(f"[Callback Error] Error in on_validation_epoch_end: {e}")
@@ -207,8 +218,11 @@ class ProgressiveUnfreezingCallback(pl.Callback):
     rebuilds the optimizer dynamically at a specific epoch (Phase 2 Fine-Tuning).
     """
 
-    def on_train_epoch_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+    def on_train_epoch_start(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
         from src.training.lightning_module import PoseLightningModule
+
         pose_module = cast(PoseLightningModule, pl_module)
 
         unfreeze_epoch: Optional[int] = pose_module.unfreeze_epoch

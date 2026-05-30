@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from torch.utils.data import DataLoader
-from typing import Dict, Any, List, Optional, cast, Union
+from typing import Dict, Any, List, Optional
 
 from src.training.manager import training_manager
 from src.data.dataset import collate_skip_none

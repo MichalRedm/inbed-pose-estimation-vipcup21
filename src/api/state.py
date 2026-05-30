@@ -1,7 +1,7 @@
 import sys
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional, cast
+from typing import Dict, Any, List, cast
 from pydantic import BaseModel
 
 # Add project root to sys.path to allow imports from src

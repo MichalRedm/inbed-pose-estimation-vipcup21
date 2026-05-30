@@ -7,7 +7,7 @@ import random
 import numpy as np
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, Any, List, Optional, Union
 
 # Add project root to sys.path to allow importing src
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -226,7 +226,9 @@ def train() -> None:
             in_channels=3,
             return_joints=False,
         )
-        val_dataset: Union[VIPCupDataset, PairedDataset] = PairedDataset(ds_A_val, ds_B_val)
+        val_dataset: Union[VIPCupDataset, PairedDataset] = PairedDataset(
+            ds_A_val, ds_B_val
+        )
 
         collate_fn: Optional[Any] = (
             None  # Standard collate is fine for PairedDataset returning tensors

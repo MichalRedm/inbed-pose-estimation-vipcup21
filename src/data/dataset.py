@@ -9,13 +9,17 @@ from .augmentations import DataAugmenter
 import torchvision.transforms.v2 as v2
 
 
-def collate_skip_none(batch: List[Optional[Dict[str, Any]]]) -> Optional[Dict[str, Any]]:
+def collate_skip_none(
+    batch: List[Optional[Dict[str, Any]]],
+) -> Optional[Dict[str, Any]]:
     """
     Custom collate_fn that drops samples missing a target heatmap.
     Required because unannotated samples (covered subjects without labels)
     return target=None, which PyTorch's default collate cannot handle.
     """
-    clean_batch = [item for item in batch if item is not None and item.get("target") is not None]
+    clean_batch = [
+        item for item in batch if item is not None and item.get("target") is not None
+    ]
     if not clean_batch:
         return None
     return cast(Dict[str, Any], default_collate(clean_batch))
@@ -168,10 +172,7 @@ class VIPCupDataset(Dataset):
                     # Store joints for each modality if available
                     for mod in self.modalities:
                         ann_mod = annotations.get(mod)
-                        if (
-                            ann_mod is not None
-                            and i < ann_mod.shape[2]
-                        ):
+                        if ann_mod is not None and i < ann_mod.shape[2]:
                             sample["joints"][mod] = ann_mod[:, :, i]
                         else:
                             sample["joints"][mod] = None
@@ -197,7 +198,9 @@ class VIPCupDataset(Dataset):
         # Load and convert to 1-channel (L) or 3-channel (RGB) for IR
         if target_mod == "IR":
             if self.in_channels == 3:
-                image: Union[Image.Image, torch.Tensor] = Image.open(image_path).convert("RGB")
+                image: Union[Image.Image, torch.Tensor] = Image.open(
+                    image_path
+                ).convert("RGB")
             else:
                 image = Image.open(image_path).convert("L")
         else:

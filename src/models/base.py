@@ -24,7 +24,9 @@ class BaseModel(nn.Module, ABC):
         pass
 
     @abstractmethod
-    def forward(self, x: torch.Tensor, **kwargs: Any) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+    def forward(
+        self, x: torch.Tensor, **kwargs: Any
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         """
         Forward pass of the model.
 

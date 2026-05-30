@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
-from typing import Dict, Any, Optional
+from typing import Dict, Any, cast
 
 from src.api.state import project_root, GPUConfig
 from src.utils import get_training_config, save_training_config
@@ -76,5 +76,3 @@ def verify_gpu() -> Dict[str, Any]:
         }
     except Exception as e:
         return {"success": False, "stdout": "", "stderr": str(e)}
-
-from typing import cast

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch
-from typing import Dict, Any, List, Optional, Tuple, Union, cast, Generator
+from typing import Generator
 from src.training.manager import TrainingManager
 
 

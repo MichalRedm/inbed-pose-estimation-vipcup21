@@ -57,7 +57,17 @@ import subprocess
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union, Generator, Callable, TypeVar, TYPE_CHECKING
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Generator,
+    Callable,
+    TypeVar,
+    TYPE_CHECKING,
+)
 
 if TYPE_CHECKING:
     import paramiko
@@ -335,7 +345,9 @@ class GPUSession:
                 pass
             self.connect()
 
-    def _execute_with_retry(self, operation_name: str, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    def _execute_with_retry(
+        self, operation_name: str, func: Callable[..., T], *args: Any, **kwargs: Any
+    ) -> T:
         """
         Executes a GPUSession operation with transparent automatic connection recovery.
         """
@@ -398,7 +410,9 @@ class GPUSession:
 
         return self._execute_with_retry("open_sftp", _open)
 
-    def exec_command(self, command: str, *args: Any, **kwargs: Any) -> Tuple[paramiko.ChannelFile, paramiko.ChannelFile, paramiko.ChannelFile]:
+    def exec_command(
+        self, command: str, *args: Any, **kwargs: Any
+    ) -> Tuple[paramiko.ChannelFile, paramiko.ChannelFile, paramiko.ChannelFile]:
         """Execute a command directly on the SSH client with automatic connection check."""
         self.ensure_connected()
         if self._ssh is None:
@@ -444,7 +458,11 @@ class GPUSession:
 
             if stream:
 
-                def _stream(channel_file: paramiko.ChannelFile, storage: List[str], prefix: str = "") -> None:
+                def _stream(
+                    channel_file: paramiko.ChannelFile,
+                    storage: List[str],
+                    prefix: str = "",
+                ) -> None:
                     while True:
                         try:
                             chunk = channel_file.read(8192)
@@ -523,7 +541,9 @@ class GPUSession:
 
         return self._execute_with_retry("upload", _upload)
 
-    def download(self, remote_path: str, local_path: str, recursive: bool = True) -> None:
+    def download(
+        self, remote_path: str, local_path: str, recursive: bool = True
+    ) -> None:
         """Download a file or directory from the remote GPU."""
         remote_path = self._expand_remote_path(remote_path)
 
@@ -850,7 +870,9 @@ class GPUManager:
             session.__exit__(None, None, None)
 
     @contextmanager
-    def use_any(self, preferred: Optional[List[str]] = None) -> Generator[GPUSession, None, None]:
+    def use_any(
+        self, preferred: Optional[List[str]] = None
+    ) -> Generator[GPUSession, None, None]:
         """
         Try backends in order (preferred list first, then all others) and
         open the first one that is reachable.

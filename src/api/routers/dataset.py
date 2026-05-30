@@ -5,7 +5,7 @@ import torchvision.transforms.v2 as v2
 from PIL import Image
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from typing import Dict, Any, List, Optional, Union, cast
+from typing import Dict, Any, Optional, Union
 
 from src.data.augmentations import (
     DataAugmenter,
@@ -153,7 +153,9 @@ async def list_augmentations() -> Dict[str, Any]:
 
 
 @router.post("/augmentations/apply")
-async def apply_augmentations_endpoint(request: AugmentationApplyRequest) -> Dict[str, Any]:
+async def apply_augmentations_endpoint(
+    request: AugmentationApplyRequest,
+) -> Dict[str, Any]:
     ds = dataset_container.get(request.split)
     if not ds or request.index >= len(ds):
         raise HTTPException(status_code=404, detail="Sample not found")

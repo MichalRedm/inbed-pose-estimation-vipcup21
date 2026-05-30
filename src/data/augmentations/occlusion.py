@@ -52,7 +52,9 @@ class CutoutAugmentation:
 
         res_pil = img_pil.copy()
         draw = ImageDraw.Draw(res_pil)
-        draw.rectangle((float(x1), float(y1), float(x1 + box_w), float(y1 + box_h)), fill=0)
+        draw.rectangle(
+            (float(x1), float(y1), float(x1 + box_w), float(y1 + box_h)), fill=0
+        )
 
         if is_tensor:
             return v2.functional.to_image(res_pil).to(device)  # type: ignore[no-any-return]

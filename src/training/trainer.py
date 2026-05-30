@@ -53,7 +53,9 @@ class PoseTrainer:
 
             images = batch["image"].to(self.device)
 
-            image_size: Tuple[int, int] = self.config.get("dataset", {}).get("image_size", (256, 256))
+            image_size: Tuple[int, int] = self.config.get("dataset", {}).get(
+                "image_size", (256, 256)
+            )
             outputs = self.model(images)
 
             # Loss calculation
@@ -108,7 +110,9 @@ class PoseTrainer:
                     os.path.join(self.save_dir, f"{model_name}_epoch_{epoch + 1}.pth"),
                 )
 
-    def _update_history(self, path: str, epoch: int, train_loss: float, val_loss: Optional[float]) -> None:
+    def _update_history(
+        self, path: str, epoch: int, train_loss: float, val_loss: Optional[float]
+    ) -> None:
         history: List[Dict[str, Any]] = []
         if os.path.exists(path):
             try:
@@ -136,7 +140,9 @@ class PoseTrainer:
         all_gts_list: List[torch.Tensor] = []
         all_visibility_list: List[torch.Tensor] = []
 
-        image_size: Tuple[int, int] = self.config.get("dataset", {}).get("image_size", (256, 256))
+        image_size: Tuple[int, int] = self.config.get("dataset", {}).get(
+            "image_size", (256, 256)
+        )
 
         for batch in dataloader:
             if batch is None:

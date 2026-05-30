@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import Tuple, Union, Any, Optional
+from typing import Tuple, Union
 from src.utils.pose import decode_heatmaps
 
 

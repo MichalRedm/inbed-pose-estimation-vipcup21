@@ -36,7 +36,10 @@ class PoseLightningModule(pl.LightningModule):
     last_step_metrics: Dict[str, float]
 
     def __init__(
-        self, model: nn.Module, config: Dict[str, Any], criterion: Optional[nn.Module] = None
+        self,
+        model: nn.Module,
+        config: Dict[str, Any],
+        criterion: Optional[nn.Module] = None,
     ) -> None:
         super().__init__()
         self.model = model
@@ -50,7 +53,9 @@ class PoseLightningModule(pl.LightningModule):
         self.warmup_epochs = int(training_cfg.get("warmup_epochs", 10))
         self.anatomical_mode = str(training_cfg.get("anatomical_mode", "hinge"))
         self.lambda_coord = float(training_cfg.get("lambda_coord", 0.0))
-        self.lambda_coord_occluded = float(training_cfg.get("lambda_coord_occluded", 0.0))
+        self.lambda_coord_occluded = float(
+            training_cfg.get("lambda_coord_occluded", 0.0)
+        )
         self.sigma_start = float(training_cfg.get("sigma_start", 2.0))
         self.sigma_end = float(training_cfg.get("sigma_end", 2.0))
 
@@ -71,7 +76,9 @@ class PoseLightningModule(pl.LightningModule):
             )
 
         # Multi-task uncertainty weighting
-        self.use_uncertainty = bool(training_cfg.get("use_uncertainty_weighting", False))
+        self.use_uncertainty = bool(
+            training_cfg.get("use_uncertainty_weighting", False)
+        )
         if self.use_uncertainty:
             # Determine tasks
             self.tasks = ["pose"]
@@ -84,8 +91,12 @@ class PoseLightningModule(pl.LightningModule):
 
             self.uncertainty_loss = UncertaintyWeighting(len(self.tasks))
 
-    def forward(self, x: torch.Tensor, **kwargs: Any) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
-        return cast(Union[torch.Tensor, Tuple[torch.Tensor, ...]], self.model(x, **kwargs))
+    def forward(
+        self, x: torch.Tensor, **kwargs: Any
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return cast(
+            Union[torch.Tensor, Tuple[torch.Tensor, ...]], self.model(x, **kwargs)
+        )
 
     def _get_current_lambda_ana(self, epoch: int) -> float:
         if self.warmup_epochs <= 0:
@@ -102,7 +113,9 @@ class PoseLightningModule(pl.LightningModule):
         progress = min(epoch / (num_epochs * 0.7), 1.0)
         return self.sigma_start + (self.sigma_end - self.sigma_start) * progress
 
-    def training_step(self, batch: Dict[str, Any], batch_idx: int) -> Optional[torch.Tensor]:
+    def training_step(
+        self, batch: Dict[str, Any], batch_idx: int
+    ) -> Optional[torch.Tensor]:
         if batch is None:
             return None
 
@@ -209,7 +222,9 @@ class PoseLightningModule(pl.LightningModule):
         self.last_step_metrics = metrics
         return cast(torch.Tensor, loss)
 
-    def validation_step(self, batch: Dict[str, Any], batch_idx: int) -> Optional[torch.Tensor]:
+    def validation_step(
+        self, batch: Dict[str, Any], batch_idx: int
+    ) -> Optional[torch.Tensor]:
         if batch is None:
             return None
 

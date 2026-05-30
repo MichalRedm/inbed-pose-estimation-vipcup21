@@ -15,7 +15,9 @@ class AnatomicalLoss(nn.Module):
     priors: List[Tuple[int, int, float]]
     symmetrical_pairs: List[Tuple[Tuple[int, int], Tuple[int, int]]]
 
-    def __init__(self, device: str = "cpu", image_size: int = 256, mode: str = "hinge") -> None:
+    def __init__(
+        self, device: str = "cpu", image_size: int = 256, mode: str = "hinge"
+    ) -> None:
         """
         Anatomical Constraint Loss for pose estimation.
 

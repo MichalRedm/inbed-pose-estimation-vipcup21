@@ -1,7 +1,7 @@
 import pytest
 import torch
 import torch.nn as nn
-from typing import Dict, Any, List, Optional, Tuple, Union, cast
+from typing import Dict, Any
 from src.training.factory import create_trainer
 from src.training.standard_trainer import StandardTrainer
 from src.training.uda_trainer import UDATrainer

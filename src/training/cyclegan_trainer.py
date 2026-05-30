@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import itertools
-from typing import Dict, Any, List, Optional, Tuple, Union, cast
+from typing import Dict, Any, cast
 from .base_trainer import BaseTrainer
 from src.models.cyclegan import GeneratorResNet, Discriminator, GANLoss
 

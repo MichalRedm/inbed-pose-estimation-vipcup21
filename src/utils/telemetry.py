@@ -1,7 +1,7 @@
 import sqlite3
 import json
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 
 class LocalTracker:

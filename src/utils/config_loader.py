@@ -2,7 +2,7 @@ import os
 import re
 import yaml
 from dotenv import load_dotenv
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict
 
 
 def _sanitize_config_types(config: Any) -> None:
@@ -45,7 +45,9 @@ def _sanitize_config_types(config: Any) -> None:
                         pass
 
 
-def load_config(config_path: str = "configs/default.yaml", use_user_overrides: bool = True) -> Dict[str, Any]:
+def load_config(
+    config_path: str = "configs/default.yaml", use_user_overrides: bool = True
+) -> Dict[str, Any]:
     """
     Load configuration from YAML and merge with environment variables.
     """

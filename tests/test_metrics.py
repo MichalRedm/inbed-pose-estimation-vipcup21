@@ -1,7 +1,6 @@
 import torch
 import pytest
 from src.utils.pose import compute_pck, compute_mpjpe
-from typing import Tuple
 
 
 def test_pck_vis_masking() -> None:

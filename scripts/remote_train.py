@@ -9,7 +9,7 @@ Works with any provider supported by gpu_connection.json:
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union, Set, cast
+from typing import Any, List, Optional, Set, cast
 from dotenv import load_dotenv
 
 # Add project root to sys.path to allow importing src
@@ -63,13 +63,16 @@ def main() -> None:
             with open(config_path, "r", encoding="utf-8") as f:
                 if config_path.endswith(".json"):
                     import json
+
                     cfg = json.load(f)
                 else:
                     import yaml
+
                     cfg = yaml.safe_load(f)
-                config_resume = bool(cfg.get("training", {}).get("resume", False) or cfg.get(
-                    "resume", False
-                ))
+                config_resume = bool(
+                    cfg.get("training", {}).get("resume", False)
+                    or cfg.get("resume", False)
+                )
         except Exception as e:
             print(
                 f"Warning: could not read config file {config_path} for resume check: {e}"
@@ -421,19 +424,30 @@ def main() -> None:
 
                             # Download to temporary file path
                             session.download(
-                                remote_path_poll, str(temp_local_path_poll), recursive=False
+                                remote_path_poll,
+                                str(temp_local_path_poll),
+                                recursive=False,
                             )
 
                             # Verify local temp file exists and matches remote size
                             if temp_local_path_poll.exists():
                                 local_size_poll = temp_local_path_poll.stat().st_size
-                                if remote_size_poll is None or local_size_poll == remote_size_poll:
+                                if (
+                                    remote_size_poll is None
+                                    or local_size_poll == remote_size_poll
+                                ):
                                     # Verify checkpoint integrity for key model files
                                     is_valid_poll = True
-                                    if fname_poll in ["best_model.pth", "latest_model.pth"]:
+                                    if fname_poll in [
+                                        "best_model.pth",
+                                        "latest_model.pth",
+                                    ]:
                                         try:
                                             import torch
-                                            with open(str(temp_local_path_poll), "rb") as f_poll:
+
+                                            with open(
+                                                str(temp_local_path_poll), "rb"
+                                            ) as f_poll:
                                                 torch.load(f_poll, map_location="cpu")
                                         except Exception as integrity_err_poll:
                                             print(
@@ -560,7 +574,9 @@ def main() -> None:
                             f"    else: time.sleep(0.5)\n"
                             f"'"
                         )
-                        _, stdout_stream, _ = stream_session.exec_command(tail_cmd, get_pty=False)
+                        _, stdout_stream, _ = stream_session.exec_command(
+                            tail_cmd, get_pty=False
+                        )
 
                         # Set a timeout for reading to allow heartbeat/alive checks
                         stdout_stream.channel.settimeout(10.0)
@@ -574,7 +590,10 @@ def main() -> None:
                                     if line_stream.strip().startswith("[METRICS]"):
                                         print(line_stream.strip(), flush=True)
                                     else:
-                                        print(f"[METRICS] {line_stream.strip()}", flush=True)
+                                        print(
+                                            f"[METRICS] {line_stream.strip()}",
+                                            flush=True,
+                                        )
                                 else:
                                     # Might be EOF if tail -F was interrupted
                                     break

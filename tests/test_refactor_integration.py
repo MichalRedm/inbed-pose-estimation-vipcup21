@@ -1,7 +1,7 @@
 import pytest
 import torch
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union, cast
+from typing import cast
 from src.data.dataset import VIPCupDataset
 from src.utils.telemetry import LocalTracker
 from src.api.inference import InferenceService

@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image, UnidentifiedImageError
 from pathlib import Path
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form
-from typing import Dict, Any, Optional, List, Union, Tuple, cast
+from typing import Dict, Any, Optional, List, cast
 
 from src.api.inference import inference_service
 from src.utils import LSP_JOINT_NAMES
@@ -58,9 +58,7 @@ async def predict(
         image = image.convert("RGB" if in_channels == 3 else "L")
         orig_size = image.size
         model_size_list: List[int] = (
-            inference_service._config.get("dataset", {}).get(
-                "image_size", [256, 256]
-            )
+            inference_service._config.get("dataset", {}).get("image_size", [256, 256])
             if inference_service._config
             else [256, 256]
         )

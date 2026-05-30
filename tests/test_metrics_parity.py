@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import pytest
-from typing import Dict, Any, List, Optional, Tuple, Union, cast
+from typing import Optional, Tuple, Union, cast
 from src.utils.pose import (
     compute_pck as new_compute_pck,
     compute_mpjpe as new_compute_mpjpe,

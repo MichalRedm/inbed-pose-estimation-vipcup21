@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import Dict, Any, Tuple, List, Optional, cast
+from typing import Dict, Any, Tuple, List, Optional
 import torch.nn.functional as F
 from .base_trainer import BaseTrainer
 from .losses import AnatomicalLoss, UncertaintyWeighting
@@ -113,7 +113,9 @@ class StandardTrainer(BaseTrainer):
         self.warmup_epochs = int(training_cfg.get("warmup_epochs", 10))
         self.anatomical_mode = str(training_cfg.get("anatomical_mode", "hinge"))
         self.lambda_coord = float(training_cfg.get("lambda_coord", 0.0))
-        self.lambda_coord_occluded = float(training_cfg.get("lambda_coord_occluded", 0.0))
+        self.lambda_coord_occluded = float(
+            training_cfg.get("lambda_coord_occluded", 0.0)
+        )
         self.sigma_start = float(training_cfg.get("sigma_start", 2.0))
         self.sigma_end = float(training_cfg.get("sigma_end", 2.0))
 
@@ -131,7 +133,9 @@ class StandardTrainer(BaseTrainer):
             ).to(device)
 
         # Multi-task uncertainty weighting
-        self.use_uncertainty = bool(training_cfg.get("use_uncertainty_weighting", False))
+        self.use_uncertainty = bool(
+            training_cfg.get("use_uncertainty_weighting", False)
+        )
         if self.use_uncertainty:
             # Determine tasks
             self.tasks = ["pose"]

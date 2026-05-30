@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import os
 import pytest
-from typing import Dict, Any, List, Optional, Tuple, Union, cast
+from typing import Dict, Any
 from src.models.__init__ import load_model_for_inference
 
 

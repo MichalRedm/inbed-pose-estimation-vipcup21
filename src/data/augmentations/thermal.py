@@ -39,7 +39,7 @@ def _match_cumulative_distribution(
     ref_cdf = np.cumsum(ref_counts).astype(np.float64) / reference.size
 
     interp_values = np.interp(src_cdf, ref_cdf, ref_values)
-    return interp_values[src_indices].reshape(source.shape).astype(source.dtype) # type: ignore[no-any-return]
+    return interp_values[src_indices].reshape(source.shape).astype(source.dtype)  # type: ignore[no-any-return]
 
 
 def fourier_domain_adaptation(
@@ -240,9 +240,7 @@ class ThermalDiffusionAugmenter:
                 for t in np.linspace(0, 1, 15)
             ]
             drape_draw.line(
-                pts,
-                fill=random.randint(40, 120),
-                width=random.randint(25, 50)
+                pts, fill=random.randint(40, 120), width=random.randint(25, 50)
             )
         drape_np = (
             np.array(
@@ -270,9 +268,7 @@ class ThermalDiffusionAugmenter:
                 for t in np.linspace(0, 1, 10)
             ]
             wrinkle_draw.line(
-                pts,
-                fill=random.randint(80, 160),
-                width=random.randint(3, 7)
+                pts, fill=random.randint(80, 160), width=random.randint(3, 7)
             )
         wrinkle_np = (
             np.array(
@@ -363,7 +359,10 @@ class AdvancedCoverAugmenter:
     reference_bank: List[Path]
 
     def __init__(
-        self, dataset_root: Union[str, Path], probability: float = 0.5, bank_size: int = 100
+        self,
+        dataset_root: Union[str, Path],
+        probability: float = 0.5,
+        bank_size: int = 100,
     ) -> None:
         self.probability = probability
         self.bank_size = bank_size

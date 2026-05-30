@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 import os
 import subprocess
-from typing import List, Dict, Any, Optional, cast
+from typing import cast
 
 # Add project root to sys.path to allow importing src
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -16,9 +16,9 @@ def download_dataset(dry_run: bool = False) -> None:
     Download and extract the VIP Cup 2021 dataset from Kaggle.
     """
     config = load_config()
-    dataset_slug: str = str(config.get("dataset", {}).get(
-        "kaggle_slug", "vsharma1/ieee-vip-cup-2021"
-    ))
+    dataset_slug: str = str(
+        config.get("dataset", {}).get("kaggle_slug", "vsharma1/ieee-vip-cup-2021")
+    )
     target_dir = Path(str(config.get("dataset", {}).get("root", "data/raw")))
 
     print(f"Dataset: {dataset_slug}")

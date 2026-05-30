@@ -21,7 +21,9 @@ class InferenceService:
         if cls._instance is None:
             cls._instance = super(InferenceService, cls).__new__(cls)
             # Initialize _device on the instance
-            cls._instance._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            cls._instance._device = torch.device(
+                "cuda" if torch.cuda.is_available() else "cpu"
+            )
         return cls._instance
 
     def load_model(self, checkpoint_path: str, force_reload: bool = False) -> None:
@@ -115,7 +117,9 @@ class InferenceService:
         outputs = self._model(image_tensor)
 
         # Determine image size for decoding
-        dataset_cfg: Dict[str, Any] = self._config.get("dataset", {}) if self._config else {}
+        dataset_cfg: Dict[str, Any] = (
+            self._config.get("dataset", {}) if self._config else {}
+        )
         image_size: List[int] = dataset_cfg.get("image_size", [256, 256])
 
         heatmaps = outputs[0] if isinstance(outputs, tuple) else outputs

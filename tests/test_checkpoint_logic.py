@@ -13,7 +13,9 @@ class MockTrainer(BaseTrainer):
         self.config = {"run_id": "test_run"}
         self.device = torch.device("cpu")
         self.model = torch.nn.Linear(1, 1)
-        self.optimizer: torch.optim.Optimizer = torch.optim.SGD(self.model.parameters(), lr=0.01)
+        self.optimizer: torch.optim.Optimizer = torch.optim.SGD(
+            self.model.parameters(), lr=0.01
+        )
         self.best_val_pck = 0.0
         self.best_val_loss = float("inf")
         self.current_epoch = 0

@@ -42,7 +42,9 @@ class DataAugmenter:
         self.config = config or {}
         self.enabled = bool(self.config.get("enabled", False))
         self.is_training = is_training
-        self.dataset_root = dataset_root or str(self.config.get("dataset_root", "data/SLP"))
+        self.dataset_root = dataset_root or str(
+            self.config.get("dataset_root", "data/SLP")
+        )
 
         # Components
         self.flip = HorizontalFlipAugmentation(
@@ -56,13 +58,19 @@ class DataAugmenter:
 
         self.intensity_jitter = ThermalIntensityJitter(
             probability=float(self.config.get("intensity_jitter_prob", 0.5)),
-            brightness_range=cast(List[float], self.config.get("intensity_jitter_range", [0.55, 1.15])),
-            contrast_range=cast(List[float], self.config.get("contrast_jitter_range", [0.5, 1.15])),
+            brightness_range=cast(
+                List[float], self.config.get("intensity_jitter_range", [0.55, 1.15])
+            ),
+            contrast_range=cast(
+                List[float], self.config.get("contrast_jitter_range", [0.5, 1.15])
+            ),
         )
 
         self.sensor_noise = IRSensorNoise(
             probability=float(self.config.get("sensor_noise_prob", 0.4)),
-            sigma_range=cast(List[float], self.config.get("sensor_noise_sigma", [5.0, 12.0])),
+            sigma_range=cast(
+                List[float], self.config.get("sensor_noise_sigma", [5.0, 12.0])
+            ),
         )
 
         # Occlusion methods
@@ -79,9 +87,9 @@ class DataAugmenter:
 
         self.cyclegan = CycleGANAugmentation(
             probability=float(self.config.get("cyclegan_prob", 0.0)),
-            checkpoint_path=str(self.config.get(
-                "cyclegan_path", "models/cyclegan_gen_A2B.pth"
-            )),
+            checkpoint_path=str(
+                self.config.get("cyclegan_path", "models/cyclegan_gen_A2B.pth")
+            ),
         )
 
         self.cut = CUTAugmentation(
@@ -148,7 +156,11 @@ class DataAugmenter:
 
         source_image = image
         if return_pair:
-            source_image = image.clone() if torch.is_tensor(image) else cast(Image.Image, image).copy()
+            source_image = (
+                image.clone()
+                if torch.is_tensor(image)
+                else cast(Image.Image, image).copy()
+            )
 
         # Occlusion block
         if self.exclusive_occlusion:
@@ -203,7 +215,9 @@ class DataAugmenter:
             num_kpts = kpts.shape[1]
             final_coords = kpts.view(num_kpts, 2).T  # (2, num_kpts)
             if vis is not None:
-                final_joints = torch.cat([final_coords, vis.unsqueeze(0)], dim=0).numpy()
+                final_joints = torch.cat(
+                    [final_coords, vis.unsqueeze(0)], dim=0
+                ).numpy()
             else:
                 final_joints = final_coords.numpy()
 
@@ -237,7 +251,7 @@ def apply_custom_augmentations(
     joints: Optional[np.ndarray],
     aug_list: List[Dict[str, Any]],
     is_ir: bool = False,
-    dataset_root: Optional[str] = None
+    dataset_root: Optional[str] = None,
 ) -> Tuple[Union[Image.Image, torch.Tensor], Optional[np.ndarray]]:
     """
     Dynamically applies a list of augmentations.

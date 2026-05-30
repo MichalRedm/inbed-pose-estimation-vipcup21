@@ -12,7 +12,6 @@ W32 configuration:
 """
 
 import os
-import re
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -177,7 +176,9 @@ class FusionLayer(nn.Module):
 
 
 class HRNetModule(nn.Module):
-    def __init__(self, num_branches: int, channels: List[int], num_blocks: int = 4) -> None:
+    def __init__(
+        self, num_branches: int, channels: List[int], num_blocks: int = 4
+    ) -> None:
         super().__init__()
         self.branches = nn.ModuleList(
             [
@@ -196,7 +197,9 @@ class HRNetModule(nn.Module):
 # ── Transition Layer ──────────────────────────────────────────────────────────
 
 
-def make_transition(in_channels: List[int], out_channels_list: List[int]) -> nn.ModuleList:
+def make_transition(
+    in_channels: List[int], out_channels_list: List[int]
+) -> nn.ModuleList:
     """
     Creates a transition layer that:
       - Adapts existing branches to new channel sizes.
@@ -459,7 +462,9 @@ class HRNet(BaseModel):
     def output_type(self) -> str:
         return "heatmap"
 
-    def _apply_transition(self, transition: nn.ModuleList, x_list: List[torch.Tensor]) -> List[torch.Tensor]:
+    def _apply_transition(
+        self, transition: nn.ModuleList, x_list: List[torch.Tensor]
+    ) -> List[torch.Tensor]:
         """Apply transition layers, extending x_list if new branches are added."""
         result = []
         for i, layer in enumerate(transition):
@@ -470,7 +475,9 @@ class HRNet(BaseModel):
                 result.append(cast(torch.Tensor, layer(x_list[-1])))
         return result
 
-    def forward(self, x: torch.Tensor, **kwargs: Any) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def forward(
+        self, x: torch.Tensor, **kwargs: Any
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         return_features = kwargs.get("return_features", False)
         # Stem
         x = cast(torch.Tensor, self.relu(self.bn1(self.conv1(x))))

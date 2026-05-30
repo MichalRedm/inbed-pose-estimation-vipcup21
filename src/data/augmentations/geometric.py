@@ -30,7 +30,7 @@ class HorizontalFlipAugmentation:
         self,
         image: Union[Image.Image, torch.Tensor],
         joints: Optional[Any] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> Tuple[Union[Image.Image, torch.Tensor], Optional[Any]]:
         prob = float(kwargs.get("probability", self.probability))
         force = bool(kwargs.get("force_apply", False))
@@ -48,7 +48,8 @@ class HorizontalFlipAugmentation:
                 kpts = v2.functional.hflip(joints)
                 flip_indices = [5, 4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 12, 13]
                 kpts = tv_tensors.Keypoints(
-                    kpts[:, flip_indices, :], canvas_size=cast(tv_tensors.Keypoints, joints).canvas_size
+                    kpts[:, flip_indices, :],
+                    canvas_size=cast(tv_tensors.Keypoints, joints).canvas_size,
                 )
                 return image, kpts
 
@@ -59,6 +60,7 @@ class HorizontalFlipAugmentation:
                 img_w = cast(torch.Tensor, image).shape[-1]
 
             import numpy as np
+
             if isinstance(joints, np.ndarray):
                 joints_np = joints.copy()
                 joints_np[0, :] = img_w - joints_np[0, :]  # Flip X
@@ -96,7 +98,7 @@ class AffineAugmentation:
         self,
         rotation_range: List[float] = [-30.0, 30.0],
         scaling_range: List[float] = [0.8, 1.2],
-        translation: Optional[List[float]] = None
+        translation: Optional[List[float]] = None,
     ) -> None:
         self.rotation_range = rotation_range
         self.scaling_range = scaling_range
@@ -112,7 +114,7 @@ class AffineAugmentation:
         self,
         image: Union[Image.Image, torch.Tensor],
         joints: Optional[Any] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> Tuple[Union[Image.Image, torch.Tensor], Optional[Any]]:
         is_random = bool(kwargs.get("random", True))
 
@@ -138,7 +140,11 @@ class AffineAugmentation:
 
         if joints is not None:
             image = v2.functional.affine(
-                image, angle=rotation, translate=translations, scale=scale, shear=[0.0, 0.0]
+                image,
+                angle=rotation,
+                translate=translations,
+                scale=scale,
+                shear=[0.0, 0.0],
             )
             joints = v2.functional.affine(
                 joints,
@@ -151,7 +157,11 @@ class AffineAugmentation:
 
         return (
             v2.functional.affine(
-                image, angle=rotation, translate=translations, scale=scale, shear=[0.0, 0.0]
+                image,
+                angle=rotation,
+                translate=translations,
+                scale=scale,
+                shear=[0.0, 0.0],
             ),
             None,
         )

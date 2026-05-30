@@ -3,7 +3,6 @@ from fastapi.testclient import TestClient
 from src.api.main import app
 import io
 from PIL import Image
-from typing import Any
 
 from src.api.inference import inference_service
 import torch

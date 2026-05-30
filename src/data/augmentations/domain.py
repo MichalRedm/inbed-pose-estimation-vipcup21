@@ -79,13 +79,21 @@ class CycleGANAugmentation:
     ) -> Union[Image.Image, torch.Tensor]:
         force = bool(kwargs.get("force_apply", False))
         prob = float(kwargs.get("probability", self.probability))
-        if not self.enabled or self.generator is None or (not force and torch.rand(1).item() > prob):
+        if (
+            not self.enabled
+            or self.generator is None
+            or (not force and torch.rand(1).item() > prob)
+        ):
             return img
 
         is_tensor = torch.is_tensor(img)
         if is_tensor:
             img_tensor = cast(torch.Tensor, img)
-            img_t = img_tensor if img_tensor.dtype == torch.float32 else img_tensor.float() / 255.0
+            img_t = (
+                img_tensor
+                if img_tensor.dtype == torch.float32
+                else img_tensor.float() / 255.0
+            )
         else:
             img_pil = cast(Image.Image, img)
             img_t = cast(torch.Tensor, v2.functional.to_image(img_pil)).float() / 255.0
@@ -195,13 +203,21 @@ class CUTAugmentation:
     ) -> Union[Image.Image, torch.Tensor]:
         force = bool(kwargs.get("force_apply", False))
         prob = float(kwargs.get("probability", self.probability))
-        if not self.enabled or self.generator is None or (not force and torch.rand(1).item() > prob):
+        if (
+            not self.enabled
+            or self.generator is None
+            or (not force and torch.rand(1).item() > prob)
+        ):
             return img
 
         is_tensor = torch.is_tensor(img)
         if is_tensor:
             img_tensor = cast(torch.Tensor, img)
-            img_t = img_tensor if img_tensor.dtype == torch.float32 else img_tensor.float() / 255.0
+            img_t = (
+                img_tensor
+                if img_tensor.dtype == torch.float32
+                else img_tensor.float() / 255.0
+            )
         else:
             img_pil = cast(Image.Image, img)
             img_t = cast(torch.Tensor, v2.functional.to_image(img_pil)).float() / 255.0

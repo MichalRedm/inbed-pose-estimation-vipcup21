@@ -5,8 +5,7 @@ import argparse
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union, cast
-import numpy as np
+from typing import Dict, Any, List, cast
 
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -29,7 +28,9 @@ def visualize_samples(checkpoint_path: str, num_samples: int = 3) -> None:
     # 2. Initialize Model using factory
     model = build_model(config).to(device)
     print(f"Loading checkpoint: {checkpoint_path}")
-    checkpoint_state = cast(Dict[str, Any], torch.load(checkpoint_path, map_location=device))
+    checkpoint_state = cast(
+        Dict[str, Any], torch.load(checkpoint_path, map_location=device)
+    )
     if isinstance(checkpoint_state, dict) and "model_state_dict" in checkpoint_state:
         model.load_state_dict(checkpoint_state["model_state_dict"])
     else:

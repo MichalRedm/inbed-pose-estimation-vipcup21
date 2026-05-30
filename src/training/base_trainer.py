@@ -5,7 +5,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from tqdm import tqdm
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, Tuple, Union, cast
+from typing import Dict, Any, List, Optional, Tuple, cast
 import numpy as np
 
 from src.utils.pose import decode_heatmaps
@@ -179,7 +179,11 @@ class BaseTrainer(ABC):
                 self.tracker.log_metric(run_name, epoch + 1, k, v)
 
         # Stream final epoch summary
-        summary_payload: Dict[str, Any] = {"epoch": epoch + 1, "progress": 1.0, "is_summary": True}
+        summary_payload: Dict[str, Any] = {
+            "epoch": epoch + 1,
+            "progress": 1.0,
+            "is_summary": True,
+        }
         summary_payload.update(avg_metrics)
         self._stream_metric(summary_payload)
 
@@ -225,13 +229,17 @@ class BaseTrainer(ABC):
         return avg_metrics
 
     @torch.no_grad()
-    def compute_val_pck(self, dataloader: Any, decode_method: Optional[str] = None) -> float:
+    def compute_val_pck(
+        self, dataloader: Any, decode_method: Optional[str] = None
+    ) -> float:
         """
         Compute PCK@0.2 (torso-relative, covered validation images only).
         Used as the primary criterion for saving best_model.pth.
         """
         self.model.eval()
-        image_size: Tuple[int, int] = tuple(self.config.get("dataset", {}).get("image_size", [256, 256]))
+        image_size: Tuple[int, int] = tuple(
+            self.config.get("dataset", {}).get("image_size", [256, 256])
+        )
 
         all_preds, all_gts, all_vis = [], [], []
 
@@ -251,7 +259,7 @@ class BaseTrainer(ABC):
 
             raw_model = cast(
                 nn.Module,
-                self.model.module if hasattr(self.model, "module") else self.model
+                self.model.module if hasattr(self.model, "module") else self.model,
             )
             outputs = raw_model(images)
 
@@ -259,7 +267,9 @@ class BaseTrainer(ABC):
                 method = decode_method or self.config.get("training", {}).get(
                     "decode_method", "argmax"
                 )
-                temp = float(self.config.get("training", {}).get("decode_temperature", 10.0))
+                temp = float(
+                    self.config.get("training", {}).get("decode_temperature", 10.0)
+                )
                 preds = decode_heatmaps(
                     outputs, image_size, method=method, temperature=temp
                 ).cpu()
@@ -299,7 +309,7 @@ class BaseTrainer(ABC):
 
         model_to_save = cast(
             nn.Module,
-            self.model.module if hasattr(self.model, "module") else self.model
+            self.model.module if hasattr(self.model, "module") else self.model,
         )
 
         checkpoint: Dict[str, Any] = {

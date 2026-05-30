@@ -1,5 +1,5 @@
 import torch
-from typing import Dict, Any, List, Optional, Tuple, Union, cast
+from typing import Dict, Any, cast
 from src.models.hrnet import HRNet
 from src.training.factory import create_trainer, build_optimizer
 from src.training.standard_trainer import StandardTrainer

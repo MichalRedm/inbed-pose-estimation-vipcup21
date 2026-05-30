@@ -1,10 +1,9 @@
 import torch
-import torch.nn as nn
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
-from typing import List, Dict, Any, Optional, Tuple, Union, cast
+from typing import List, Dict, Any, Union, cast
 
 from src.utils import load_config, decode_heatmaps
 from src.utils.pose import compute_pck, draw_pose
@@ -22,7 +21,9 @@ def optimize_checkpoint(
     path_obj = Path(checkpoint_path)
 
     # Load state
-    state = cast(Dict[str, Any], torch.load(path_obj, map_location=device, weights_only=False))
+    state = cast(
+        Dict[str, Any], torch.load(path_obj, map_location=device, weights_only=False)
+    )
     if isinstance(state, dict) and "config" in state:
         config = cast(Dict[str, Any], state["config"])
     else:
@@ -94,7 +95,11 @@ def optimize_checkpoint(
             temperature=float(strategy["temperature"]),
         ).numpy()
 
-        p_pck, _ = compute_pck(torch.from_numpy(preds), torch.from_numpy(all_gts_np).permute(0, 2, 1), visibility=torch.from_numpy(all_vis_np))
+        p_pck, _ = compute_pck(
+            torch.from_numpy(preds),
+            torch.from_numpy(all_gts_np).permute(0, 2, 1),
+            visibility=torch.from_numpy(all_vis_np),
+        )
         pck = float(p_pck.mean().item())
         print(
             f"  {strategy['method']} (temp={strategy['temperature']}): PCK@0.5 = {pck:.4f}"
@@ -121,9 +126,7 @@ def optimize_checkpoint(
     print(f"  Saved optimized decoding config to {path_obj}")
 
     # Visual Check
-    visual_check_path = (
-        path_obj.parent / f"decoding_audit_{path_obj.stem}.png"
-    )
+    visual_check_path = path_obj.parent / f"decoding_audit_{path_obj.stem}.png"
 
     # Take first sample
     img = all_images[0][0]  # (1, H, W)

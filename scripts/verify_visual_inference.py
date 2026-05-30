@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import sys
 import os
-from typing import Dict, Any, List, Optional, Tuple, Union, cast
+from typing import Dict, Any, List, cast
 
 # Add project root to sys.path
 project_root = Path(__file__).parent.parent
@@ -15,7 +15,9 @@ from src.models import build_model  # noqa: E402
 from src.utils import decode_heatmaps, draw_pose  # noqa: E402
 
 
-def verify_inference(run_id: str, image_path: str, output_dir: str = "results/debug_inference") -> None:
+def verify_inference(
+    run_id: str, image_path: str, output_dir: str = "results/debug_inference"
+) -> None:
     os.makedirs(output_dir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -51,7 +53,9 @@ def verify_inference(run_id: str, image_path: str, output_dir: str = "results/de
         image = image.convert("RGB")
     else:
         image = image.convert("L")
-    model_image_size_list: List[int] = config.get("dataset", {}).get("image_size", [256, 256])
+    model_image_size_list: List[int] = config.get("dataset", {}).get(
+        "image_size", [256, 256]
+    )
     model_image_size = (model_image_size_list[0], model_image_size_list[1])
 
     img_resized = image.resize(model_image_size)

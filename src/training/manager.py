@@ -4,7 +4,7 @@ import sys
 import time
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, List, Optional, Any, Tuple
 
 
 from src.utils import get_training_config
@@ -70,7 +70,9 @@ class TrainingManager:
 
         return get_display_metadata_for_config(config)
 
-    def start_training(self, config_overrides: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
+    def start_training(
+        self, config_overrides: Optional[Dict[str, Any]] = None
+    ) -> Tuple[bool, str]:
         config_overrides = config_overrides or {}
         if self.is_running:
             return False, "Training already in progress"
@@ -148,9 +150,9 @@ class TrainingManager:
         self.total_epochs = int(final_config.get("training", {}).get("epochs", 0))
 
         # Load existing history if resuming
-        is_resume = bool(final_config.get("training", {}).get("resume") or final_config.get(
-            "resume"
-        ))
+        is_resume = bool(
+            final_config.get("training", {}).get("resume") or final_config.get("resume")
+        )
         if is_resume:
             file_history_dict = self._load_history_dict()
             if file_history_dict:
@@ -372,7 +374,9 @@ class TrainingManager:
                     / "history.json"
                 )
             else:
-                history_path = project_root_path / "models" / "checkpoints" / "history.json"
+                history_path = (
+                    project_root_path / "models" / "checkpoints" / "history.json"
+                )
 
             if history_path.exists():
                 with open(history_path, "r", encoding="utf-8") as f:
@@ -498,7 +502,9 @@ class TrainingManager:
                             # Add to log history with timestamp
                             timestamp = time.strftime("%H:%M:%S")
                             log_line = f"[{timestamp}] {line_str}"
-                            print(f"[TrainingManager] {line_str}")  # For backend debugging
+                            print(
+                                f"[TrainingManager] {line_str}"
+                            )  # For backend debugging
                             self.log_history.append(log_line)
                             if len(self.log_history) > 1000:
                                 self.log_history.pop(0)
@@ -506,7 +512,10 @@ class TrainingManager:
                             # Persistence: Write to run-specific log file
                             if self.current_run_id:
                                 log_dir = (
-                                    project_root_path / "results" / "runs" / self.current_run_id
+                                    project_root_path
+                                    / "results"
+                                    / "runs"
+                                    / self.current_run_id
                                 )
                                 log_dir.mkdir(parents=True, exist_ok=True)
                                 with open(
@@ -515,7 +524,11 @@ class TrainingManager:
                                     f.write(log_line + "\n")
 
                             # --- Meaningful Status Extraction (Legacy Fallback) ---
-                            if "Epoch" in line_str and "/" in line_str and ":" not in line_str:
+                            if (
+                                "Epoch" in line_str
+                                and "/" in line_str
+                                and ":" not in line_str
+                            ):
                                 self.status_message = line_str.strip()
                             elif "Training complete" in line_str:
                                 self.status_message = "Training complete"
@@ -595,7 +608,9 @@ class TrainingManager:
                                 "Failed (exit"
                             ):
                                 clean_err = (
-                                    log_line.split("] ", 1)[-1] if "] " in log_line else log_line
+                                    log_line.split("] ", 1)[-1]
+                                    if "] " in log_line
+                                    else log_line
                                 )
                                 error_msg = f"Error: {clean_err}"
 
@@ -654,7 +669,13 @@ class TrainingManager:
                     "--run_id",
                     run_id,
                     "--save_json",
-                    str(project_root_path / "results" / "runs" / run_id / "evaluation.json"),
+                    str(
+                        project_root_path
+                        / "results"
+                        / "runs"
+                        / run_id
+                        / "evaluation.json"
+                    ),
                 ]
 
             print(f"[TrainingManager] Running evaluation: {' '.join(cmd)}")

@@ -5,7 +5,7 @@ import torchvision.models as models
 from torchvision.models import ViT_B_16_Weights
 from .base import BaseModel
 from .registry import register_model
-from typing import Dict, Any, Tuple, Optional, Union, cast
+from typing import Dict, Any
 
 
 @register_model("vitpose")
@@ -158,15 +158,18 @@ class ViTPose(BaseModel):
         # Interpolate patches position embedding to current grid size (h, w)
         if h != orig_h or w != orig_w:
             pos_embed_patches_resized = F.interpolate(
-                pos_embed_patches_grid, size=(h, w), mode="bilinear", align_corners=False
+                pos_embed_patches_grid,
+                size=(h, w),
+                mode="bilinear",
+                align_corners=False,
             )
         else:
             pos_embed_patches_resized = pos_embed_patches_grid
 
         # Reshape back to (1, h * w, 768)
-        pos_embed_patches_final = pos_embed_patches_resized.permute(
-            0, 2, 3, 1
-        ).reshape(1, h * w, self.vit.hidden_dim)
+        pos_embed_patches_final = pos_embed_patches_resized.permute(0, 2, 3, 1).reshape(
+            1, h * w, self.vit.hidden_dim
+        )
 
         # Add position embeddings and apply dropout
         tokens = tokens + pos_embed_patches_final
@@ -216,9 +219,9 @@ class ViTPose(BaseModel):
         pos_embed_patches_resized = F.interpolate(
             pos_embed_patches_grid, size=(16, 16), mode="bilinear", align_corners=False
         )
-        pos_embed_patches_final = pos_embed_patches_resized.permute(
-            0, 2, 3, 1
-        ).reshape(1, 256, self.vit.hidden_dim)
+        pos_embed_patches_final = pos_embed_patches_resized.permute(0, 2, 3, 1).reshape(
+            1, 256, self.vit.hidden_dim
+        )
 
         # IMPORTANT: Resize current pos_embedding to match COCO patches size BEFORE load_state_dict
         self.vit.encoder.pos_embedding = nn.Parameter(

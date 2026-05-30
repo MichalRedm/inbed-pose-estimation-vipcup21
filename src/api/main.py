@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import torch
-from typing import Dict, Any, List, Optional, Union, AsyncGenerator
+from typing import Dict, Any, List, AsyncGenerator
 
 # Add project root to sys.path to allow imports from src
 project_root = Path(__file__).parent.parent.parent

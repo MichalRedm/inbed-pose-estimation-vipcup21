@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import Dict, Any, Union, Tuple, Optional, cast
+from typing import Dict, Any, Union, Tuple, cast
 from .hrnet import HRNet
 from .refinement import PoseRefinementGCN
 from .layers import SoftArgmax2D

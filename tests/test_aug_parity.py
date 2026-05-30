@@ -11,6 +11,7 @@ from typing import Any, Type
 NewAugmenter: Type[Any]
 try:
     from src.data.augmentations import DataAugmenterV2 as NewAugmenter_V2  # type: ignore
+
     NewAugmenter = NewAugmenter_V2
 except ImportError:
     NewAugmenter = LegacyAugmenter
