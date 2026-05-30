@@ -10,13 +10,20 @@ class GANLoss(nn.Module):
     that has the same size as the input.
     """
 
-    def __init__(self, target_real_label=1.0, target_fake_label=0.0):
+    real_label: torch.Tensor
+    fake_label: torch.Tensor
+
+    def __init__(
+        self, target_real_label: float = 1.0, target_fake_label: float = 0.0
+    ) -> None:
         super(GANLoss, self).__init__()
         self.register_buffer("real_label", torch.tensor(target_real_label))
         self.register_buffer("fake_label", torch.tensor(target_fake_label))
         self.loss = nn.MSELoss()
 
-    def get_target_tensor(self, prediction, target_is_real):
+    def get_target_tensor(
+        self, prediction: torch.Tensor, target_is_real: bool
+    ) -> torch.Tensor:
         """Create label tensors with the same size as the input.
 
         Parameters:
@@ -32,7 +39,7 @@ class GANLoss(nn.Module):
             target_tensor = self.fake_label
         return target_tensor.expand_as(prediction)
 
-    def forward(self, prediction, target_is_real):
+    def forward(self, prediction: torch.Tensor, target_is_real: bool) -> torch.Tensor:
         """Calculate loss given Discriminator's output and ground truth labels.
 
         Parameters:
@@ -42,5 +49,5 @@ class GANLoss(nn.Module):
             the calculated loss.
         """
         target_tensor = self.get_target_tensor(prediction, target_is_real)
-        loss = self.loss(prediction, target_tensor)
+        loss: torch.Tensor = self.loss(prediction, target_tensor)
         return loss

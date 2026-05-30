@@ -1,4 +1,6 @@
+import torch
 import torch.nn as nn
+from typing import Dict, Any, Union, Tuple, Optional, cast
 from .hrnet import HRNet
 from .refinement import PoseRefinementGCN
 from .layers import SoftArgmax2D
@@ -12,20 +14,20 @@ class GCNRefinedHRNet(nn.Module):
     Output heatmaps (standard) AND refined coordinates.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__()
         # Extract sub-configs
         if "model" in config:
-            model_cfg = config["model"]
-            hrnet_cfg = model_cfg.get("hrnet", config)
+            model_cfg: Dict[str, Any] = config["model"]
+            hrnet_cfg: Dict[str, Any] = model_cfg.get("hrnet", config)
         else:
             hrnet_cfg = config
 
         self.hrnet = HRNet(hrnet_cfg)
         self.soft_argmax = SoftArgmax2D(temperature=100.0)
         self.refiner = PoseRefinementGCN(
-            num_joints=hrnet_cfg.get("num_joints", 14),
-            hidden_dim=hrnet_cfg.get("gcn_hidden_dim", 64),
+            num_joints=int(hrnet_cfg.get("num_joints", 14)),
+            hidden_dim=int(hrnet_cfg.get("gcn_hidden_dim", 64)),
         )
 
     @property
@@ -37,8 +39,11 @@ class GCNRefinedHRNet(nn.Module):
         # We still primarily output heatmaps for the trainer
         return "heatmap"
 
-    def forward(self, x, return_refined=False):
-        heatmaps = self.hrnet(x)
+    def forward(
+        self, x: torch.Tensor, **kwargs: Any
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        return_refined = kwargs.get("return_refined", False)
+        heatmaps = cast(torch.Tensor, self.hrnet(x))
 
         # Initial coordinates from heatmaps
         coords = self.soft_argmax(heatmaps)  # (B, 14, 2)

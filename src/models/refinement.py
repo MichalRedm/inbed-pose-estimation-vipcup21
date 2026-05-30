@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from typing import List, Tuple
 
 
 class GCNLayer(nn.Module):
@@ -7,7 +8,9 @@ class GCNLayer(nn.Module):
     Simple GCN layer: A * X * W
     """
 
-    def __init__(self, in_features, out_features, adj):
+    adj_norm: torch.Tensor
+
+    def __init__(self, in_features: int, out_features: int, adj: torch.Tensor) -> None:
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -22,7 +25,7 @@ class GCNLayer(nn.Module):
         self.weight = nn.Parameter(torch.FloatTensor(in_features, out_features))
         nn.init.xavier_uniform_(self.weight)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x shape: (B, num_joints, in_features)
         # adj_norm shape: (num_joints, num_joints)
         support = torch.matmul(x, self.weight)  # (B, J, out_features)
@@ -36,7 +39,7 @@ class PoseRefinementGCN(nn.Module):
     Takes (B, 14, 2) coordinates and outputs refined (B, 14, 2).
     """
 
-    def __init__(self, num_joints=14, hidden_dim=64):
+    def __init__(self, num_joints: int = 14, hidden_dim: int = 64) -> None:
         super().__init__()
         self.num_joints = num_joints
 
@@ -45,7 +48,7 @@ class PoseRefinementGCN(nn.Module):
         # 6: R Wrist, 7: R Elbow, 8: R Shoulder, 9: L Shoulder, 10: L Elbow, 11: L Wrist,
         # 12: Neck, 13: Head
         adj = torch.zeros(num_joints, num_joints)
-        edges = [
+        edges: List[Tuple[int, int]] = [
             (0, 1),
             (1, 2),
             (2, 3),
@@ -72,7 +75,7 @@ class PoseRefinementGCN(nn.Module):
 
         self.relu = nn.ReLU()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, 14, 2) initial coordinates from soft-argmax
         residual = x
         x = self.relu(self.gcn1(x))
