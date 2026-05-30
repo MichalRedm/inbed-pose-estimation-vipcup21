@@ -1,3 +1,7 @@
+"""
+HRNet variant with a Graph Convolutional Network (GCN) for coordinate refinement.
+"""
+
 import torch
 import torch.nn as nn
 from typing import Dict, Any, Union, Tuple, cast
@@ -15,6 +19,12 @@ class GCNRefinedHRNet(nn.Module):
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
+        """
+        Initializes GCNRefinedHRNet.
+
+        Args:
+            config: Model configuration.
+        """
         super().__init__()
         # Extract sub-configs
         if "model" in config:
@@ -32,16 +42,28 @@ class GCNRefinedHRNet(nn.Module):
 
     @property
     def in_channels(self) -> int:
+        """Returns the number of input channels."""
         return self.hrnet.in_channels
 
     @property
     def output_type(self) -> str:
+        """Returns the type of output ('heatmap')."""
         # We still primarily output heatmaps for the trainer
         return "heatmap"
 
     def forward(
         self, x: torch.Tensor, **kwargs: Any
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        """
+        Forward pass.
+
+        Args:
+            x: Input image tensor.
+            **kwargs: Additional arguments (e.g., return_refined).
+
+        Returns:
+            Heatmaps, or a tuple of (heatmaps, refined_coords).
+        """
         return_refined = kwargs.get("return_refined", False)
         heatmaps = cast(torch.Tensor, self.hrnet(x))
 
