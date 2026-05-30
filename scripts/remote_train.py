@@ -154,6 +154,7 @@ def main():
         env_setup = (
             f"export KAGGLE_USERNAME={k_user} && "
             f"export KAGGLE_KEY={k_key} && "
+            "export PYTHONUNBUFFERED=1 && "
             "export PYTHONPATH=$PYTHONPATH:."
         )
 

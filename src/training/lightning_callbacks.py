@@ -25,116 +25,138 @@ class DashboardTelemetryCallback(pl.Callback):
         self.epoch_train_metrics = {}
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        if batch is None:
-            return
+        try:
+            if batch is None:
+                return
 
-        self.step_count += 1
-        
-        # Get metrics from PoseLightningModule
-        metrics = getattr(pl_module, "last_step_metrics", None)
-        if not metrics:
-            return
-
-        # Accumulate metrics for epoch averaging
-        for k, v in metrics.items():
-            self.epoch_train_metrics[k] = self.epoch_train_metrics.get(k, 0.0) + v
-
-        # Only main process streams progress to dashboard over PTY
-        if self.parent.is_main:
-            # Calculate batch progress
-            total_batches = len(trainer.train_dataloader) if trainer.train_dataloader else 1
-            progress = self.step_count / max(total_batches, 1)
-
-            stream_payload = {
-                "epoch": trainer.current_epoch + 1,
-                "progress": progress,
-            }
-            stream_payload.update(metrics)
+            self.step_count += 1
             
-            # Print [METRICS] and write to stream.jsonl via base class streamer
-            self.parent._stream_metric(stream_payload)
+            # Get metrics from PoseLightningModule
+            metrics = getattr(pl_module, "last_step_metrics", None)
+            if not metrics:
+                return
+
+            # Accumulate metrics for epoch averaging
+            for k, v in metrics.items():
+                self.epoch_train_metrics[k] = self.epoch_train_metrics.get(k, 0.0) + v
+
+            # Only main process streams progress to dashboard over PTY
+            if self.parent.is_main:
+                # Calculate batch progress
+                try:
+                    total_batches = trainer.num_training_batches
+                    if total_batches <= 0 or total_batches == float("inf"):
+                        total_batches = len(trainer.train_dataloader) if (hasattr(trainer, "train_dataloader") and trainer.train_dataloader) else 1
+                except Exception:
+                    total_batches = 1
+
+                progress = self.step_count / max(total_batches, 1)
+
+                stream_payload = {
+                    "epoch": trainer.current_epoch + 1,
+                    "progress": progress,
+                }
+                stream_payload.update(metrics)
+                
+                # Print [METRICS] and write to stream.jsonl via base class streamer
+                self.parent._stream_metric(stream_payload)
+        except Exception as e:
+            if self.parent.is_main:
+                print(f"[Callback Error] Error in on_train_batch_end: {e}")
 
     def on_train_epoch_end(self, trainer, pl_module):
-        # Average training metrics
-        avg_train_metrics = {
-            k: v / max(self.step_count, 1) for k, v in self.epoch_train_metrics.items()
-        }
+        try:
+            # Average training metrics
+            avg_train_metrics = {
+                k: v / max(self.step_count, 1) for k, v in self.epoch_train_metrics.items()
+            }
 
-        # Save to SQLite telemetry database if on main rank
-        if self.parent.is_main:
-            run_name = self.parent.config.get("run_id", "unnamed_run")
-            for k, v in avg_train_metrics.items():
-                self.parent.tracker.log_metric(run_name, trainer.current_epoch + 1, k, v)
+            # Save to SQLite telemetry database if on main rank
+            if self.parent.is_main:
+                run_name = self.parent.config.get("run_id", "unnamed_run")
+                for k, v in avg_train_metrics.items():
+                    self.parent.tracker.log_metric(run_name, trainer.current_epoch + 1, k, v)
 
-        # Store averaged metrics on the pl_module so validation end can fetch them
-        pl_module.averaged_train_metrics = avg_train_metrics
+            # Store averaged metrics on the pl_module so validation end can fetch them
+            pl_module.averaged_train_metrics = avg_train_metrics
+        except Exception as e:
+            if self.parent.is_main:
+                print(f"[Callback Error] Error in on_train_epoch_end: {e}")
 
     def on_validation_epoch_end(self, trainer, pl_module):
-        # Validation epoch has finished. First, average val metrics.
-        # Check if we have standard validation dataloader
-        val_dataloader = None
-        if trainer.val_dataloaders:
-            val_dataloader = trainer.val_dataloaders
-            # PyTorch Lightning handles lists or single loaders
-            if isinstance(val_dataloader, list):
-                val_dataloader = val_dataloader[0]
-
-        if val_dataloader is None:
+        # Ignore validation runs triggered by sanity checking
+        if getattr(trainer, "sanity_checking", False):
             return
 
-        # Fetch averaged training metrics
-        train_metrics = getattr(pl_module, "averaged_train_metrics", {})
-        
-        # Compute validation loss
-        val_metrics = {}
-        for k, v in trainer.callback_metrics.items():
-            if k.startswith("val_"):
-                # Clean key
-                clean_k = k[4:]
-                val_metrics[clean_k] = v.item()
+        try:
+            # Validation epoch has finished. First, average val metrics.
+            # Check if we have standard validation dataloader
+            val_dataloader = None
+            if trainer.val_dataloaders:
+                val_dataloader = trainer.val_dataloaders
+                # PyTorch Lightning handles lists or single loaders
+                if isinstance(val_dataloader, list):
+                    val_dataloader = val_dataloader[0]
 
-        # Compute PCK@0.2 using the parent trainer's implementation
-        # Set self.parent's current_epoch to match the lightning trainer's epoch
-        self.parent.current_epoch = trainer.current_epoch
-        
-        decode_method = self.parent.config.get("training", {}).get("decode_method", "argmax")
-        val_pck = self.parent.compute_val_pck(val_dataloader, decode_method=decode_method)
+            if val_dataloader is None:
+                return
 
-        # Only on main process do we log, stream summaries, and save checkpoints
-        if self.parent.is_main:
-            # 1. Stream comprehensive final epoch summary payload (so dashboard updates)
-            summary_payload = {
-                "epoch": trainer.current_epoch + 1,
-                "progress": 1.0,
-                "is_summary": True,
-            }
-            summary_payload.update(train_metrics)
-            summary_payload.update({f"val_{k}": v for k, v in val_metrics.items()})
-            summary_payload["val_pck"] = val_pck
-            self.parent._stream_metric(summary_payload)
-
-            # 2. Determine if it is the best model checkpoint
-            val_loss = val_metrics.get("loss", float("inf"))
-            is_best = val_pck > self.parent.best_val_pck
+            # Fetch averaged training metrics
+            train_metrics = getattr(pl_module, "averaged_train_metrics", {})
             
-            if is_best:
-                self.parent.best_val_pck = val_pck
+            # Compute validation loss
+            val_metrics = {}
+            for k, v in trainer.callback_metrics.items():
+                if k.startswith("val_"):
+                    # Clean key
+                    clean_k = k[4:]
+                    val_metrics[clean_k] = v.item()
+
+            # Compute PCK@0.2 using the parent trainer's implementation
+            # Set self.parent's current_epoch to match the lightning trainer's epoch
+            self.parent.current_epoch = trainer.current_epoch
             
-            if val_loss < self.parent.best_val_loss:
-                self.parent.best_val_loss = val_loss
+            decode_method = self.parent.config.get("training", {}).get("decode_method", "argmax")
+            val_pck = self.parent.compute_val_pck(val_dataloader, decode_method=decode_method)
 
-            # 3. Save atomic, backward-compatible checkpoint (.pth format)
-            # This uses the raw model and exactly the old dictionary layout
-            self.parent.save_checkpoint(f"epoch_{trainer.current_epoch + 1}", is_best=is_best)
+            # Only on main process do we log, stream summaries, and save checkpoints
+            if self.parent.is_main:
+                # 1. Stream comprehensive final epoch summary payload (so dashboard updates)
+                summary_payload = {
+                    "epoch": trainer.current_epoch + 1,
+                    "progress": 1.0,
+                    "is_summary": True,
+                }
+                summary_payload.update(train_metrics)
+                summary_payload.update({f"val_{k}": v for k, v in val_metrics.items()})
+                summary_payload["val_pck"] = val_pck
+                self.parent._stream_metric(summary_payload)
 
-            # 4. Update local history.json
-            epoch_data = {
-                "epoch": trainer.current_epoch + 1,
-                **train_metrics,
-                **{f"val_{k}": v for k, v in val_metrics.items()},
-                "val_pck": val_pck,
-            }
-            self.parent.update_history(epoch_data)
+                # 2. Determine if it is the best model checkpoint
+                val_loss = val_metrics.get("loss", float("inf"))
+                is_best = val_pck > self.parent.best_val_pck
+                
+                if is_best:
+                    self.parent.best_val_pck = val_pck
+                
+                if val_loss < self.parent.best_val_loss:
+                    self.parent.best_val_loss = val_loss
+
+                # 3. Save atomic, backward-compatible checkpoint (.pth format)
+                # This uses the raw model and exactly the old dictionary layout
+                self.parent.save_checkpoint(f"epoch_{trainer.current_epoch + 1}", is_best=is_best)
+
+                # 4. Update local history.json
+                epoch_data = {
+                    "epoch": trainer.current_epoch + 1,
+                    **train_metrics,
+                    **{f"val_{k}": v for k, v in val_metrics.items()},
+                    "val_pck": val_pck,
+                }
+                self.parent.update_history(epoch_data)
+        except Exception as e:
+            if self.parent.is_main:
+                print(f"[Callback Error] Error in on_validation_epoch_end: {e}")
 
 
 class ProgressiveUnfreezingCallback(pl.Callback):
