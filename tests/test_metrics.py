@@ -1,9 +1,10 @@
 import torch
 import pytest
 from src.utils.pose import compute_pck, compute_mpjpe
+from typing import Tuple
 
 
-def test_pck_vis_masking():
+def test_pck_vis_masking() -> None:
     """Verify that PCK correctly handles visible vs occluded vs missing joints."""
     # 14 joints
     preds = torch.zeros((1, 14, 2))
@@ -45,17 +46,17 @@ def test_pck_vis_masking():
         preds, gts, visibility=visibility, threshold=0.5
     )
 
-    assert mean_pck == 0.5
-    assert per_joint_pck[0] == 1.0
-    assert per_joint_pck[1] == 1.0
+    assert float(mean_pck.item()) == 0.5
+    assert float(per_joint_pck[0].item()) == 1.0
+    assert float(per_joint_pck[1].item()) == 1.0
     assert (
-        per_joint_pck[2] == 0.0
+        float(per_joint_pck[2].item()) == 0.0
     )  # Missing joint count is 1 in pose.py's per_joint_pck due to clamp, but masked in mean
-    assert per_joint_pck[3] == 0.0
-    assert per_joint_pck[4] == 0.0
+    assert float(per_joint_pck[3].item()) == 0.0
+    assert float(per_joint_pck[4].item()) == 0.0
 
 
-def test_mpjpe_consistency():
+def test_mpjpe_consistency() -> None:
     """Verify MPJPE calculation and visibility masking."""
     preds = torch.zeros((1, 14, 2))
     gts = torch.zeros((1, 14, 2))
@@ -76,9 +77,9 @@ def test_mpjpe_consistency():
     # Mean error = (10 + 20) / 2 = 15
     mean_err, per_joint_err = compute_mpjpe(preds, gts, visibility=visibility)
 
-    assert mean_err == 15.0
-    assert per_joint_err[0] == 10.0
-    assert per_joint_err[1] == 20.0
+    assert float(mean_err.item()) == 15.0
+    assert float(per_joint_err[0].item()) == 10.0
+    assert float(per_joint_err[1].item()) == 20.0
 
 
 if __name__ == "__main__":

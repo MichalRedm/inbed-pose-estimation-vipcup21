@@ -1,11 +1,12 @@
 import torch
+from typing import Dict, Any, List, Optional, Tuple, Union, cast
 from src.models.hrnet import HRNet
 from src.training.factory import create_trainer, build_optimizer
 from src.training.standard_trainer import StandardTrainer
 
 
-def test_hrnet_unfreeze_all():
-    config = {
+def test_hrnet_unfreeze_all() -> None:
+    config: Dict[str, Any] = {
         "num_joints": 14,
         "in_channels": 1,
         "pretrained": False,
@@ -23,8 +24,8 @@ def test_hrnet_unfreeze_all():
     assert all(p.requires_grad for p in model.parameters())
 
 
-def test_standard_trainer_progressive_unfreezing_setup():
-    config = {
+def test_standard_trainer_progressive_unfreezing_setup() -> None:
+    config: Dict[str, Any] = {
         "model": {
             "name": "hrnet",
             "hrnet": {
@@ -55,11 +56,12 @@ def test_standard_trainer_progressive_unfreezing_setup():
     # In Phase 1 (epoch < 5), only unfrozen parameters are in the optimizer (head)
     # Rebuild optimizer mimics Phase 2 (epoch = 5):
     # Unfreeze the model parameters first
-    model.unfreeze_all()
-    assert all(p.requires_grad for p in model.parameters())
+    model_hrnet = cast(HRNet, model)
+    model_hrnet.unfreeze_all()
+    assert all(p.requires_grad for p in model_hrnet.parameters())
 
     # Rebuild optimizer
-    new_opt = build_optimizer(model, trainer, config)
+    new_opt = build_optimizer(model_hrnet, trainer, config)
     assert len(new_opt.param_groups) == 2
 
     lrs = [group["lr"] for group in new_opt.param_groups]
@@ -70,6 +72,6 @@ def test_standard_trainer_progressive_unfreezing_setup():
     import shutil
     import os
 
-    save_dir = config["training"]["save_dir"]
+    save_dir = str(config["training"]["save_dir"])
     if os.path.exists(save_dir):
         shutil.rmtree(save_dir)

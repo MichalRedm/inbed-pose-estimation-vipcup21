@@ -2,13 +2,14 @@ import torch
 import torch.nn as nn
 import os
 import pytest
+from typing import Dict, Any, List, Optional, Tuple, Union, cast
 from src.models.__init__ import load_model_for_inference
 
 
 class LegacyHRNet(nn.Module):
     """Mock of the old HRNet structure to test remapping."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(1, 64, 3)
         # Old structure: stage2 -> modules_list -> 0 -> ...
@@ -37,10 +38,10 @@ class LegacyHRNet(nn.Module):
         self.head = nn.Sequential(nn.Conv2d(480, 14, 1))
 
 
-def test_legacy_remapping_logic():
+def test_legacy_remapping_logic() -> None:
     """Verify that the loader can map old 'modules_list' and 'fusion' paths to new structures."""
     # 1. Create a dummy state dict following the OLD structure
-    old_state = {
+    old_state: Dict[str, torch.Tensor] = {
         "conv1.weight": torch.randn(64, 1, 3, 3),
         "stage2.modules_list.0.branches.0.0.conv1.weight": torch.randn(32, 32, 3, 3),
         "stage2.modules_list.0.fusion.fuse_layers.0.1.0.weight": torch.randn(
@@ -51,7 +52,7 @@ def test_legacy_remapping_logic():
         "head.3.bias": torch.randn(14),
     }
 
-    checkpoint = {
+    checkpoint: Dict[str, Any] = {
         "model_state_dict": old_state,
         "config": {
             "model": {
@@ -99,7 +100,7 @@ def test_legacy_remapping_logic():
             os.remove(ckpt_path)
 
 
-def test_loop2_loading_if_exists():
+def test_loop2_loading_if_exists() -> None:
     """Verify loading of the real loop2_fixed_aug checkpoint if available."""
     loop2_path = "results/runs/loop2_fixed_aug/checkpoints/best_model.pth"
     if not os.path.exists(loop2_path):
@@ -109,28 +110,28 @@ def test_loop2_loading_if_exists():
     model = load_model_for_inference(loop2_path, device="cpu")
     assert model is not None
     assert hasattr(model, "output_type")
-    assert model.output_type == "coordinates"
+    assert getattr(model, "output_type") == "coordinates"
 
 
-def test_coordinate_model_passthrough():
+def test_coordinate_model_passthrough() -> None:
     """Verify that models already regressing coordinates (output_type='coordinates') are NOT double-decoded."""
     from src.models.registry import register_model
 
     @register_model("mock_coord_model")
     class MockCoordModel(nn.Module):
-        def __init__(self, config):
+        def __init__(self, config: Dict[str, Any]) -> None:
             super().__init__()
             self.param = nn.Parameter(torch.randn(1))
 
         @property
-        def output_type(self):
+        def output_type(self) -> str:
             return "coordinates"
 
-        def forward(self, x, **kwargs):
+        def forward(self, x: torch.Tensor, **kwargs: Any) -> torch.Tensor:
             # Returns joints (B, 14, 2) directly
             return torch.randn(x.shape[0], 14, 2)
 
-    checkpoint = {
+    checkpoint: Dict[str, Any] = {
         "model_state_dict": {"param": torch.randn(1)},
         "config": {"model": {"name": "mock_coord_model", "mock_coord_model": {}}},
     }

@@ -5,7 +5,7 @@ from src.models import build_model
 from pathlib import Path
 
 
-def test_dataset_channel_replication():
+def test_dataset_channel_replication() -> None:
     """Verify that VIPCupDataset replicates channels correctly when in_channels=3."""
     # Use a dummy root that exists or just test the logic if data is missing
     data_root = "data/raw"
@@ -28,7 +28,7 @@ def test_dataset_channel_replication():
         assert torch.allclose(img[1], img[2])
 
 
-def test_hrnet_3_channels():
+def test_hrnet_3_channels() -> None:
     """Verify that HRNet accepts 3-channel input."""
     config = {
         "model": {

@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 
-def test_advanced_cover_augmentation():
+def test_advanced_cover_augmentation() -> None:
     # Create a dummy dataset structure for reference bank
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -47,7 +47,7 @@ def test_advanced_cover_augmentation():
         )
 
 
-def test_cutout_augmentation():
+def test_cutout_augmentation() -> None:
     # Create a 256x256 gray PIL Image
     img = Image.fromarray(np.ones((256, 256), dtype=np.uint8) * 128)
 
@@ -73,7 +73,7 @@ def test_cutout_augmentation():
     )
 
 
-def test_intensity_jitter():
+def test_intensity_jitter() -> None:
     img = Image.fromarray(np.ones((256, 256), dtype=np.uint8) * 100)
 
     # Apply jitter with 100% prob
@@ -92,7 +92,7 @@ def test_intensity_jitter():
     )
 
 
-def test_sensor_noise():
+def test_sensor_noise() -> None:
     img = Image.fromarray(np.ones((256, 256), dtype=np.uint8) * 128)
 
     # Apply noise with 100% prob
@@ -110,7 +110,7 @@ def test_sensor_noise():
     assert salt + pepper > 0, "Salt and pepper noise should create extreme pixel values"
 
 
-def test_data_augmenter_full():
+def test_data_augmenter_full() -> None:
     config = {
         "enabled": True,
         "flip_prob": 0.5,
