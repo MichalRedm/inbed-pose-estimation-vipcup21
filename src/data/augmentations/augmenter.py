@@ -117,7 +117,7 @@ class DataAugmenter:
             return image, joints
 
         # 1. Prepare Keypoints
-        kpts: Optional[tv_tensors.Keypoints] = None
+        kpts: Optional[tv_tensors.KeyPoints] = None
         vis: Optional[torch.Tensor] = None
 
         if joints is not None:
@@ -140,7 +140,7 @@ class DataAugmenter:
                 img_tensor = cast(torch.Tensor, image)
                 w, h = img_tensor.shape[-1], img_tensor.shape[-2]
 
-            kpts = tv_tensors.Keypoints(coords, canvas_size=(h, w))
+            kpts = tv_tensors.KeyPoints(coords, canvas_size=(h, w))
 
         # 2. Sequential Application
         if self.is_training:
@@ -270,13 +270,13 @@ def apply_custom_augmentations(
                 all_classes[getattr(obj, "METADATA")["id"]] = obj
 
     # Prepare kpts
-    kpts: Optional[tv_tensors.Keypoints] = None
+    kpts: Optional[tv_tensors.KeyPoints] = None
     vis: Optional[torch.Tensor] = None
     if joints is not None:
         coords = torch.from_numpy(joints[:2, :].T).float().unsqueeze(0)
         vis = torch.from_numpy(joints[2, :]).float()
         w, h = image.width, image.height
-        kpts = tv_tensors.Keypoints(coords, canvas_size=(h, w))
+        kpts = tv_tensors.KeyPoints(coords, canvas_size=(h, w))
 
     current_image: Union[Image.Image, torch.Tensor] = image
 

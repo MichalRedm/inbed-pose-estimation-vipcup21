@@ -43,13 +43,12 @@ class HorizontalFlipAugmentation:
 
         # 2. Joints Flip & Reorder
         if joints is not None:
-            # Handle tv_tensors.Keypoints
+            # Handle tv_tensors.KeyPoints
             if torch.is_tensor(joints) and hasattr(joints, "canvas_size"):
                 kpts = v2.functional.hflip(joints)
                 flip_indices = [5, 4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 12, 13]
-                kpts = tv_tensors.Keypoints(
-                    kpts[:, flip_indices, :],
-                    canvas_size=cast(tv_tensors.Keypoints, joints).canvas_size,
+                kpts = tv_tensors.KeyPoints(
+                    kpts[:, flip_indices, :], canvas_size=cast(tv_tensors.KeyPoints, joints).canvas_size
                 )
                 return image, kpts
 
