@@ -1,3 +1,7 @@
+"""
+Geometric data augmentations that affect both images and keypoints.
+"""
+
 import random
 import torch
 import torchvision.transforms.v2 as v2
@@ -24,6 +28,12 @@ class HorizontalFlipAugmentation:
     probability: float
 
     def __init__(self, probability: float = 0.5) -> None:
+        """
+        Initializes the flip augmentation.
+
+        Args:
+            probability: Probability of applying the flip.
+        """
         self.probability = probability
 
     def __call__(
@@ -32,6 +42,17 @@ class HorizontalFlipAugmentation:
         joints: Optional[Any] = None,
         **kwargs: Any,
     ) -> Tuple[Union[Image.Image, torch.Tensor], Optional[Any]]:
+        """
+        Applies horizontal flip.
+
+        Args:
+            image: Input image.
+            joints: Input joint coordinates.
+            **kwargs: Override for probability and force_apply.
+
+        Returns:
+            Tuple of (flipped image, flipped joints).
+        """
         prob = float(kwargs.get("probability", self.probability))
         force = bool(kwargs.get("force_apply", False))
 
@@ -100,6 +121,14 @@ class AffineAugmentation:
         scaling_range: List[float] = [0.8, 1.2],
         translation: Optional[List[float]] = None,
     ) -> None:
+        """
+        Initializes the affine transformation.
+
+        Args:
+            rotation_range: Range of rotation degrees [min, max].
+            scaling_range: Range of scale factors [min, max].
+            translation: Optional translation factors as a list.
+        """
         self.rotation_range = rotation_range
         self.scaling_range = scaling_range
         self.translation = translation
@@ -116,6 +145,17 @@ class AffineAugmentation:
         joints: Optional[Any] = None,
         **kwargs: Any,
     ) -> Tuple[Union[Image.Image, torch.Tensor], Optional[Any]]:
+        """
+        Applies affine transformation.
+
+        Args:
+            image: Input image.
+            joints: Input joint coordinates.
+            **kwargs: Override for fixed parameters (rotation, scale, etc.).
+
+        Returns:
+            Tuple of (transformed image, transformed joints).
+        """
         is_random = bool(kwargs.get("random", True))
 
         if is_random:

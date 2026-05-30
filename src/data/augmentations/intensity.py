@@ -1,3 +1,7 @@
+"""
+Intensity-based data augmentations for simulating sensor noise and thermal variations.
+"""
+
 import random
 import numpy as np
 import torch
@@ -32,6 +36,14 @@ class ThermalIntensityJitter:
         brightness_range: List[float] = [0.55, 1.15],
         contrast_range: List[float] = [0.5, 1.15],
     ) -> None:
+        """
+        Initializes the intensity jitter augmentation.
+
+        Args:
+            probability: Probability of applying the jitter.
+            brightness_range: Range of brightness scale factors [min, max].
+            contrast_range: Range of contrast scale factors [min, max].
+        """
         self.probability = probability
         self.brightness_range = brightness_range
         self.contrast_range = contrast_range
@@ -39,6 +51,16 @@ class ThermalIntensityJitter:
     def __call__(
         self, image: Union[Image.Image, torch.Tensor], **kwargs: Any
     ) -> Union[Image.Image, torch.Tensor]:
+        """
+        Applies intensity jitter.
+
+        Args:
+            image: Input image.
+            **kwargs: Override for probability, brightness, and contrast.
+
+        Returns:
+            Jittered image.
+        """
         prob = float(kwargs.get("probability", self.probability))
         if random.random() > prob:
             return image
@@ -100,6 +122,14 @@ class IRSensorNoise:
         sigma_range: List[float] = [5.0, 12.0],
         sp_prob: float = 0.003,
     ) -> None:
+        """
+        Initializes the sensor noise augmentation.
+
+        Args:
+            probability: Probability of applying the noise.
+            sigma_range: Range of Gaussian noise standard deviation [min, max].
+            sp_prob: Probability of salt-and-pepper pixels.
+        """
         self.probability = probability
         self.sigma_range = sigma_range
         self.sp_prob = sp_prob
@@ -107,6 +137,16 @@ class IRSensorNoise:
     def __call__(
         self, image: Union[Image.Image, torch.Tensor], **kwargs: Any
     ) -> Union[Image.Image, torch.Tensor]:
+        """
+        Applies sensor noise.
+
+        Args:
+            image: Input image.
+            **kwargs: Override for probability, sigma, and sp_prob.
+
+        Returns:
+            Noisy image.
+        """
         prob = float(kwargs.get("probability", self.probability))
         if random.random() > prob:
             return image
