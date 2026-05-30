@@ -1,3 +1,8 @@
+"""
+Unified training script for the SLP dataset.
+Handles local/distributed execution, data loading, and trainer orchestration.
+"""
+
 import os
 import torch
 import argparse
@@ -19,6 +24,12 @@ from src.training.factory import create_trainer
 
 
 def set_seed(seed: int = 42) -> None:
+    """
+    Seeds random number generators for reproducibility.
+
+    Args:
+        seed: The integer seed value.
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -28,6 +39,7 @@ def set_seed(seed: int = 42) -> None:
 
 
 def check_cuda() -> None:
+    """Prints CUDA availability and device name."""
     if not dist.is_initialized() or dist.get_rank() == 0:
         print(f"CUDA Available: {torch.cuda.is_available()}")
         if torch.cuda.is_available():
@@ -39,6 +51,11 @@ def check_cuda() -> None:
 
 
 def train() -> None:
+    """
+    Main training execution function.
+    Parses arguments, initializes DDP (if configured), creates dataloaders,
+    and runs the training loop via the designated Trainer.
+    """
     # 1. Parse Initial Config Path (to load before other overrides)
     parser = argparse.ArgumentParser(
         description="Unified Training Script", add_help=False

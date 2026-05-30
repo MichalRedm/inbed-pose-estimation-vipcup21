@@ -51,19 +51,21 @@ def compute_pck(
     pred_joints: torch.Tensor, gt_joints: torch.Tensor, threshold: float = 0.2
 ) -> Tuple[torch.Tensor, torch.Tensor, float]:
     """
-    Compute PCK@threshold per joint.
-
-    pred_joints: (N, J, 2) — predicted (x, y) in image space
-    gt_joints:   (N, 3, J) — ground truth [x, y, visibility]
-    threshold:   fraction of torso diameter to use as acceptance radius
-
+    Computes PCK@threshold per joint.
+    
     Visibility mask: vis <= 1 (includes both visible=0 and occluded=1).
     Joints with vis==2 (out-of-frame/unannotated) are excluded.
 
+    Args:
+        pred_joints: Predicted (x, y) coordinates in image space.
+        gt_joints: Ground truth [x, y, visibility].
+        threshold: Fraction of torso diameter to use as acceptance radius.
+
     Returns:
-      per_joint_pck: (J) tensor, proportion correct per joint
-      per_joint_count: (J) tensor, number of valid samples per joint
-      mean_pck: float, mean PCK across all valid joints
+        A tuple containing:
+          - per_joint_pck: Proportion correct per joint.
+          - per_joint_count: Number of valid samples per joint.
+          - mean_pck: Mean PCK across all valid joints.
     """
     N, J, _ = pred_joints.shape
 
