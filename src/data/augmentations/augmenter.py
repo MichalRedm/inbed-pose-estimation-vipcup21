@@ -1,3 +1,7 @@
+"""
+Orchestrates the data augmentation pipeline using modular components.
+"""
+
 import random
 import numpy as np
 import torch
@@ -15,7 +19,10 @@ from .domain import CycleGANAugmentation, CUTAugmentation
 
 class DataAugmenter:
     """
-    Optimized Data Augmentation using torchvision.transforms.v2.
+    Optimized Data Augmentation pipeline using torchvision.transforms.v2 components.
+    
+    Handles sequential application of geometric, intensity, and domain augmentations,
+    ensuring keypoint consistency across all transformations.
     """
 
     config: Dict[str, Any]
@@ -39,6 +46,14 @@ class DataAugmenter:
         is_training: bool = True,
         dataset_root: Optional[str] = None,
     ) -> None:
+        """
+        Initializes the DataAugmenter with component-specific configurations.
+
+        Args:
+            config: Augmentation configuration dictionary.
+            is_training: If True, applies probabilistic augmentations (e.g., flips).
+            dataset_root: Root directory of the dataset (needed for some augmenters).
+        """
         self.config = config or {}
         self.enabled = bool(self.config.get("enabled", False))
         self.is_training = is_training
@@ -111,6 +126,18 @@ class DataAugmenter:
         is_ir: bool = False,
         return_pair: bool = False,
     ) -> Any:
+        """
+        Applies the augmentation pipeline to an image and its joints.
+
+        Args:
+            image: Input image.
+            joints: Input joint coordinates.
+            is_ir: If True, indicates the image is in the IR modality.
+            return_pair: If True, returns both the augmented and the pre-occlusion image.
+
+        Returns:
+            Augmented image, (optionally) source image, and augmented joints.
+        """
         if not self.enabled:
             if return_pair:
                 return image, image, joints
@@ -229,6 +256,9 @@ class DataAugmenter:
 def get_available_augmentations() -> List[Dict[str, Any]]:
     """
     Returns metadata for all discoverable augmentation classes in the sub-modules.
+
+    Returns:
+        List of metadata dictionaries sorted by execution order.
     """
     augmentations: List[Dict[str, Any]] = []
     # We can hardcode them or use inspect on the imported modules
@@ -254,7 +284,17 @@ def apply_custom_augmentations(
     dataset_root: Optional[str] = None,
 ) -> Tuple[Union[Image.Image, torch.Tensor], Optional[np.ndarray]]:
     """
-    Dynamically applies a list of augmentations.
+    Dynamically applies a list of augmentations based on their IDs and parameters.
+
+    Args:
+        image: Input PIL image.
+        joints: Input joint coordinates.
+        aug_list: List of dictionaries containing 'id' and 'params'.
+        is_ir: If True, indicates the image is in the IR modality.
+        dataset_root: Root directory of the dataset.
+
+    Returns:
+        Tuple of (augmented image, augmented joints).
     """
     # Map IDs to classes
     import src.data.augmentations.geometric as geo
