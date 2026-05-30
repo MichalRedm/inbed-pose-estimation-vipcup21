@@ -1,3 +1,8 @@
+"""
+Data augmentation package for multi-modal pose estimation.
+Includes geometric, intensity, thermal diffusion, and GAN-based domain translation augmentations.
+"""
+
 from .augmenter import (
     DataAugmenter,
     get_available_augmentations,
