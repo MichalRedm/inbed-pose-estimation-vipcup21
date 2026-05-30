@@ -522,7 +522,6 @@ def main():
                             poll_metadata(metadata_session)
                         except Exception as exc:
                             pass
-                    poll_metadata(metadata_session)
             except Exception as e:
                 print(f"[sync] Background metadata poller crashed: {e}")
 
@@ -538,7 +537,6 @@ def main():
                             poll_checkpoints(ckpt_session)
                         except Exception as exc:
                             print(f"[sync] Warning: checkpoint poll failed: {exc}")
-                    poll_checkpoints(ckpt_session)
             except Exception as e:
                 print(f"[sync] Background checkpoint poller crashed: {e}")
 
