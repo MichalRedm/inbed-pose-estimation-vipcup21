@@ -48,7 +48,8 @@ class HorizontalFlipAugmentation:
                 kpts = v2.functional.hflip(joints)
                 flip_indices = [5, 4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 12, 13]
                 kpts = tv_tensors.KeyPoints(
-                    kpts[:, flip_indices, :], canvas_size=cast(tv_tensors.KeyPoints, joints).canvas_size
+                    kpts[:, flip_indices, :],
+                    canvas_size=cast(tv_tensors.KeyPoints, joints).canvas_size,
                 )
                 return image, kpts
 
