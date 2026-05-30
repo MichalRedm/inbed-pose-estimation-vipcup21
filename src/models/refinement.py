@@ -1,3 +1,7 @@
+"""
+Graph Convolutional Network (GCN) modules for pose coordinate refinement.
+"""
+
 import torch
 import torch.nn as nn
 from typing import List, Tuple
@@ -5,12 +9,21 @@ from typing import List, Tuple
 
 class GCNLayer(nn.Module):
     """
-    Simple GCN layer: A * X * W
+    Simple Graph Convolutional Network (GCN) layer.
+    Computes A * X * W.
     """
 
     adj_norm: torch.Tensor
 
     def __init__(self, in_features: int, out_features: int, adj: torch.Tensor) -> None:
+        """
+        Initializes the GCNLayer.
+
+        Args:
+            in_features: Number of input features per node.
+            out_features: Number of output features per node.
+            adj: Adjacency matrix of the graph.
+        """
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -26,6 +39,15 @@ class GCNLayer(nn.Module):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Args:
+            x: Input node features of shape (B, num_nodes, in_features).
+
+        Returns:
+            Output node features of shape (B, num_nodes, out_features).
+        """
         # x shape: (B, num_joints, in_features)
         # adj_norm shape: (num_joints, num_joints)
         support = torch.matmul(x, self.weight)  # (B, J, out_features)
@@ -35,11 +57,18 @@ class GCNLayer(nn.Module):
 
 class PoseRefinementGCN(nn.Module):
     """
-    Refines joint coordinates using a Graph Convolutional Network.
-    Takes (B, 14, 2) coordinates and outputs refined (B, 14, 2).
+    Refines joint coordinates using a multi-layer GCN.
+    Incorporates skeletal connectivity as graph edges.
     """
 
     def __init__(self, num_joints: int = 14, hidden_dim: int = 64) -> None:
+        """
+        Initializes the PoseRefinementGCN.
+
+        Args:
+            num_joints: Number of joints in the pose.
+            hidden_dim: Hidden dimension size of GCN layers.
+        """
         super().__init__()
         self.num_joints = num_joints
 
@@ -76,6 +105,15 @@ class PoseRefinementGCN(nn.Module):
         self.relu = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Refines input coordinates.
+
+        Args:
+            x: Input coordinates of shape (B, J, 2).
+
+        Returns:
+            Refined coordinates of shape (B, J, 2).
+        """
         # x: (B, 14, 2) initial coordinates from soft-argmax
         residual = x
         x = self.relu(self.gcn1(x))

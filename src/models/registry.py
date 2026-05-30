@@ -1,3 +1,7 @@
+"""
+Centralized model registry for architecture discovery and instantiation.
+"""
+
 from typing import Dict, Type, Callable, TypeVar
 import torch.nn as nn
 
@@ -9,7 +13,15 @@ T = TypeVar("T", bound=Type[nn.Module])
 
 
 def register_model(name: str) -> Callable[[T], T]:
-    """Decorator to register a model class."""
+    """
+    Decorator to register a model class in the global registry.
+
+    Args:
+        name: The unique string identifier for the model.
+
+    Returns:
+        The decorator function.
+    """
 
     def decorator(cls: T) -> T:
         MODEL_REGISTRY[name] = cls

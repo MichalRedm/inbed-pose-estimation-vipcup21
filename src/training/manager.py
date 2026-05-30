@@ -1,3 +1,8 @@
+"""
+Orchestration layer for managing training processes and telemetry streaming.
+Handles local/remote training lifecycle, log monitoring, and dashboard updates.
+"""
+
 import threading
 import subprocess
 import sys
@@ -14,6 +19,11 @@ project_root = Path(__file__).parent.parent.parent
 
 
 class TrainingManager:
+    """
+    Manages the training lifecycle and state for the API and Dashboard.
+    Supports asynchronous process execution and real-time log parsing.
+    """
+
     is_running: bool
     progress: float
     current_epoch: int
@@ -31,6 +41,7 @@ class TrainingManager:
     frozen_config_path: Path
 
     def __init__(self) -> None:
+        """Initializes the TrainingManager with default state."""
         self.is_running = False
         self.progress = 0.0
         self.current_epoch = 0
@@ -47,7 +58,12 @@ class TrainingManager:
         self._thread = None
 
     def _detect_last_run_id(self) -> Optional[str]:
-        """Scans results/runs for the most recently modified run folder."""
+        """
+        Scans results/runs for the most recently modified run folder.
+
+        Returns:
+            The run ID of the latest run, or None if no runs exist.
+        """
         try:
             project_root_path = Path(__file__).parent.parent.parent
             runs_dir = project_root_path / "results" / "runs"
@@ -65,7 +81,15 @@ class TrainingManager:
             return None
 
     def _get_initial_display_metadata(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Heuristically determine display metadata based on config before training starts."""
+        """
+        Heuristically determine display metadata based on config before training starts.
+
+        Args:
+            config: Full project configuration.
+
+        Returns:
+            Metadata dictionary for the dashboard.
+        """
         from src.utils.config_manager import get_display_metadata_for_config
 
         return get_display_metadata_for_config(config)
@@ -73,6 +97,15 @@ class TrainingManager:
     def start_training(
         self, config_overrides: Optional[Dict[str, Any]] = None
     ) -> Tuple[bool, str]:
+        """
+        Launches a training run in a background thread.
+
+        Args:
+            config_overrides: Configuration overrides from the user/API.
+
+        Returns:
+            A tuple of (success, message).
+        """
         config_overrides = config_overrides or {}
         if self.is_running:
             return False, "Training already in progress"
@@ -191,6 +224,12 @@ class TrainingManager:
         return True, "Training started"
 
     def stop_training(self) -> Tuple[bool, str]:
+        """
+        Sends a stop signal to the active training process.
+
+        Returns:
+            A tuple of (success, message).
+        """
         if not self.is_running:
             return False, "No training in progress"
 
@@ -249,6 +288,13 @@ class TrainingManager:
             print(f"[TrainingManager] Error parsing metrics stream: {e}")
 
     def get_status(self) -> Dict[str, Any]:
+        """
+        Retrieves the current training status and metrics.
+        Synchronizes with disk history to ensure accuracy.
+
+        Returns:
+            Dictionary containing running state, progress, and history.
+        """
         # Always try to restore history from disk if in-memory lists are empty
         # but we have a valid run to look at.
         run_id = self.current_run_id or self.last_run_id

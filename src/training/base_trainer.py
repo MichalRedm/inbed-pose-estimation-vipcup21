@@ -1,3 +1,8 @@
+"""
+Abstract base trainer providing foundational training and evaluation infrastructure.
+Handles checkpointing, distributed coordination, and real-time metric streaming.
+"""
+
 import os
 import json
 import torch
@@ -14,11 +19,13 @@ from src.utils.telemetry import LocalTracker, JSONLStream
 
 class BaseTrainer(ABC):
     """
-    Abstract base class for trainers, providing common infrastructure for
-    distributed training, checkpointing, and evaluation.
+    Abstract base class for trainers.
 
-    Checkpoint saving is based on **validation PCK** (higher = better),
-    falling back to val_loss (lower = better) if PCK is unavailable.
+    Provides:
+      - Distributed training coordination.
+      - Atomic checkpoint saving with verification.
+      - Real-time metric streaming for dashboards.
+      - PCK-based model selection.
     """
 
     model: torch.nn.Module
@@ -47,6 +54,16 @@ class BaseTrainer(ABC):
         rank: int = 0,
         world_size: int = 1,
     ) -> None:
+        """
+        Initializes the BaseTrainer.
+
+        Args:
+            model: The PyTorch model to train.
+            config: Full project configuration.
+            device: Torch device to use.
+            rank: Process rank for distributed training.
+            world_size: Total number of processes.
+        """
         self.model = model
         self.config = config
         self.device = device
@@ -92,7 +109,12 @@ class BaseTrainer(ABC):
             self.tracker.init_run(run_name, run_name, config)
 
     def _stream_metric(self, data: Dict[str, Any]) -> None:
-        """Append a JSON line to the stream file for real-time telemetry."""
+        """
+        Append a JSON line to the stream file for real-time telemetry.
+
+        Args:
+            data: Metric dictionary to stream.
+        """
         if not self.is_main or not self.streamer:
             return
 
@@ -132,6 +154,16 @@ class BaseTrainer(ABC):
         pass
 
     def train_epoch(self, dataloader: Any, epoch: int) -> Dict[str, float]:
+        """
+        Trains the model for one epoch.
+
+        Args:
+            dataloader: Training dataloader.
+            epoch: Current epoch index.
+
+        Returns:
+            Dictionary of average training metrics.
+        """
         self.model.train()
         if hasattr(dataloader.sampler, "set_epoch"):
             dataloader.sampler.set_epoch(epoch)
@@ -233,8 +265,15 @@ class BaseTrainer(ABC):
         self, dataloader: Any, decode_method: Optional[str] = None
     ) -> float:
         """
-        Compute PCK@0.2 (torso-relative, covered validation images only).
-        Used as the primary criterion for saving best_model.pth.
+        Compute PCK@0.2 (torso-relative).
+        Evaluates on visible and occluded joints (vis <= 1).
+
+        Args:
+            dataloader: Validation dataloader.
+            decode_method: Optional override for heatmap decoding method.
+
+        Returns:
+            Mean PCK@0.2 across the dataset.
         """
         self.model.eval()
         image_size: Tuple[int, int] = tuple(
@@ -304,6 +343,14 @@ class BaseTrainer(ABC):
         return mean_pck
 
     def save_checkpoint(self, name: str, is_best: bool = False) -> None:
+        """
+        Saves a model checkpoint with configuration and metrics.
+        Uses atomic saving with verification to prevent corrupted files.
+
+        Args:
+            name: Checkpoint name (used for filename).
+            is_best: If True, also copies the checkpoint to 'best_model.pth'.
+        """
         if not self.is_main or not self.save_dir:
             return
 
@@ -394,6 +441,13 @@ class BaseTrainer(ABC):
         return {}
 
     def update_history(self, epoch_data: Dict[str, Any]) -> None:
+        """
+        Appends epoch metrics to the history and saves it to a JSON file.
+        Uses atomic saving to prevent history loss.
+
+        Args:
+            epoch_data: Metrics for the current epoch.
+        """
         if not self.is_main or not self.history_path:
             return
         self.history.append(epoch_data)

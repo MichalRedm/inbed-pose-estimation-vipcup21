@@ -1,3 +1,7 @@
+"""
+Abstract base classes and interfaces for pose estimation models.
+"""
+
 import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
@@ -11,6 +15,12 @@ class BaseModel(nn.Module, ABC):
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
+        """
+        Initializes the model with a configuration dictionary.
+
+        Args:
+            config: Model configuration parameters.
+        """
         super().__init__()
         self.config = config
 

@@ -1,3 +1,7 @@
+"""
+Occlusion-based data augmentations, such as cutout.
+"""
+
 import random
 import torch
 from PIL import Image, ImageDraw
@@ -7,7 +11,7 @@ from typing import Union, Dict, Any, cast
 
 class CutoutAugmentation:
     """
-    Zeros out a randomly placed rectangular region.
+    Zeros out a randomly placed rectangular region in the image.
     """
 
     METADATA: Dict[str, Any] = {
@@ -24,12 +28,29 @@ class CutoutAugmentation:
     size_ratio: float
 
     def __init__(self, probability: float = 0.5, size_ratio: float = 0.35) -> None:
+        """
+        Initializes the cutout augmentation.
+
+        Args:
+            probability: Probability of applying cutout.
+            size_ratio: Maximum ratio of the cutout box relative to image size.
+        """
         self.probability = probability
         self.size_ratio = size_ratio
 
     def __call__(
         self, image: Union[Image.Image, torch.Tensor], **kwargs: Any
     ) -> Union[Image.Image, torch.Tensor]:
+        """
+        Applies cutout.
+
+        Args:
+            image: Input image.
+            **kwargs: Override for probability and size_ratio.
+
+        Returns:
+            Image with a rectangular region zeroed out.
+        """
         prob = float(kwargs.get("probability", self.probability))
         if random.random() > prob:
             return image

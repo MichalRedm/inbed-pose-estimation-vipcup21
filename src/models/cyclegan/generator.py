@@ -1,3 +1,7 @@
+"""
+Generator architectures for CycleGAN and CUT domain translation.
+"""
+
 import torch
 import torch.nn as nn
 from typing import Tuple, List, cast
@@ -7,6 +11,12 @@ class ResidualBlock(nn.Module):
     """Residual Block with Instance Normalization."""
 
     def __init__(self, in_features: int) -> None:
+        """
+        Initializes the ResidualBlock.
+
+        Args:
+            in_features: Number of input and output channels.
+        """
         super(ResidualBlock, self).__init__()
 
         self.block = nn.Sequential(
@@ -20,6 +30,7 @@ class ResidualBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass with residual connection."""
         return x + cast(torch.Tensor, self.block(x))
 
 
@@ -35,6 +46,14 @@ class GeneratorResNet(nn.Module):
         num_residual_blocks: int = 9,
         pretrained: bool = False,
     ) -> None:
+        """
+        Initializes the generator.
+
+        Args:
+            input_shape: Shape of the input image (C, H, W).
+            num_residual_blocks: Number of residual blocks in the bottleneck.
+            pretrained: If True, attempts to load ImageNet weights into the encoder.
+        """
         super(GeneratorResNet, self).__init__()
 
         channels = input_shape[0]
@@ -108,6 +127,15 @@ class GeneratorResNet(nn.Module):
             print(f"[Generator] Could not load pretrained weights: {e}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Args:
+            x: Input image tensor.
+
+        Returns:
+            Translated image tensor.
+        """
         x = cast(torch.Tensor, self.encoder(x))
         x = cast(torch.Tensor, self.resblocks(x))
         x = cast(torch.Tensor, self.decoder(x))

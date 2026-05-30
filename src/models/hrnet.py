@@ -21,12 +21,34 @@ from .registry import register_model
 
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
+    """
+    3x3 convolution with padding.
+
+    Args:
+        in_planes: Number of input channels.
+        out_planes: Number of output channels.
+        stride: Stride of the convolution.
+
+    Returns:
+        A Conv2d layer.
+    """
     return nn.Conv2d(
         in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False
     )
 
 
 def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
+    """
+    1x1 convolution.
+
+    Args:
+        in_planes: Number of input channels.
+        out_planes: Number of output channels.
+        stride: Stride of the convolution.
+
+    Returns:
+        A Conv2d layer.
+    """
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 
@@ -34,6 +56,11 @@ def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
 
 
 class BasicBlock(nn.Module):
+    """
+    Basic residual block with two 3x3 convolutions.
+    Used in HRNet Stage 2, 3, and 4.
+    """
+
     expansion: int = 1
 
     def __init__(
@@ -43,6 +70,15 @@ class BasicBlock(nn.Module):
         stride: int = 1,
         downsample: Optional[nn.Module] = None,
     ) -> None:
+        """
+        Initializes the BasicBlock.
+
+        Args:
+            inplanes: Number of input channels.
+            planes: Number of output channels.
+            stride: Stride of the first convolution.
+            downsample: Optional downsampling layer for residual connection.
+        """
         super().__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -52,6 +88,7 @@ class BasicBlock(nn.Module):
         self.downsample = downsample
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
         residual = x
         out = self.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
@@ -61,6 +98,11 @@ class BasicBlock(nn.Module):
 
 
 class Bottleneck(nn.Module):
+    """
+    ResNet Bottleneck block.
+    Used in HRNet Stage 1.
+    """
+
     expansion: int = 4
 
     def __init__(
@@ -70,6 +112,15 @@ class Bottleneck(nn.Module):
         stride: int = 1,
         downsample: Optional[nn.Module] = None,
     ) -> None:
+        """
+        Initializes the Bottleneck block.
+
+        Args:
+            inplanes: Number of input channels.
+            planes: Number of output channels (before expansion).
+            stride: Stride of the 3x3 convolution.
+            downsample: Optional downsampling layer for residual connection.
+        """
         super().__init__()
         self.conv1 = conv1x1(inplanes, planes)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -81,6 +132,7 @@ class Bottleneck(nn.Module):
         self.downsample = downsample
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
         residual = x
         out = self.relu(self.bn1(self.conv1(x)))
         out = self.relu(self.bn2(self.conv2(out)))
@@ -100,6 +152,19 @@ def make_layer(
     num_blocks: int,
     stride: int = 1,
 ) -> nn.Sequential:
+    """
+    Creates a layer with multiple blocks of the same type.
+
+    Args:
+        block: Type of block (BasicBlock or Bottleneck).
+        inplanes: Number of input channels.
+        planes: Number of output channels for each block.
+        num_blocks: Number of blocks in the layer.
+        stride: Stride of the first block.
+
+    Returns:
+        A Sequential container of blocks.
+    """
     downsample = None
     if stride != 1 or inplanes != planes * block.expansion:
         downsample = nn.Sequential(
@@ -119,9 +184,17 @@ def make_layer(
 class FusionLayer(nn.Module):
     """
     Fuses features from num_branches parallel streams.
+    Implements multi-resolution fusion logic.
     """
 
     def __init__(self, num_branches: int, channels: List[int]) -> None:
+        """
+        Initializes the FusionLayer.
+
+        Args:
+            num_branches: Number of parallel streams.
+            channels: List of channel widths for each stream.
+        """
         super().__init__()
         self.num_branches = num_branches
         # Use 'layers' to avoid conflict with the parent member name 'fuse_layers'
@@ -157,6 +230,15 @@ class FusionLayer(nn.Module):
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
+        """
+        Fuses features from multiple input streams.
+
+        Args:
+            x: List of feature tensors from each stream.
+
+        Returns:
+            List of fused feature tensors.
+        """
         y = []
         for i in range(self.num_branches):
             acc = None
@@ -176,9 +258,21 @@ class FusionLayer(nn.Module):
 
 
 class HRNetModule(nn.Module):
+    """
+    A single HRNet module consisting of parallel branches followed by a fusion layer.
+    """
+
     def __init__(
         self, num_branches: int, channels: List[int], num_blocks: int = 4
     ) -> None:
+        """
+        Initializes the HRNetModule.
+
+        Args:
+            num_branches: Number of parallel streams.
+            channels: List of channel widths for each stream.
+            num_blocks: Number of blocks per branch.
+        """
         super().__init__()
         self.branches = nn.ModuleList(
             [
@@ -189,6 +283,7 @@ class HRNetModule(nn.Module):
         self.fuse_layers = FusionLayer(num_branches, channels)
 
     def forward(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
+        """Forward pass."""
         x = [cast(torch.Tensor, self.branches[b](x[b])) for b in range(len(x))]
         x = self.fuse_layers(x)
         return x
@@ -204,6 +299,13 @@ def make_transition(
     Creates a transition layer that:
       - Adapts existing branches to new channel sizes.
       - Adds a new strided branch (half resolution).
+
+    Args:
+        in_channels: List of input channel widths.
+        out_channels_list: List of desired output channel widths.
+
+    Returns:
+        A ModuleList of transition operations.
     """
     num_out = len(out_channels_list)
     layers = nn.ModuleList()
@@ -253,6 +355,12 @@ class HRNet(BaseModel):
     in_channels: int
 
     def __init__(self, config: Dict[str, Any]) -> None:
+        """
+        Initializes HRNet-W32.
+
+        Args:
+            config: Model configuration.
+        """
         super().__init__(config)
         # Handle both full config and sub-config
         if "model" in config:
@@ -346,6 +454,9 @@ class HRNet(BaseModel):
         """
         Loads pre-trained weights from a URL or local path.
         Default URL is HRNet-W32 (OpenMMLab mirror).
+
+        Args:
+            pretrained_source: URL, local path, or True to use default URL.
         """
         DEFAULT_URL = "https://download.openmmlab.com/mmpose/pretrain_models/hrnet_w32-36af842e.pth"
 
@@ -460,12 +571,22 @@ class HRNet(BaseModel):
 
     @property
     def output_type(self) -> str:
+        """Returns the type of output the model produces ('heatmap')."""
         return "heatmap"
 
     def _apply_transition(
         self, transition: nn.ModuleList, x_list: List[torch.Tensor]
     ) -> List[torch.Tensor]:
-        """Apply transition layers, extending x_list if new branches are added."""
+        """
+        Apply transition layers, extending x_list if new branches are added.
+
+        Args:
+            transition: ModuleList of transition layers.
+            x_list: List of input feature tensors.
+
+        Returns:
+            List of output feature tensors.
+        """
         result = []
         for i, layer in enumerate(transition):
             if i < len(x_list):
@@ -478,6 +599,16 @@ class HRNet(BaseModel):
     def forward(
         self, x: torch.Tensor, **kwargs: Any
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        """
+        Forward pass of HRNet-W32.
+
+        Args:
+            x: Input image tensor of shape (B, C, H, W).
+            **kwargs: Additional arguments (e.g., return_features).
+
+        Returns:
+            Heatmaps or a tuple of (heatmaps, features).
+        """
         return_features = kwargs.get("return_features", False)
         # Stem
         x = cast(torch.Tensor, self.relu(self.bn1(self.conv1(x))))

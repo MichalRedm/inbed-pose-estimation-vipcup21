@@ -25,6 +25,12 @@ class ViTPose(BaseModel):
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
+        """
+        Initializes ViTPose with a configuration dictionary.
+
+        Args:
+            config: Model configuration.
+        """
         super().__init__(config)
 
         # Handle both full config and sub-config dict structures
@@ -108,6 +114,7 @@ class ViTPose(BaseModel):
             self.load_pretrained_coco_weights(pretrained_weights_path)
 
     def _init_decoder(self) -> None:
+        """Initializes the weights of the upsampling decoder."""
         for m in self.decoder.modules():
             if isinstance(m, nn.ConvTranspose2d):
                 nn.init.normal_(m.weight, std=0.001)
@@ -123,9 +130,22 @@ class ViTPose(BaseModel):
 
     @property
     def output_type(self) -> str:
+        """Returns the type of output produced by the model ('heatmap')."""
         return "heatmap"
 
     def forward(self, x: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+        """
+        Forward pass of ViTPose.
+
+        Performs dynamic positional embedding interpolation and bypasses class tokens.
+
+        Args:
+            x: Input image tensor of shape (B, C, H, W).
+            **kwargs: Additional arguments.
+
+        Returns:
+            Keypoint heatmaps.
+        """
         # Apply ImageNet normalization internally
         mean = torch.tensor([0.485, 0.456, 0.406], device=x.device).view(1, 3, 1, 1)
         std = torch.tensor([0.229, 0.224, 0.225], device=x.device).view(1, 3, 1, 1)
@@ -190,6 +210,13 @@ class ViTPose(BaseModel):
         return heatmaps
 
     def load_pretrained_coco_weights(self, coco_path: str) -> None:
+        """
+        Loads pre-trained ViTPose weights from a COCO-pretrained checkpoint.
+        Handles key remapping and positional embedding interpolation.
+
+        Args:
+            coco_path: Path to the COCO-pretrained .pth file.
+        """
         print(f"[ViTPose] Loading COCO pretrained weights from {coco_path}...")
         coco_state = torch.load(coco_path, map_location="cpu")
         if "state_dict" in coco_state:
