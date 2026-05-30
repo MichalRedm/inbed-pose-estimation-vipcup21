@@ -10,7 +10,7 @@ from src.models import build_model
 from src.utils import load_config
 
 
-def test_components():
+def test_components() -> None:
     config = load_config()
 
     print("Testing Model Instantiation...")

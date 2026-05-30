@@ -9,11 +9,13 @@ from typing import Dict, Any
 class MockTrainer(BaseTrainer):
     """Minimal implementation of BaseTrainer for testing."""
 
-    def __init__(self, save_dir):
+    def __init__(self, save_dir: str) -> None:
         self.config = {"run_id": "test_run"}
         self.device = torch.device("cpu")
         self.model = torch.nn.Linear(1, 1)
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.01)
+        self.optimizer: torch.optim.Optimizer = torch.optim.SGD(
+            self.model.parameters(), lr=0.01
+        )
         self.best_val_pck = 0.0
         self.best_val_loss = float("inf")
         self.current_epoch = 0
@@ -25,23 +27,23 @@ class MockTrainer(BaseTrainer):
         # Create checkpoints dir
         os.makedirs(os.path.join(save_dir, "checkpoints"), exist_ok=True)
 
-    def train_epoch(self, epoch):
+    def train_epoch(self, epoch: int) -> float:
         return 0.0
 
-    def validate(self, epoch):
+    def validate(self, epoch: int) -> float:
         return 0.0
 
-    def _train_step(self, batch):
+    def _train_step(self, batch: Any) -> float:
         return 0.0
 
-    def _val_step(self, batch):
+    def _val_step(self, batch: Any) -> float:
         return 0.0
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         return {}
 
 
-def test_best_checkpoint_selection():
+def test_best_checkpoint_selection() -> None:
     """Verify the logic that determines is_best based on val_pck."""
     save_dir = "temp_ckpt"
     trainer = MockTrainer(save_dir)

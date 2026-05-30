@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import torch
+from typing import Dict, Any, List, AsyncGenerator
 
 # Add project root to sys.path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
@@ -24,9 +25,9 @@ from src.api.routers.predict import router as predict_router  # noqa: E402
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup logic
-    train_config = (
+    train_config: Dict[str, Any] = (
         training_manager.config if hasattr(training_manager, "config") else {}
     )
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
@@ -34,13 +35,16 @@ async def lifespan(app: FastAPI):
     if checkpoints:
         inference_service.load_model(str(checkpoints[-1]))
     try:
-        dataset_cfg = train_config.get("dataset", {})
+        dataset_cfg: Dict[str, Any] = train_config.get("dataset", {})
         root_path = project_root / dataset_cfg.get("root", "data/raw")
+        subjects_train: List[int] = dataset_cfg.get("subjects_train", [1, 30])
+        subjects_val: List[int] = dataset_cfg.get("subjects_val", [81, 90])
+
         dataset_container["train"] = VIPCupDataset(
             root=root_path,
             subjects=range(
-                dataset_cfg.get("subjects_train", [1, 30])[0],
-                dataset_cfg.get("subjects_train", [1, 30])[1] + 1,
+                subjects_train[0],
+                subjects_train[1] + 1,
             ),
             modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
             covers=["uncover", "cover1", "cover2"],
@@ -49,8 +53,8 @@ async def lifespan(app: FastAPI):
         dataset_container["val"] = VIPCupDataset(
             root=root_path,
             subjects=range(
-                dataset_cfg.get("subjects_val", [81, 90])[0],
-                dataset_cfg.get("subjects_val", [81, 90])[1] + 1,
+                subjects_val[0],
+                subjects_val[1] + 1,
             ),
             modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
             covers=["uncover", "cover1", "cover2"],
@@ -86,8 +90,8 @@ app.mount("/static/runs", StaticFiles(directory=str(runs_static_dir)), name="run
 
 
 @app.get("/")
-async def root():
-    gpu_info = {"available": torch.cuda.is_available()}
+async def root() -> Dict[str, Any]:
+    gpu_info: Dict[str, Any] = {"available": torch.cuda.is_available()}
     if gpu_info["available"]:
         gpu_info["name"] = torch.cuda.get_device_name(0)
         try:

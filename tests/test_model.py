@@ -2,20 +2,21 @@
 
 import torch
 import pytest
+from typing import Dict, Any
 from src.models import build_model, MODEL_REGISTRY
 from src.models.base import BaseModel
 from src.models.hrnet import HRNet
 
 
-def test_registry_contains_hrnet():
+def test_registry_contains_hrnet() -> None:
     """Registry should contain the 'hrnet' architecture."""
     assert "hrnet" in MODEL_REGISTRY
     assert MODEL_REGISTRY["hrnet"] == HRNet
 
 
-def test_build_model_hrnet():
+def test_build_model_hrnet() -> None:
     """build_model should correctly instantiate HRNet from config."""
-    config = {
+    config: Dict[str, Any] = {
         "model": {
             "name": "hrnet",
             "hrnet": {"num_joints": 14, "in_channels": 1, "architecture": "w32"},
@@ -26,9 +27,9 @@ def test_build_model_hrnet():
     assert isinstance(model, BaseModel)
 
 
-def test_hrnet_output_shape():
+def test_hrnet_output_shape() -> None:
     """HRNet should output (B, 14, H/4, W/4) heatmaps."""
-    config = {
+    config: Dict[str, Any] = {
         "model": {
             "name": "hrnet",
             "hrnet": {"num_joints": 14, "in_channels": 1, "architecture": "w32"},
@@ -46,9 +47,9 @@ def test_hrnet_output_shape():
     )
 
 
-def test_hrnet_parameter_count():
+def test_hrnet_parameter_count() -> None:
     """HRNet-W32 should have a significant number of parameters."""
-    config = {
+    config: Dict[str, Any] = {
         "model": {
             "name": "hrnet",
             "hrnet": {"num_joints": 14, "in_channels": 1, "architecture": "w32"},
@@ -62,9 +63,9 @@ def test_hrnet_parameter_count():
     )
 
 
-def test_build_invalid_model():
+def test_build_invalid_model() -> None:
     """build_model should raise ValueError for unregistered models."""
-    config = {"model": {"name": "invalid_model", "invalid_model": {}}}
+    config: Dict[str, Any] = {"model": {"name": "invalid_model", "invalid_model": {}}}
     with pytest.raises(ValueError, match="Model 'invalid_model' not found"):
         build_model(config)
 

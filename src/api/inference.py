@@ -1,5 +1,7 @@
 import torch
+import torch.nn as nn
 import os
+from typing import Dict, Any, Optional, Union, Tuple, List, cast
 from src.utils.pose import decode_heatmaps
 
 
@@ -9,19 +11,22 @@ class InferenceService:
     Decouples model loading and state management from the API workers.
     """
 
-    _instance = None
-    _model = None
-    _device = None
-    _config = None
-    _current_checkpoint = None
+    _instance: Optional["InferenceService"] = None
+    _model: Optional[nn.Module] = None
+    _device: torch.device
+    _config: Optional[Dict[str, Any]] = None
+    _current_checkpoint: Optional[str] = None
 
-    def __new__(cls):
+    def __new__(cls) -> "InferenceService":
         if cls._instance is None:
             cls._instance = super(InferenceService, cls).__new__(cls)
-            cls._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            # Initialize _device on the instance
+            cls._instance._device = torch.device(
+                "cuda" if torch.cuda.is_available() else "cpu"
+            )
         return cls._instance
 
-    def load_model(self, checkpoint_path: str, force_reload: bool = False):
+    def load_model(self, checkpoint_path: str, force_reload: bool = False) -> None:
         if (
             self._model is not None
             and self._current_checkpoint == checkpoint_path
@@ -50,7 +55,7 @@ class InferenceService:
             run_dir = os.path.dirname(os.path.dirname(checkpoint_path))
             frozen_cfg_path = os.path.join(run_dir, "frozen_config.json")
 
-            config = None
+            config: Optional[Dict[str, Any]] = None
             if os.path.exists(frozen_cfg_path):
                 import json
 
@@ -90,7 +95,7 @@ class InferenceService:
         image_tensor: torch.Tensor,
         decode_method: str = "argmax",
         return_heatmaps: bool = False,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         """
         Perform inference on a pre-processed image tensor.
         Returns: (1, 14, 2) keypoints in image space.
@@ -103,24 +108,24 @@ class InferenceService:
         # 1. Primary path: Model is self-contained (wrapped or native coordinate regression)
         if (
             hasattr(self._model, "output_type")
-            and self._model.output_type == "coordinates"
+            and getattr(self._model, "output_type") == "coordinates"
         ):
             outputs = self._model(image_tensor, return_heatmaps=return_heatmaps)
-            if return_heatmaps:
-                return outputs  # wrapper returns (joints, heatmaps) or (joints, heatmaps, *extra)
-            return outputs  # returns joints (1, 14, 2)
+            return cast(Union[torch.Tensor, Tuple[torch.Tensor, ...]], outputs)
 
         # 2. Legacy path: Model returns raw heatmaps, we decode manually
         outputs = self._model(image_tensor)
 
         # Determine image size for decoding
-        dataset_cfg = self._config.get("dataset", {}) if self._config else {}
-        image_size = dataset_cfg.get("image_size", [256, 256])
+        dataset_cfg: Dict[str, Any] = (
+            self._config.get("dataset", {}) if self._config else {}
+        )
+        image_size: List[int] = dataset_cfg.get("image_size", [256, 256])
 
         heatmaps = outputs[0] if isinstance(outputs, tuple) else outputs
         keypoints = decode_heatmaps(
             heatmaps,
-            image_size=tuple(image_size),
+            image_size=(image_size[0], image_size[1]),
             method=decode_method,
             temperature=10.0,
         )

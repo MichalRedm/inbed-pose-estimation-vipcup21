@@ -4,27 +4,22 @@ remote_train.py — Launch a training run on any remote GPU.
 Works with any provider supported by gpu_connection.json:
   - Cloudflare tunnel (Kaggle, self-hosted): "type": "cloudflare_tunnel"
   - Direct SSH (RunPod, Vast.ai, Lambda Labs): "type": "ssh"
-
-The remote environment is NOT manually configured here — all PATH /
-LD_LIBRARY_PATH / CUDA setup lives in ~/.bash_profile on the remote server,
-which is sourced automatically by the login shell (bash -l) used in every
-gpu.run() call.
 """
 
 import os
 import sys
 from pathlib import Path
-
+from typing import Any, List, Optional, Set, cast
 from dotenv import load_dotenv
 
 # Add project root to sys.path to allow importing src
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.utils.remote_gpu import GPUManager
+from src.utils.remote_gpu import GPUManager, GPUSession
 import argparse
 
 
-def main():
+def main() -> None:
     load_dotenv()
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -51,7 +46,7 @@ def main():
     args_cli, other_args = parser.parse_known_args()
 
     # Extract config path from other_args list (as --config is not explicitly defined in argparse)
-    config_path = None
+    config_path: Optional[str] = None
     if "--config" in other_args:
         idx = other_args.index("--config")
         if idx + 1 < len(other_args):
@@ -74,8 +69,9 @@ def main():
                     import yaml
 
                     cfg = yaml.safe_load(f)
-                config_resume = cfg.get("training", {}).get("resume", False) or cfg.get(
-                    "resume", False
+                config_resume = bool(
+                    cfg.get("training", {}).get("resume", False)
+                    or cfg.get("resume", False)
                 )
         except Exception as e:
             print(
@@ -149,8 +145,8 @@ def main():
             gpu.upload(config_path, remote_cfg_path, recursive=False)
 
         # 3. Only pass project-specific env vars; PATH/CUDA come from login shell
-        k_user = os.getenv("KAGGLE_USERNAME", "")
-        k_key = os.getenv("KAGGLE_API_TOKEN", os.getenv("KAGGLE_KEY", ""))
+        k_user = str(os.getenv("KAGGLE_USERNAME", ""))
+        k_key = str(os.getenv("KAGGLE_API_TOKEN", os.getenv("KAGGLE_KEY", "")))
         env_setup = (
             f"export KAGGLE_USERNAME={k_user} && "
             f"export KAGGLE_KEY={k_key} && "
@@ -182,7 +178,7 @@ def main():
 
         num_gpus = detected_gpus
         if args_cli.max_gpus is not None:
-            num_gpus = min(num_gpus, args_cli.max_gpus)
+            num_gpus = min(num_gpus, int(args_cli.max_gpus))
 
         print(f"Detected GPUs: {detected_gpus}. Using: {num_gpus}")
 
@@ -200,7 +196,7 @@ def main():
 
         master_port = random.randint(20000, 29999)
 
-        training_script = args_cli.script
+        training_script: str = str(args_cli.script)
 
         # If running the standard train.py, use torchrun for potential DDP support.
         # Otherwise (e.g. CycleGAN), use plain python as those scripts might not support DDP yet.
@@ -221,7 +217,7 @@ def main():
         # --- Step 4: Smart Cleanup & State Tracking ---
         # Determine local and remote paths based on run_id
         if args_cli.run_id:
-            local_run_dir = Path("results/runs") / args_cli.run_id
+            local_run_dir = Path("results/runs") / str(args_cli.run_id)
             local_ckpt_dir = local_run_dir / "checkpoints"
             local_history_path = local_run_dir / "history.json"
             local_config_path = local_run_dir / "config.json"
@@ -245,7 +241,7 @@ def main():
             remote_config_path = f"{remote_project_dir}/models/checkpoints/config.json"
 
         # Track which checkpoints have already been downloaded
-        downloaded: set[str] = set()
+        downloaded: Set[str] = set()
 
         os.makedirs(local_ckpt_dir, exist_ok=True)
 
@@ -274,8 +270,8 @@ def main():
                         else:
                             import torch
 
-                            with open(str(local_path), "rb") as f:
-                                torch.load(f, map_location="cpu")
+                            with open(str(local_path), "rb") as f_ckpt:
+                                torch.load(f_ckpt, map_location="cpu")
                             is_valid = True
                             print(
                                 f"[resume] Local {fname} integrity verified successfully."
@@ -299,9 +295,9 @@ def main():
                     remote_path = f"{remote_ckpt_dir}/{fname}"
                     try:
                         # Use sftp to check size
-                        sftp = gpu.open_sftp()
-                        remote_stat = sftp.stat(remote_path)
-                        sftp.close()
+                        sftp_resume = gpu.open_sftp()
+                        remote_stat = sftp_resume.stat(remote_path)
+                        sftp_resume.close()
                         if remote_stat.st_size == local_path.stat().st_size:
                             print(
                                 f"[resume] Remote {fname} is already up-to-date. Skipping upload."
@@ -345,17 +341,17 @@ def main():
         # Initial snapshot: mark existing remote checkpoints as 'downloaded'
         # so we don't pull down old data at the start.
         print("Taking initial snapshot of remote checkpoints...")
-        res = gpu.run(
+        res_ls = gpu.run(
             f"ls {remote_ckpt_dir}/*.pth 2>/dev/null || true",
             stream=False,
         )
-        for f in res.stdout.splitlines():
-            fname = f.strip().split("/")[-1]
-            if fname.endswith(".pth"):
-                downloaded.add(fname)
+        for f_ls in res_ls.stdout.splitlines():
+            fname_ls = f_ls.strip().split("/")[-1]
+            if fname_ls.endswith(".pth"):
+                downloaded.add(fname_ls)
         print(f"Ignored {len(downloaded)} existing remote checkpoints.")
 
-        def poll_metadata(session):
+        def poll_metadata(session: GPUSession) -> None:
             """Sync history.json and config.json (Fast, updates dashboard)."""
             for r_path, l_path in [
                 (remote_history_path, local_history_path),
@@ -377,124 +373,134 @@ def main():
                 except Exception:
                     pass  # might not exist yet
 
-        def poll_checkpoints(session):
+        def poll_checkpoints(session: GPUSession) -> None:
             """Download any checkpoint not yet synced locally with strict size verification."""
-            result = session.run(
+            result_ls = session.run(
                 f"ls {remote_ckpt_dir}/*.pth 2>/dev/null || true",
                 stream=False,
             )
             remote_files = [
                 f.strip()
-                for f in result.stdout.splitlines()
+                for f in result_ls.stdout.splitlines()
                 if f.strip().endswith(".pth")
             ]
 
-            sftp = None
+            sftp_poll: Optional[Any] = None
             try:
-                sftp = session.open_sftp()
+                sftp_poll = session.open_sftp()
             except Exception as sftp_err:
                 print(
                     f"[sync] Warning: Could not open SFTP connection for verification: {sftp_err}"
                 )
 
-            for remote_path in remote_files:
-                fname = remote_path.split("/")[-1]
+            for remote_path_poll in remote_files:
+                fname_poll = remote_path_poll.split("/")[-1]
                 # Always download best_model.pth and latest_model.pth to ensure they're complete
-                is_key_model = fname in ["best_model.pth", "latest_model.pth"]
-                if fname not in downloaded or is_key_model:
+                is_key_model = fname_poll in ["best_model.pth", "latest_model.pth"]
+                if fname_poll not in downloaded or is_key_model:
                     # Get remote size for integrity check
-                    remote_size = None
-                    if sftp:
+                    remote_size_poll: Optional[int] = None
+                    if sftp_poll:
                         try:
-                            remote_size = sftp.stat(remote_path).st_size
+                            remote_size_poll = sftp_poll.stat(remote_path_poll).st_size
                         except Exception:
                             pass
 
-                    local_path = local_ckpt_dir / fname
-                    temp_local_path = local_ckpt_dir / f"{fname}.tmp"
+                    local_path_poll = local_ckpt_dir / fname_poll
+                    temp_local_path_poll = local_ckpt_dir / f"{fname_poll}.tmp"
 
                     # Download with up to 3 retries and size verification
                     for attempt in range(1, 4):
                         print(
-                            f"\n[sync] Downloading {fname} (size={remote_size} bytes, attempt {attempt})..."
+                            f"\n[sync] Downloading {fname_poll} (size={remote_size_poll} bytes, attempt {attempt})..."
                         )
                         try:
                             # Clean up old temp file if it exists to avoid partial write issues
-                            if temp_local_path.exists():
+                            if temp_local_path_poll.exists():
                                 try:
-                                    os.remove(temp_local_path)
+                                    os.remove(temp_local_path_poll)
                                 except OSError:
                                     pass
 
                             # Download to temporary file path
                             session.download(
-                                remote_path, str(temp_local_path), recursive=False
+                                remote_path_poll,
+                                str(temp_local_path_poll),
+                                recursive=False,
                             )
 
                             # Verify local temp file exists and matches remote size
-                            if temp_local_path.exists():
-                                local_size = temp_local_path.stat().st_size
-                                if remote_size is None or local_size == remote_size:
+                            if temp_local_path_poll.exists():
+                                local_size_poll = temp_local_path_poll.stat().st_size
+                                if (
+                                    remote_size_poll is None
+                                    or local_size_poll == remote_size_poll
+                                ):
                                     # Verify checkpoint integrity for key model files
-                                    is_valid = True
-                                    if fname in ["best_model.pth", "latest_model.pth"]:
+                                    is_valid_poll = True
+                                    if fname_poll in [
+                                        "best_model.pth",
+                                        "latest_model.pth",
+                                    ]:
                                         try:
                                             import torch
 
-                                            with open(str(temp_local_path), "rb") as f:
-                                                torch.load(f, map_location="cpu")
-                                        except Exception as integrity_err:
+                                            with open(
+                                                str(temp_local_path_poll), "rb"
+                                            ) as f_poll:
+                                                torch.load(f_poll, map_location="cpu")
+                                        except Exception as integrity_err_poll:
                                             print(
-                                                f"[sync] Warning: Downloaded {fname} failed integrity check: {integrity_err}"
+                                                f"[sync] Warning: Downloaded {fname_poll} failed integrity check: {integrity_err_poll}"
                                             )
-                                            is_valid = False
+                                            is_valid_poll = False
 
-                                    if is_valid:
+                                    if is_valid_poll:
                                         # Rename temp file to actual file atomically
-                                        if local_path.exists():
+                                        if local_path_poll.exists():
                                             try:
-                                                os.remove(local_path)
+                                                os.remove(local_path_poll)
                                             except OSError:
                                                 pass
-                                        os.rename(temp_local_path, local_path)
+                                        os.rename(temp_local_path_poll, local_path_poll)
                                         print(
-                                            f"[sync] {fname} successfully saved, verified, and renamed! ({local_size} bytes)"
+                                            f"[sync] {fname_poll} successfully saved, verified, and renamed! ({local_size_poll} bytes)"
                                         )
-                                        downloaded.add(fname)
+                                        downloaded.add(fname_poll)
                                         break
                                     else:
                                         print(
-                                            f"[sync] Warning: Checkpoint integrity check failed for {fname}."
+                                            f"[sync] Warning: Checkpoint integrity check failed for {fname_poll}."
                                         )
                                 else:
                                     print(
-                                        f"[sync] Warning: Size mismatch for {fname}! Remote: {remote_size}, Local: {local_size}"
+                                        f"[sync] Warning: Size mismatch for {fname_poll}! Remote: {remote_size_poll}, Local: {local_size_poll}"
                                     )
                             else:
                                 print(
-                                    f"[sync] Warning: Local temp file {fname}.tmp not found after download."
+                                    f"[sync] Warning: Local temp file {fname_poll}.tmp not found after download."
                                 )
                         except Exception as dl_err:
                             print(
-                                f"[sync] Warning: Download failed for {fname}: {dl_err}"
+                                f"[sync] Warning: Download failed for {fname_poll}: {dl_err}"
                             )
                         finally:
                             # Clean up temp file if rename didn't happen (i.e. on error/mismatch)
-                            if temp_local_path.exists():
+                            if temp_local_path_poll.exists():
                                 try:
-                                    os.remove(temp_local_path)
+                                    os.remove(temp_local_path_poll)
                                 except OSError:
                                     pass
 
                         time.sleep(2.0)
                     else:
                         print(
-                            f"[sync] ERROR: Failed to download and verify {fname} after 3 attempts!"
+                            f"[sync] ERROR: Failed to download and verify {fname_poll} after 3 attempts!"
                         )
 
-            if sftp:
+            if sftp_poll:
                 try:
-                    sftp.close()
+                    sftp_poll.close()
                 except Exception:
                     pass
 
@@ -502,15 +508,15 @@ def main():
         import threading
         import time
 
-        training_result: list = []
+        training_result: List[Any] = []
 
-        def run_training():
+        def run_training() -> None:
             training_result.append(gpu.run(cmd))
 
         training_thread = threading.Thread(target=run_training, daemon=True)
         training_thread.start()
 
-        def run_metadata_polling():
+        def run_metadata_polling() -> None:
             # Open a separate session for background metadata polling (extremely fast and lightweight)
             try:
                 with mgr.use(backend_name) as metadata_session:
@@ -525,7 +531,7 @@ def main():
             except Exception as e:
                 print(f"[sync] Background metadata poller crashed: {e}")
 
-        def run_checkpoint_polling():
+        def run_checkpoint_polling() -> None:
             # Open a separate session for background checkpoint polling (heavier checks)
             try:
                 with mgr.use(backend_name) as ckpt_session:
@@ -540,23 +546,23 @@ def main():
             except Exception as e:
                 print(f"[sync] Background checkpoint poller crashed: {e}")
 
-        def run_streaming():
+        def run_streaming() -> None:
             # Open a dedicated session for real-time metric streaming
-            remote_stream_path = (
+            remote_stream_path_str = (
                 f"{remote_project_dir}/results/runs/{args_cli.run_id}/stream.jsonl"
             )
-            print(f"[sync] Starting metrics streamer for {remote_stream_path}")
+            print(f"[sync] Starting metrics streamer for {remote_stream_path_str}")
 
             while training_thread.is_alive():
                 try:
                     with mgr.use(backend_name) as stream_session:
                         # Run a python script on the remote to emulate tail -F but with explicit flushing.
                         # This avoids all pipe block-buffering issues inherent to `tail` over SSH without a PTY.
-                        cmd = (
+                        tail_cmd = (
                             f"python3 -c '\n"
                             f"import time, os\n"
-                            f'open("{remote_stream_path}", "a").close()\n'
-                            f'f = open("{remote_stream_path}", "r")\n'
+                            f'open("{remote_stream_path_str}", "a").close()\n'
+                            f'f = open("{remote_stream_path_str}", "r")\n'
                             f'buffer = ""\n'
                             f"while True:\n"
                             f"    chunk = f.read(1024)\n"
@@ -568,21 +574,26 @@ def main():
                             f"    else: time.sleep(0.5)\n"
                             f"'"
                         )
-                        _, stdout, _ = stream_session.exec_command(cmd, get_pty=False)
+                        _, stdout_stream, _ = stream_session.exec_command(
+                            tail_cmd, get_pty=False
+                        )
 
                         # Set a timeout for reading to allow heartbeat/alive checks
-                        stdout.channel.settimeout(10.0)
+                        stdout_stream.channel.settimeout(10.0)
 
                         while training_thread.is_alive():
                             try:
-                                line = stdout.readline()
-                                if line:
+                                line_stream = stdout_stream.readline()
+                                if line_stream:
                                     # Print with prefix for TrainingManager to intercept
                                     # Check if already prefixed to avoid double-tagging
-                                    if line.strip().startswith("[METRICS]"):
-                                        print(line.strip(), flush=True)
+                                    if line_stream.strip().startswith("[METRICS]"):
+                                        print(line_stream.strip(), flush=True)
                                     else:
-                                        print(f"[METRICS] {line.strip()}", flush=True)
+                                        print(
+                                            f"[METRICS] {line_stream.strip()}",
+                                            flush=True,
+                                        )
                                 else:
                                     # Might be EOF if tail -F was interrupted
                                     break
@@ -641,16 +652,16 @@ def main():
                 f"[sync] Warning: Final checkpoint sync encountered an error: {sync_err}"
             )
 
-        result = training_result[0] if training_result else None
-        if result is None or not result.ok():
+        result_train = training_result[0] if training_result else None
+        if result_train is None or not result_train.ok():
             print("\nTraining failed. Stderr:")
             safe_stderr = (
-                (result.stderr if result else "Unknown error")
+                (result_train.stderr if result_train else "Unknown error")
                 .encode(sys.stdout.encoding, errors="replace")
-                .decode(sys.stdout.encoding)
+                .decode(cast(str, sys.stdout.encoding))
             )
             print(safe_stderr)
-            sys.exit(result.exit_code if result else 1)
+            sys.exit(result_train.exit_code if result_train else 1)
 
         # --- Step 5: Automated Evaluation ---
         if args_cli.eval and args_cli.run_id:

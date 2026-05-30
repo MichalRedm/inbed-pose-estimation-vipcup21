@@ -5,6 +5,7 @@ import torchvision.transforms.v2 as v2
 from PIL import Image
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
+from typing import Dict, Any, Optional, Union
 
 from src.data.augmentations import (
     DataAugmenter,
@@ -19,8 +20,8 @@ router = APIRouter()
 
 
 @router.get("/dataset/stats")
-async def get_dataset_stats():
-    summary = {
+async def get_dataset_stats() -> Dict[str, Any]:
+    summary: Dict[str, Any] = {
         "total": 0,
         "train": 0,
         "valid": 0,
@@ -44,9 +45,9 @@ async def get_samples(
     split: str = "train",
     page: int = 1,
     limit: int = 20,
-    cover: str = None,
-    subject: int = None,
-):
+    cover: Optional[str] = None,
+    subject: Optional[int] = None,
+) -> Dict[str, Any]:
     ds = dataset_container.get(split)
     if not ds:
         raise HTTPException(status_code=404, detail="Split not found")
@@ -83,7 +84,7 @@ async def get_samples(
 
 
 @router.get("/dataset/sample/{split}/{idx}")
-async def get_sample_detail(split: str, idx: int):
+async def get_sample_detail(split: str, idx: int) -> Dict[str, Any]:
     ds = dataset_container.get(split)
     if not ds or idx >= len(ds):
         raise HTTPException(status_code=404, detail="Sample not found")
@@ -111,10 +112,10 @@ async def get_sample_detail(split: str, idx: int):
     }
 
 
-@router.get("/dataset/image/{split}/{idx}")
+@router.get("/dataset/image/{split}/{idx}", response_model=None)
 async def get_dataset_image(
     split: str, idx: int, modality: str = "IR", augment: bool = False
-):
+) -> Union[FileResponse, StreamingResponse]:
     ds = dataset_container.get(split)
     if not ds or idx >= len(ds):
         raise HTTPException(status_code=404, detail="Sample not found")
@@ -126,16 +127,18 @@ async def get_dataset_image(
         return FileResponse(image_path)
     image = Image.open(image_path).convert("L" if modality == "IR" else "RGB")
     joints = sample["joints"].get(modality)
-    train_config = (
+    train_config: Dict[str, Any] = (
         training_manager.config if hasattr(training_manager, "config") else {}
     )
     aug_cfg = train_config.get("training", {}).get("augmentation", {})
     augmenter = DataAugmenter(
-        enabled=True,
-        occlusion_prob=1.0,
-        flip_prob=aug_cfg.get("flip_prob", 0.5),
-        rotation_range=aug_cfg.get("rotation_range", [-30, 30]),
-        scaling_range=aug_cfg.get("scaling_range", [0.8, 1.2]),
+        config={
+            "enabled": True,
+            "occlusion_prob": 1.0,
+            "flip_prob": aug_cfg.get("flip_prob", 0.5),
+            "rotation_range": aug_cfg.get("rotation_range", [-30, 30]),
+            "scaling_range": aug_cfg.get("scaling_range", [0.8, 1.2]),
+        }
     )
     aug_img, _ = augmenter(image, joints, is_ir=(modality == "IR"))
     buf = io.BytesIO()
@@ -145,12 +148,14 @@ async def get_dataset_image(
 
 
 @router.get("/augmentations")
-async def list_augmentations():
+async def list_augmentations() -> Dict[str, Any]:
     return {"augmentations": get_available_augmentations()}
 
 
 @router.post("/augmentations/apply")
-async def apply_augmentations_endpoint(request: AugmentationApplyRequest):
+async def apply_augmentations_endpoint(
+    request: AugmentationApplyRequest,
+) -> Dict[str, Any]:
     ds = dataset_container.get(request.split)
     if not ds or request.index >= len(ds):
         raise HTTPException(status_code=404, detail="Sample not found")

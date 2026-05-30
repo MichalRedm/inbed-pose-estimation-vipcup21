@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.utils.remote_gpu import GPUManager
 
 
-def download_models():
+def download_models() -> None:
     mgr = GPUManager()
     mgr.add_backend_from_json("remote_gpu", "gpu_connection.json")
     with mgr.use("remote_gpu") as gpu:

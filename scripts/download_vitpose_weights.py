@@ -2,12 +2,12 @@ import os
 import urllib.request
 
 
-def download_file(url, destination):
+def download_file(url: str, destination: str) -> bool:
     print(f"Downloading {url} to {destination}...")
     os.makedirs(os.path.dirname(destination), exist_ok=True)
 
     # Progress callback
-    def report(block_num, block_size, total_size):
+    def report(block_num: int, block_size: int, total_size: int) -> None:
         read_so_far = block_num * block_size
         if total_size > 0:
             percent = read_so_far * 100 / total_size

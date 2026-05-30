@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List, Any
 
 
 class AnatomicalLoss(nn.Module):
@@ -12,7 +12,12 @@ class AnatomicalLoss(nn.Module):
     2. Symmetry loss (L/R limb length mismatch penalty)
     """
 
-    def __init__(self, device="cpu", image_size=256, mode="hinge"):
+    priors: List[Tuple[int, int, float]]
+    symmetrical_pairs: List[Tuple[Tuple[int, int], Tuple[int, int]]]
+
+    def __init__(
+        self, device: str = "cpu", image_size: int = 256, mode: str = "hinge"
+    ) -> None:
         """
         Anatomical Constraint Loss for pose estimation.
 
@@ -54,15 +59,15 @@ class AnatomicalLoss(nn.Module):
             ((3, 12), (2, 12)),  # Torso sides (Hip to Thorax)
         ]
 
-    def forward(self, pred_joints):
+    def forward(self, pred_joints: torch.Tensor) -> torch.Tensor:
         """
         pred_joints: (B, 14, 2) - Joint coordinates in image space (0-256)
         """
         # Normalize predicted joints to 0-1
         pred_joints_norm = pred_joints / self.image_size
 
-        loss_prior = 0.0
-        loss_sym = 0.0
+        loss_prior = torch.tensor(0.0, device=pred_joints.device)
+        loss_sym = torch.tensor(0.0, device=pred_joints.device)
 
         # 1. Bone Length Prior Loss
         for j1, j2, target in self.priors:
@@ -100,20 +105,22 @@ class UncertaintyWeighting(nn.Module):
     for Scene Geometry and Semantics", CVPR 2018.
     """
 
-    def __init__(self, num_tasks: int):
+    log_vars: nn.Parameter
+
+    def __init__(self, num_tasks: int) -> None:
         super().__init__()
         # Initial log-variances set to 0 (sigma=1)
         self.log_vars = nn.Parameter(torch.zeros(num_tasks))
 
     def forward(
         self, losses: Dict[str, torch.Tensor]
-    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
         losses: Dictionary of individual losses.
         Returns: (total_loss, weighted_losses_dict)
         """
-        total_loss = 0
-        weighted_dict = {}
+        total_loss = torch.tensor(0.0, device=self.log_vars.device)
+        weighted_dict: Dict[str, Any] = {}
 
         # We need a stable order for the log_vars.
         # We'll use the sorted keys of the input dictionary.
@@ -125,7 +132,7 @@ class UncertaintyWeighting(nn.Module):
             log_var = self.log_vars[i]
             weighted_loss = torch.exp(-log_var) * loss + log_var
 
-            total_loss += weighted_loss
+            total_loss = total_loss + weighted_loss
             weighted_dict[f"w_{key}"] = weighted_loss.item()
             weighted_dict[f"sigma_{key}"] = torch.exp(0.5 * log_var).item()
 

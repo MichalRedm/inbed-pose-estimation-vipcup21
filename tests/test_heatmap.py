@@ -2,14 +2,14 @@ import torch
 from src.data.dataset import VIPCupDataset
 
 
-def _make_dataset():
+def _make_dataset() -> VIPCupDataset:
     dataset = VIPCupDataset(root=".", subjects=[], image_size=(256, 256))
     dataset.heatmap_size = (64, 64)
     dataset.sigma = 2.0
     return dataset
 
 
-def test_heatmap_generation():
+def test_heatmap_generation() -> None:
     """Visible joint at image centre should produce a Gaussian peak in the heatmap."""
     joints = torch.zeros((3, 14))
     joints[0, 0] = 128  # centre x
@@ -25,7 +25,7 @@ def test_heatmap_generation():
     assert heatmaps[0, 0, 0] < 0.01, "Far corner should be near zero"
 
 
-def test_visibility_semantics():
+def test_visibility_semantics() -> None:
     """
     SLP dataset semantics:
     - 0: visible
@@ -64,7 +64,7 @@ def test_visibility_semantics():
     )
 
 
-def test_diverse_sigmas():
+def test_diverse_sigmas() -> None:
     """Verify that heatmap generation is stable across various sigma values (curriculum decay)."""
     dataset = _make_dataset()
     joints = torch.zeros((3, 14))

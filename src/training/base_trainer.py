@@ -2,9 +2,10 @@ import os
 import json
 import torch
 import torch.distributed as dist
+import torch.nn as nn
 from tqdm import tqdm
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Tuple, cast
 import numpy as np
 
 from src.utils.pose import decode_heatmaps
@@ -20,6 +21,24 @@ class BaseTrainer(ABC):
     falling back to val_loss (lower = better) if PCK is unavailable.
     """
 
+    model: torch.nn.Module
+    config: Dict[str, Any]
+    device: torch.device
+    rank: int
+    world_size: int
+    is_main: bool
+    epochs: int
+    start_epoch: int
+    current_epoch: int
+    save_dir: Optional[str]
+    best_val_pck: float
+    best_val_loss: float
+    history: List[Dict[str, Any]]
+    history_path: Optional[str]
+    stream_path: Optional[str]
+    streamer: Optional[JSONLStream]
+    tracker: LocalTracker
+
     def __init__(
         self,
         model: torch.nn.Module,
@@ -27,7 +46,7 @@ class BaseTrainer(ABC):
         device: torch.device,
         rank: int = 0,
         world_size: int = 1,
-    ):
+    ) -> None:
         self.model = model
         self.config = config
         self.device = device
@@ -36,11 +55,11 @@ class BaseTrainer(ABC):
         self.is_main = rank == 0
 
         # Training parameters
-        train_cfg = config.get("training", {})
-        self.epochs = train_cfg.get("epochs", 30)
+        train_cfg: Dict[str, Any] = config.get("training", {})
+        self.epochs = int(train_cfg.get("epochs", 30))
         self.start_epoch = 0  # Default, can be set during resumption
         self.current_epoch = 0
-        self.save_dir = train_cfg.get("save_dir", None)
+        self.save_dir = train_cfg.get("save_dir")
 
         if self.is_main and self.save_dir:
             os.makedirs(self.save_dir, exist_ok=True)
@@ -69,16 +88,16 @@ class BaseTrainer(ABC):
         # Local SQLite Tracker
         self.tracker = LocalTracker()
         if self.is_main:
-            run_name = config.get("run_id", "unnamed_run")
+            run_name: str = config.get("run_id", "unnamed_run")
             self.tracker.init_run(run_name, run_name, config)
 
-    def _stream_metric(self, data: Dict[str, Any]):
+    def _stream_metric(self, data: Dict[str, Any]) -> None:
         """Append a JSON line to the stream file for real-time telemetry."""
         if not self.is_main or not self.streamer:
             return
 
         # Inject display metadata periodically (start of epoch OR every 10% progress)
-        progress = data.get("progress", 0)
+        progress = float(data.get("progress", 0))
         is_start = progress <= 0.01
 
         if not hasattr(self, "_last_metadata_progress"):
@@ -98,26 +117,26 @@ class BaseTrainer(ABC):
 
     def get_display_metadata(self) -> Dict[str, Any]:
         """Return hints for the frontend dashboard on how to display metrics."""
-        from src.utils import get_display_metadata_for_config
+        from src.utils.config_manager import get_display_metadata_for_config
 
         return get_display_metadata_for_config(self.config)
 
     @abstractmethod
-    def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
+    def _train_step(self, batch: Any) -> Dict[str, float]:
         """Perform a single training step and return metrics."""
         pass
 
     @abstractmethod
-    def _val_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
+    def _val_step(self, batch: Any) -> Dict[str, float]:
         """Perform a single validation step and return metrics."""
         pass
 
-    def train_epoch(self, dataloader, epoch: int) -> Dict[str, float]:
+    def train_epoch(self, dataloader: Any, epoch: int) -> Dict[str, float]:
         self.model.train()
         if hasattr(dataloader.sampler, "set_epoch"):
             dataloader.sampler.set_epoch(epoch)
 
-        metrics_sum = {}
+        metrics_sum: Dict[str, float] = {}
         count = 0
 
         pbar = None
@@ -140,7 +159,7 @@ class BaseTrainer(ABC):
                 pbar.update(1)
 
                 # Stream JSON metrics to sidecar file
-                stream_payload = {
+                stream_payload: Dict[str, Any] = {
                     "epoch": epoch + 1,
                     "progress": count / max(len(dataloader), 1),
                 }
@@ -155,21 +174,25 @@ class BaseTrainer(ABC):
 
         if self.is_main:
             # Persistent SQLite logging
-            run_name = self.config.get("run_id", "unnamed_run")
+            run_name: str = self.config.get("run_id", "unnamed_run")
             for k, v in avg_metrics.items():
                 self.tracker.log_metric(run_name, epoch + 1, k, v)
 
         # Stream final epoch summary
-        summary_payload = {"epoch": epoch + 1, "progress": 1.0, "is_summary": True}
+        summary_payload: Dict[str, Any] = {
+            "epoch": epoch + 1,
+            "progress": 1.0,
+            "is_summary": True,
+        }
         summary_payload.update(avg_metrics)
         self._stream_metric(summary_payload)
 
         return avg_metrics
 
     @torch.no_grad()
-    def evaluate(self, dataloader) -> Dict[str, float]:
+    def evaluate(self, dataloader: Any) -> Dict[str, float]:
         self.model.eval()
-        metrics_sum = {}
+        metrics_sum: Dict[str, float] = {}
         count = 0
 
         pbar = None
@@ -199,28 +222,24 @@ class BaseTrainer(ABC):
         # In DDP, we should average metrics across all processes
         if self.world_size > 1:
             for k in avg_metrics:
-                tensor = torch.tensor(avg_metrics[k], device=self.device)
-                dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
-                avg_metrics[k] = tensor.item() / self.world_size
+                val_tensor = torch.tensor(avg_metrics[k], device=self.device)
+                dist.all_reduce(val_tensor, op=dist.ReduceOp.SUM)
+                avg_metrics[k] = val_tensor.item() / self.world_size
 
         return avg_metrics
 
     @torch.no_grad()
-    def compute_val_pck(self, dataloader, decode_method: str = None) -> float:
+    def compute_val_pck(
+        self, dataloader: Any, decode_method: Optional[str] = None
+    ) -> float:
         """
         Compute PCK@0.2 (torso-relative, covered validation images only).
         Used as the primary criterion for saving best_model.pth.
-
-        Args:
-            dataloader:    Validation DataLoader.
-            decode_method: 'argmax' or 'soft-argmax' (defaults to config).
-            temperature:   Soft-argmax temperature (defaults to config).
-
-        Returns:
-            mean_pck: float in [0, 1].
         """
         self.model.eval()
-        image_size = tuple(self.config.get("dataset", {}).get("image_size", [256, 256]))
+        image_size: Tuple[int, int] = tuple(
+            self.config.get("dataset", {}).get("image_size", [256, 256])
+        )
 
         all_preds, all_gts, all_vis = [], [], []
 
@@ -238,16 +257,19 @@ class BaseTrainer(ABC):
             if pbar:
                 pbar.update(1)
 
-            raw_model = (
-                self.model.module if hasattr(self.model, "module") else self.model
+            raw_model = cast(
+                nn.Module,
+                self.model.module if hasattr(self.model, "module") else self.model,
             )
             outputs = raw_model(images)
 
-            if raw_model.output_type == "heatmap":
+            if getattr(raw_model, "output_type", "heatmap") == "heatmap":
                 method = decode_method or self.config.get("training", {}).get(
                     "decode_method", "argmax"
                 )
-                temp = self.config.get("training", {}).get("decode_temperature", 10.0)
+                temp = float(
+                    self.config.get("training", {}).get("decode_temperature", 10.0)
+                )
                 preds = decode_heatmaps(
                     outputs, image_size, method=method, temperature=temp
                 ).cpu()
@@ -275,20 +297,23 @@ class BaseTrainer(ABC):
         torso = np.linalg.norm(G[:, 8, :] - G[:, 3, :], axis=-1, keepdims=True)
         torso = np.maximum(torso, 1e-6)  # (N, 1)
 
-        dist = np.linalg.norm(P - G, axis=-1)  # (N, 14)
-        correct = (dist < 0.2 * torso) * V
+        dist_val = np.linalg.norm(P - G, axis=-1)  # (N, 14)
+        correct = (dist_val < 0.2 * torso) * V
 
         mean_pck = float(correct.sum() / np.maximum(V.sum(), 1))
         return mean_pck
 
-    def save_checkpoint(self, name: str, is_best: bool = False):
+    def save_checkpoint(self, name: str, is_best: bool = False) -> None:
         if not self.is_main or not self.save_dir:
             return
 
-        checkpoint = {
-            "model_state_dict": self.model.module.state_dict()
-            if hasattr(self.model, "module")
-            else self.model.state_dict(),
+        model_to_save = cast(
+            nn.Module,
+            self.model.module if hasattr(self.model, "module") else self.model,
+        )
+
+        checkpoint: Dict[str, Any] = {
+            "model_state_dict": model_to_save.state_dict(),
             "config": self.config,
             "epoch": self.current_epoch,
             "best_val_pck": self.best_val_pck,
@@ -309,7 +334,7 @@ class BaseTrainer(ABC):
         # Let subclasses add their own state (optimizers, etc.)
         checkpoint.update(self._get_extra_checkpoint_data())
 
-        def _atomic_torch_save(obj, target_path):
+        def _atomic_torch_save(obj: Dict[str, Any], target_path: str) -> bool:
             tmp_path = str(target_path) + ".tmp"
 
             # 1. Save to temporary file
@@ -368,7 +393,7 @@ class BaseTrainer(ABC):
         """Override to add optimizers, schedulers, etc."""
         return {}
 
-    def update_history(self, epoch_data: Dict[str, Any]):
+    def update_history(self, epoch_data: Dict[str, Any]) -> None:
         if not self.is_main or not self.history_path:
             return
         self.history.append(epoch_data)

@@ -1,13 +1,14 @@
 import pytest
 import torch
 import torch.nn as nn
+from typing import Dict, Any
 from src.training.factory import create_trainer
 from src.training.standard_trainer import StandardTrainer
 from src.training.uda_trainer import UDATrainer
 
 
 @pytest.fixture
-def base_config():
+def base_config() -> Dict[str, Any]:
     return {
         "model": {"name": "hrnet", "hrnet": {"num_joints": 14, "in_channels": 1}},
         "training": {
@@ -19,7 +20,7 @@ def base_config():
     }
 
 
-def test_create_standard_trainer(base_config):
+def test_create_standard_trainer(base_config: Dict[str, Any]) -> None:
     device = torch.device("cpu")
     trainer, model = create_trainer(base_config, device)
 
@@ -28,7 +29,7 @@ def test_create_standard_trainer(base_config):
     assert trainer.device == device
 
 
-def test_create_uda_trainer(base_config):
+def test_create_uda_trainer(base_config: Dict[str, Any]) -> None:
     base_config["training_type"] = "uda"
     base_config["uda"] = {"enabled": True, "lambda_adv": 0.1}
 
@@ -40,7 +41,7 @@ def test_create_uda_trainer(base_config):
     assert trainer.lambda_adv == 0.1
 
 
-def test_anatomical_constraints_config(base_config):
+def test_anatomical_constraints_config(base_config: Dict[str, Any]) -> None:
     base_config["training"]["lambda_anatomical"] = 0.5
     device = torch.device("cpu")
     trainer, model = create_trainer(base_config, device)
@@ -50,14 +51,14 @@ def test_anatomical_constraints_config(base_config):
     assert trainer.config["training"]["lambda_anatomical"] == 0.5
 
 
-def test_factory_invalid_config():
+def test_factory_invalid_config() -> None:
     # Test fallback or error handling if needed
-    config = {"model": {"name": "invalid"}}
+    config: Dict[str, Any] = {"model": {"name": "invalid"}}
     with pytest.raises(Exception):
         create_trainer(config, torch.device("cpu"))
 
 
-def test_discriminative_lr(base_config):
+def test_discriminative_lr(base_config: Dict[str, Any]) -> None:
     base_config["training"]["backbone_lr_ratio"] = 0.1
     device = torch.device("cpu")
     trainer, model = create_trainer(base_config, device)

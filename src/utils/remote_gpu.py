@@ -57,7 +57,21 @@ import subprocess
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Generator,
+    Callable,
+    TypeVar,
+    TYPE_CHECKING,
+)
+
+if TYPE_CHECKING:
+    import paramiko
+    from scp import SCPClient
 
 # ── Optional imports — only needed at connection time ─────────────────────────
 try:
@@ -68,6 +82,7 @@ try:
 except ImportError:
     _HAS_PARAMIKO = False
 
+T = TypeVar("T")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data classes
@@ -83,7 +98,7 @@ class RunResult:
     def ok(self) -> bool:
         return self.exit_code == 0
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         lines = self.stdout.strip().splitlines()
         preview = lines[-1] if lines else "(empty)"
         return (
@@ -103,7 +118,7 @@ class BackendConfig:
     # For cloudflare_tunnel type
     tunnel_hostname: str = ""
     # Extra metadata (GPU label, etc.)
-    meta: dict = field(default_factory=dict)
+    meta: Dict[str, Any] = field(default_factory=dict)
 
     def effective_host(self) -> str:
         """Resolve actual TCP host to connect to."""
@@ -124,17 +139,17 @@ class CloudflaredProxy:
     ProxyCommand support.
     """
 
-    def __init__(self, hostname: str, local_port: int = 0):
+    def __init__(self, hostname: str, local_port: int = 0) -> None:
         import socket
 
         if local_port == 0:
             # Find a free port
             with socket.socket() as s:
                 s.bind(("", 0))
-                local_port = s.getsockname()[1]
+                local_port = int(s.getsockname()[1])
         self.hostname = hostname
         self.local_port = local_port
-        self._proc: subprocess.Popen | None = None
+        self._proc: Optional[subprocess.Popen[str]] = None
         self._executable = self._get_cloudflared_executable()
 
     def _get_cloudflared_executable(self) -> str:
@@ -163,7 +178,7 @@ class CloudflaredProxy:
         # Default back to "cloudflared" and hope for the best
         return "cloudflared"
 
-    def start(self, timeout: float = 15.0):
+    def start(self, timeout: float = 15.0) -> None:
         cmd = [
             self._executable,
             "access",
@@ -209,16 +224,16 @@ class CloudflaredProxy:
             f"within {timeout}s. Is cloudflared installed and in PATH?"
         )
 
-    def stop(self):
+    def stop(self) -> None:
         if self._proc:
             self._proc.terminate()
             self._proc = None
 
-    def __enter__(self):
+    def __enter__(self) -> CloudflaredProxy:
         self.start()
         return self
 
-    def __exit__(self, *_):
+    def __exit__(self, *args: Any) -> None:
         self.stop()
 
 
@@ -230,17 +245,17 @@ class CloudflaredProxy:
 class GPUSession:
     """Active SSH session to a remote GPU. Use via GPUManager.use()."""
 
-    def __init__(self, config: BackendConfig):
+    def __init__(self, config: BackendConfig) -> None:
         if not _HAS_PARAMIKO:
             raise ImportError("paramiko and scp are required: pip install paramiko scp")
         self.config = config
-        self._ssh: paramiko.SSHClient | None = None
-        self._proxy: CloudflaredProxy | None = None
-        self.remote_home_dir: str | None = None
+        self._ssh: Optional[paramiko.SSHClient] = None
+        self._proxy: Optional[CloudflaredProxy] = None
+        self.remote_home_dir: Optional[str] = None
 
     # ── Connection lifecycle ──────────────────────────────────────────────────
 
-    def connect(self):
+    def connect(self) -> None:
         key_path = os.path.expanduser(self.config.ssh_key)
 
         if self.config.type == "cloudflare_tunnel":
@@ -270,10 +285,11 @@ class GPUSession:
             banner_timeout=60,
         )
         # Prevent session timeout during long data downloads
-        if self._ssh.get_transport():
-            self._ssh.get_transport().set_keepalive(30)
-            if self._ssh.get_transport().sock:
-                self._ssh.get_transport().sock.settimeout(300.0)
+        transport = self._ssh.get_transport()
+        if transport:
+            transport.set_keepalive(30)
+            if transport.sock:
+                transport.sock.settimeout(300.0)
 
         # Determine remote home directory dynamically
         try:
@@ -294,7 +310,7 @@ class GPUSession:
             return path.replace("~", self.remote_home_dir, 1)
         return path
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         if self._ssh:
             try:
                 self._ssh.close()
@@ -308,7 +324,7 @@ class GPUSession:
                 pass
             self._proxy = None
 
-    def ensure_connected(self):
+    def ensure_connected(self) -> None:
         """Ensure that the SSH connection is active, reconnecting if necessary."""
         is_active = False
         if self._ssh:
@@ -329,7 +345,9 @@ class GPUSession:
                 pass
             self.connect()
 
-    def _execute_with_retry(self, operation_name: str, func, *args, **kwargs):
+    def _execute_with_retry(
+        self, operation_name: str, func: Callable[..., T], *args: Any, **kwargs: Any
+    ) -> T:
         """
         Executes a GPUSession operation with transparent automatic connection recovery.
         """
@@ -380,18 +398,25 @@ class GPUSession:
                 else:
                     # Not a connection error or maximum retries exceeded
                     raise
+        raise RuntimeError(f"Maximum retries exceeded for {operation_name}")
 
     def open_sftp(self) -> paramiko.SFTPClient:
         """Open an SFTP session with automatic connection check and retry."""
 
-        def _open():
+        def _open() -> paramiko.SFTPClient:
+            if self._ssh is None:
+                raise RuntimeError("SSH client is not connected")
             return self._ssh.open_sftp()
 
         return self._execute_with_retry("open_sftp", _open)
 
-    def exec_command(self, command: str, *args, **kwargs):
+    def exec_command(
+        self, command: str, *args: Any, **kwargs: Any
+    ) -> Tuple[paramiko.ChannelFile, paramiko.ChannelFile, paramiko.ChannelFile]:
         """Execute a command directly on the SSH client with automatic connection check."""
         self.ensure_connected()
+        if self._ssh is None:
+            raise RuntimeError("SSH client is not connected")
         return self._ssh.exec_command(command, *args, **kwargs)
 
     # ── Remote execution ──────────────────────────────────────────────────────
@@ -417,27 +442,35 @@ class GPUSession:
             the remote ``~/.bash_profile`` is sourced automatically.
         """
 
-        def _run():
+        def _run() -> RunResult:
             import sys
             import threading
 
             # Wrap in a login shell so ~/.bash_profile is sourced
             wrapped = f"bash -l -c {shlex.quote(command)}"
 
+            if self._ssh is None:
+                raise RuntimeError("SSH client is not connected")
+
             _, stdout_f, stderr_f = self._ssh.exec_command(wrapped, timeout=timeout)
-            stdout_lines: list[str] = []
-            stderr_lines: list[str] = []
+            stdout_lines: List[str] = []
+            stderr_lines: List[str] = []
 
             if stream:
 
-                def _stream(channel_file, storage, prefix=""):
+                def _stream(
+                    channel_file: paramiko.ChannelFile,
+                    storage: List[str],
+                    prefix: str = "",
+                ) -> None:
                     while True:
                         try:
                             chunk = channel_file.read(8192)
                             if not chunk:
                                 break
 
-                            data = chunk.decode(sys.stdout.encoding, errors="replace")
+                            encoding = sys.stdout.encoding or "utf-8"
+                            data = chunk.decode(encoding, errors="replace")
                             storage.append(data)
 
                             if prefix:
@@ -489,31 +522,43 @@ class GPUSession:
 
     # ── File transfer ─────────────────────────────────────────────────────────
 
-    def upload(self, local_path: str, remote_path: str, recursive: bool = True):
+    def upload(self, local_path: str, remote_path: str, recursive: bool = True) -> None:
         """
         Upload a local file or directory to the remote GPU.
         Uses SCP under the hood.
         """
         remote_path = self._expand_remote_path(remote_path)
 
-        def _upload():
-            with SCPClient(self._ssh.get_transport()) as scp:
+        def _upload() -> None:
+            if self._ssh is None:
+                raise RuntimeError("SSH client is not connected")
+            transport = self._ssh.get_transport()
+            if transport is None:
+                raise RuntimeError("SSH transport is not available")
+            with SCPClient(transport) as scp:
                 scp.put(local_path, remote_path=remote_path, recursive=recursive)
             print(f"Uploaded {local_path!r} -> {remote_path!r}")
 
         return self._execute_with_retry("upload", _upload)
 
-    def download(self, remote_path: str, local_path: str, recursive: bool = True):
+    def download(
+        self, remote_path: str, local_path: str, recursive: bool = True
+    ) -> None:
         """Download a file or directory from the remote GPU."""
         remote_path = self._expand_remote_path(remote_path)
 
-        def _download():
+        def _download() -> None:
+            if self._ssh is None:
+                raise RuntimeError("SSH client is not connected")
             # Fix: Only create parent directory, not the local_path itself!
             # Otherwise scp always treats local_path as a destination directory.
             parent = os.path.dirname(local_path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-            with SCPClient(self._ssh.get_transport()) as scp:
+            transport = self._ssh.get_transport()
+            if transport is None:
+                raise RuntimeError("SSH transport is not available")
+            with SCPClient(transport) as scp:
                 scp.get(remote_path, local_path=local_path, recursive=recursive)
             print(f"Downloaded {remote_path!r} -> {local_path!r}")
 
@@ -523,8 +568,8 @@ class GPUSession:
         self,
         local_dir: str = ".",
         remote_dir: str = "/root/project",
-        exclude: list[str] | None = None,
-    ):
+        exclude: Optional[List[str]] = None,
+    ) -> None:
         """
         Sync local code to the remote GPU, excluding data, venv, and git.
         Optimized to avoid redundant large uploads.
@@ -643,7 +688,7 @@ class GPUSession:
                 f"find {remote_asset_path} -type f -exec stat -c '%s %Y %n' {{}} +",
                 stream=False,
             )
-            remote_files = {}
+            remote_files: Dict[str, Tuple[int, int]] = {}
             for line in result.stdout.splitlines():
                 parts = line.split(maxsplit=2)
                 if len(parts) >= 3:
@@ -684,11 +729,11 @@ class GPUSession:
 
         print(f"Project synced successfully to {remote_dir}")
 
-    def write_file(self, remote_path: str, content: str):
+    def write_file(self, remote_path: str, content: str) -> None:
         """Write a text string directly to a file on the remote GPU."""
         remote_path = self._expand_remote_path(remote_path)
 
-        def _write():
+        def _write() -> None:
             sftp = self.open_sftp()
             with sftp.open(remote_path, "w") as f:
                 f.write(content)
@@ -700,12 +745,12 @@ class GPUSession:
         """Read a text file from the remote GPU."""
         remote_path = self._expand_remote_path(remote_path)
 
-        def _read():
+        def _read() -> str:
             sftp = self.open_sftp()
             with sftp.open(remote_path, "r") as f:
                 content = f.read()
             sftp.close()
-            return content.decode() if isinstance(content, bytes) else content
+            return content.decode() if isinstance(content, bytes) else str(content)
 
         return self._execute_with_retry("read_file", _read)
 
@@ -716,11 +761,11 @@ class GPUSession:
 
     # ── Context manager ───────────────────────────────────────────────────────
 
-    def __enter__(self):
+    def __enter__(self) -> GPUSession:
         self.connect()
         return self
 
-    def __exit__(self, *_):
+    def __exit__(self, *args: Any) -> None:
         self.disconnect()
 
 
@@ -746,12 +791,12 @@ class GPUManager:
             gpu.run('python train.py')
     """
 
-    def __init__(self):
-        self._backends: dict[str, BackendConfig] = {}
+    def __init__(self) -> None:
+        self._backends: Dict[str, BackendConfig] = {}
 
     # ── Registration ──────────────────────────────────────────────────────────
 
-    def add_backend(self, name: str, cfg: dict[str, Any]):
+    def add_backend(self, name: str, cfg: Dict[str, Any]) -> None:
         """Register a GPU backend by name."""
         self._backends[name] = BackendConfig(
             name=name,
@@ -765,7 +810,7 @@ class GPUManager:
         )
         print(f"Registered backend: {name!r} [{cfg.get('type', 'ssh')}]")
 
-    def add_backend_from_json(self, name: str, json_path: str):
+    def add_backend_from_json(self, name: str, json_path: str) -> None:
         """
         Load backend config from a gpu_connection.json file.
 
@@ -797,16 +842,16 @@ class GPUManager:
             },
         )
 
-    def remove_backend(self, name: str):
+    def remove_backend(self, name: str) -> None:
         self._backends.pop(name, None)
 
-    def list_backends(self) -> list[str]:
+    def list_backends(self) -> List[str]:
         return list(self._backends.keys())
 
     # ── Connection ────────────────────────────────────────────────────────────
 
     @contextmanager
-    def use(self, name: str):
+    def use(self, name: str) -> Generator[GPUSession, None, None]:
         """
         Context manager that opens and yields a GPUSession for the named backend.
 
@@ -825,7 +870,9 @@ class GPUManager:
             session.__exit__(None, None, None)
 
     @contextmanager
-    def use_any(self, preferred: list[str] | None = None):
+    def use_any(
+        self, preferred: Optional[List[str]] = None
+    ) -> Generator[GPUSession, None, None]:
         """
         Try backends in order (preferred list first, then all others) and
         open the first one that is reachable.
@@ -853,7 +900,7 @@ class GPUManager:
 
     # ── Bulk operations ───────────────────────────────────────────────────────
 
-    def ping_all(self) -> dict[str, bool]:
+    def ping_all(self) -> Dict[str, bool]:
         """
         Check which backends are reachable (TCP connect only, no SSH handshake).
         Returns {name: reachable_bool}.
@@ -867,7 +914,7 @@ class GPUManager:
                     # Just check DNS resolves — full reachability needs cloudflared
                     import socket
 
-                    socket.getaddrinfo(cfg.tunnel_hostname, 443, timeout=5)
+                    socket.getaddrinfo(cfg.tunnel_hostname, 443)
                     results[name] = True
                 else:
                     with socket.create_connection((cfg.host, cfg.port), timeout=5):

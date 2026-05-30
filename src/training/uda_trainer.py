@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from .base_trainer import BaseTrainer
 
 
@@ -10,29 +10,40 @@ class UDATrainer(BaseTrainer):
     and Gradient Reversal Layer (GRL).
     """
 
+    optimizer: torch.optim.Optimizer
+    discriminator: nn.Module
+    optimizer_d: torch.optim.Optimizer
+    criterion: nn.Module
+    criterion_d: nn.Module
+    lambda_adv: float
+    warmup_epochs: int
+    total_steps: int
+    num_batches_per_epoch: int
+
     def __init__(
         self,
         model: nn.Module,
         discriminator: nn.Module,
-        optimizer: torch.optim.Optimizer,
+        optimizer: Optional[torch.optim.Optimizer],
         optimizer_d: torch.optim.Optimizer,
         criterion: nn.Module,
         config: Dict[str, Any],
         device: torch.device,
         rank: int = 0,
         world_size: int = 1,
-    ):
+    ) -> None:
         super().__init__(model, config, device, rank, world_size)
         self.discriminator = discriminator.to(device)
-        self.optimizer = optimizer
+        if optimizer is not None:
+            self.optimizer = optimizer
         self.optimizer_d = optimizer_d
         self.criterion = criterion
         self.criterion_d = nn.BCEWithLogitsLoss()
 
         # UDA specific params
-        uda_cfg = config.get("uda", {})
-        self.lambda_adv = uda_cfg.get("lambda_adv", 0.001)
-        self.warmup_epochs = uda_cfg.get("warmup_epochs", 10)
+        uda_cfg: Dict[str, Any] = config.get("uda", {})
+        self.lambda_adv = float(uda_cfg.get("lambda_adv", 0.001))
+        self.warmup_epochs = int(uda_cfg.get("warmup_epochs", 10))
 
         # Metrics tracking
         self.total_steps = 0
@@ -54,7 +65,7 @@ class UDATrainer(BaseTrainer):
         current_epoch = (
             self.total_steps / self.num_batches_per_epoch
             if hasattr(self, "num_batches_per_epoch")
-            else 0
+            else 0.0
         )
         alpha = (
             min(1.0, current_epoch / self.warmup_epochs)
@@ -128,12 +139,12 @@ class UDATrainer(BaseTrainer):
             "total_steps": self.total_steps,
         }
 
-    def fit(self, train_loader, val_loader=None):
+    def fit(self, train_loader: Any, val_loader: Any = None) -> None:
         self.num_batches_per_epoch = len(train_loader)
 
         for epoch in range(self.start_epoch, self.epochs):
             train_metrics = self.train_epoch(train_loader, epoch)
-            val_metrics = {}
+            val_metrics: Dict[str, float] = {}
 
             if val_loader:
                 val_metrics = self.evaluate(val_loader)
@@ -147,7 +158,7 @@ class UDATrainer(BaseTrainer):
                         [f"val_{k}={v:.4f}" for k, v in val_metrics.items()]
                     )
                 # Stream comprehensive JSON summary to sidecar file
-                summary_payload = {
+                summary_payload: Dict[str, Any] = {
                     "epoch": epoch + 1,
                     "progress": 1.0,
                     "is_summary": True,
@@ -168,7 +179,7 @@ class UDATrainer(BaseTrainer):
                 self.save_checkpoint(f"epoch_{epoch + 1}", is_best=is_best)
 
                 # History update
-                epoch_data = {
+                epoch_data: Dict[str, Any] = {
                     "epoch": epoch + 1,
                     **train_metrics,
                     **{f"val_{k}": v for k, v in val_metrics.items()},

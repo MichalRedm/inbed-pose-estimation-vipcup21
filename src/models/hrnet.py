@@ -15,17 +15,18 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import List, Tuple, Union, Any, Dict, Optional, Type, cast
 from .base import BaseModel
 from .registry import register_model
 
 
-def conv3x3(in_planes, out_planes, stride=1):
+def conv3x3(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
     return nn.Conv2d(
         in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False
     )
 
 
-def conv1x1(in_planes, out_planes, stride=1):
+def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 
@@ -33,9 +34,15 @@ def conv1x1(in_planes, out_planes, stride=1):
 
 
 class BasicBlock(nn.Module):
-    expansion = 1
+    expansion: int = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(
+        self,
+        inplanes: int,
+        planes: int,
+        stride: int = 1,
+        downsample: Optional[nn.Module] = None,
+    ) -> None:
         super().__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -44,19 +51,25 @@ class BasicBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
         out = self.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
         if self.downsample is not None:
             residual = self.downsample(x)
-        return self.relu(out + residual)
+        return cast(torch.Tensor, self.relu(out + residual))
 
 
 class Bottleneck(nn.Module):
-    expansion = 4
+    expansion: int = 4
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(
+        self,
+        inplanes: int,
+        planes: int,
+        stride: int = 1,
+        downsample: Optional[nn.Module] = None,
+    ) -> None:
         super().__init__()
         self.conv1 = conv1x1(inplanes, planes)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -67,27 +80,33 @@ class Bottleneck(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
         out = self.relu(self.bn1(self.conv1(x)))
         out = self.relu(self.bn2(self.conv2(out)))
         out = self.bn3(self.conv3(out))
         if self.downsample is not None:
             residual = self.downsample(x)
-        return self.relu(out + residual)
+        return cast(torch.Tensor, self.relu(out + residual))
 
 
 # ── Layer Builder ─────────────────────────────────────────────────────────────
 
 
-def make_layer(block, inplanes, planes, num_blocks, stride=1):
+def make_layer(
+    block: Type[Union[BasicBlock, Bottleneck]],
+    inplanes: int,
+    planes: int,
+    num_blocks: int,
+    stride: int = 1,
+) -> nn.Sequential:
     downsample = None
     if stride != 1 or inplanes != planes * block.expansion:
         downsample = nn.Sequential(
             conv1x1(inplanes, planes * block.expansion, stride),
             nn.BatchNorm2d(planes * block.expansion),
         )
-    layers = [block(inplanes, planes, stride, downsample)]
+    layers: List[nn.Module] = [block(inplanes, planes, stride, downsample)]
     inplanes = planes * block.expansion
     for _ in range(1, num_blocks):
         layers.append(block(inplanes, planes))
@@ -102,7 +121,7 @@ class FusionLayer(nn.Module):
     Fuses features from num_branches parallel streams.
     """
 
-    def __init__(self, num_branches, channels):
+    def __init__(self, num_branches: int, channels: List[int]) -> None:
         super().__init__()
         self.num_branches = num_branches
         # Use 'layers' to avoid conflict with the parent member name 'fuse_layers'
@@ -113,7 +132,7 @@ class FusionLayer(nn.Module):
                 if j == i:
                     fuse_layer.append(nn.Identity())
                 elif j < i:
-                    ops = []
+                    ops: List[nn.Module] = []
                     for k in range(i - j):
                         if k == i - j - 1:
                             ops += [
@@ -137,18 +156,19 @@ class FusionLayer(nn.Module):
             self.layers.append(fuse_layer)
         self.relu = nn.ReLU(inplace=True)
 
-    def forward(self, x):
+    def forward(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
         y = []
         for i in range(self.num_branches):
             acc = None
             for j in range(self.num_branches):
-                feat = self.layers[i][j](x[j])
+                fuse_row = cast(nn.ModuleList, self.layers[i])
+                feat = cast(torch.Tensor, fuse_row[j](x[j]))
                 if j > i:
                     feat = F.interpolate(
                         feat, size=x[i].shape[2:], mode="bilinear", align_corners=True
                     )
                 acc = feat if acc is None else acc + feat
-            y.append(self.relu(acc))
+            y.append(cast(torch.Tensor, self.relu(acc)))
         return y
 
 
@@ -156,7 +176,9 @@ class FusionLayer(nn.Module):
 
 
 class HRNetModule(nn.Module):
-    def __init__(self, num_branches, channels, num_blocks=4):
+    def __init__(
+        self, num_branches: int, channels: List[int], num_blocks: int = 4
+    ) -> None:
         super().__init__()
         self.branches = nn.ModuleList(
             [
@@ -166,8 +188,8 @@ class HRNetModule(nn.Module):
         )
         self.fuse_layers = FusionLayer(num_branches, channels)
 
-    def forward(self, x):
-        x = [self.branches[b](x[b]) for b in range(len(x))]
+    def forward(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
+        x = [cast(torch.Tensor, self.branches[b](x[b])) for b in range(len(x))]
         x = self.fuse_layers(x)
         return x
 
@@ -175,7 +197,9 @@ class HRNetModule(nn.Module):
 # ── Transition Layer ──────────────────────────────────────────────────────────
 
 
-def make_transition(in_channels, out_channels_list):
+def make_transition(
+    in_channels: List[int], out_channels_list: List[int]
+) -> nn.ModuleList:
     """
     Creates a transition layer that:
       - Adapts existing branches to new channel sizes.
@@ -225,9 +249,10 @@ class HRNet(BaseModel):
     """
 
     # W32 channel widths per stream
-    W32 = [32, 64, 128, 256]
+    W32: List[int] = [32, 64, 128, 256]
+    in_channels: int
 
-    def __init__(self, config):
+    def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
         # Handle both full config and sub-config
         if "model" in config:
@@ -317,7 +342,7 @@ class HRNet(BaseModel):
             for p in self.layer1.parameters():
                 p.requires_grad = False
 
-    def _load_pretrained_weights(self, pretrained_source):
+    def _load_pretrained_weights(self, pretrained_source: Union[bool, str]) -> None:
         """
         Loads pre-trained weights from a URL or local path.
         Default URL is HRNet-W32 (OpenMMLab mirror).
@@ -427,7 +452,7 @@ class HRNet(BaseModel):
         except Exception as e:
             print(f"[HRNet] Failed to load pre-trained weights: {e}")
 
-    def unfreeze_all(self):
+    def unfreeze_all(self) -> None:
         """Re-enable gradient tracking on all parameters (for progressive unfreezing)."""
         for param in self.parameters():
             param.requires_grad = True
@@ -437,45 +462,50 @@ class HRNet(BaseModel):
     def output_type(self) -> str:
         return "heatmap"
 
-    def _apply_transition(self, transition, x_list):
+    def _apply_transition(
+        self, transition: nn.ModuleList, x_list: List[torch.Tensor]
+    ) -> List[torch.Tensor]:
         """Apply transition layers, extending x_list if new branches are added."""
         result = []
         for i, layer in enumerate(transition):
             if i < len(x_list):
-                result.append(layer(x_list[i]))
+                result.append(cast(torch.Tensor, layer(x_list[i])))
             else:
                 # New branch: starts from the last existing stream
-                result.append(layer(x_list[-1]))
+                result.append(cast(torch.Tensor, layer(x_list[-1])))
         return result
 
-    def forward(self, x, return_features=False):
+    def forward(
+        self, x: torch.Tensor, **kwargs: Any
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        return_features = kwargs.get("return_features", False)
         # Stem
-        x = self.relu(self.bn1(self.conv1(x)))
-        x = self.relu(self.bn2(self.conv2(x)))
+        x = cast(torch.Tensor, self.relu(self.bn1(self.conv1(x))))
+        x = cast(torch.Tensor, self.relu(self.bn2(self.conv2(x))))
 
         # Stage 1 (single bottleneck stream)
-        x = self.layer1(x)
+        x = cast(torch.Tensor, self.layer1(x))
 
         # Transition 1 → Stage 2
-        x = self._apply_transition(self.transition1, [x])
-        x = self.stage2(x)
+        x_list = self._apply_transition(self.transition1, [x])
+        x_list = self.stage2(x_list)
 
         # Transition 2 → Stage 3
-        x = self._apply_transition(self.transition2, x)
-        x = self.stage3(x)
+        x_list = self._apply_transition(self.transition2, x_list)
+        x_list = self.stage3(x_list)
 
         # Transition 3 → Stage 4
-        x = self._apply_transition(self.transition3, x)
-        x = self.stage4(x)
+        x_list = self._apply_transition(self.transition3, x_list)
+        x_list = self.stage4(x_list)
 
         # Head: upsample all streams to highest resolution, concatenate
-        target_size = x[0].shape[2:]
+        target_size = x_list[0].shape[2:]
         upsampled = [
             F.interpolate(xi, size=target_size, mode="bilinear", align_corners=True)
-            for xi in x
+            for xi in x_list
         ]
         features = torch.cat(upsampled, dim=1)
-        heatmaps = self.head(features)
+        heatmaps = cast(torch.Tensor, self.head(features))
 
         if return_features:
             return heatmaps, features

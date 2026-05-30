@@ -1,22 +1,23 @@
 import pytest
 import torch
 import torch.nn as nn
+from typing import Dict, Any
 from src.training.standard_trainer import StandardTrainer
 from src.data.dataset import VIPCupDataset
 
 
 class MockModel(nn.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.conv = nn.Conv2d(1, 1, 3)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.conv(x)
 
 
-def test_sigma_curriculum_decay():
+def test_sigma_curriculum_decay() -> None:
     # Setup mock config
-    config = {
+    config: Dict[str, Any] = {
         "training": {
             "epochs": 40,
             "sigma_start": 3.0,
@@ -51,7 +52,7 @@ def test_sigma_curriculum_decay():
     assert sigma_14 == pytest.approx(2.25)
 
 
-def test_dataset_set_sigma():
+def test_dataset_set_sigma() -> None:
     # Mock data root and initialize a simple dataset structure if mock,
     # but here we can just test if VIPCupDataset implements set_sigma and generate_heatmaps
     # dynamically responds to the updated sigma

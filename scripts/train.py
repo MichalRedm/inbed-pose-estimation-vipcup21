@@ -7,6 +7,7 @@ import random
 import numpy as np
 import sys
 from pathlib import Path
+from typing import Dict, Any, List, Optional, Union
 
 # Add project root to sys.path to allow importing src
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -17,7 +18,7 @@ from src.data.augmentations import DataAugmenter
 from src.training.factory import create_trainer
 
 
-def set_seed(seed=42):
+def set_seed(seed: int = 42) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -26,7 +27,7 @@ def set_seed(seed=42):
     torch.backends.cudnn.benchmark = False
 
 
-def check_cuda():
+def check_cuda() -> None:
     if not dist.is_initialized() or dist.get_rank() == 0:
         print(f"CUDA Available: {torch.cuda.is_available()}")
         if torch.cuda.is_available():
@@ -37,7 +38,7 @@ def check_cuda():
             )
 
 
-def train():
+def train() -> None:
     # 1. Parse Initial Config Path (to load before other overrides)
     parser = argparse.ArgumentParser(
         description="Unified Training Script", add_help=False
@@ -47,8 +48,8 @@ def train():
 
     # 2. Load Configuration
     config = load_config(args_config.config)
-    train_cfg = config.get("training", {})
-    dataset_cfg = config.get("dataset", {})
+    train_cfg: Dict[str, Any] = config.get("training", {})
+    dataset_cfg: Dict[str, Any] = config.get("dataset", {})
 
     # 3. Parse CLI Overrides
     parser = argparse.ArgumentParser(description="Unified Training Script")
@@ -117,7 +118,7 @@ def train():
         config["training"]["cyclegan"] = True
 
     # Handle Run ID and Logging
-    run_root = None
+    run_root: Optional[Path] = None
     if args.run_id:
         run_root = Path(__file__).parent.parent / "results" / "runs" / args.run_id
         os.makedirs(run_root / "checkpoints", exist_ok=True)
@@ -138,7 +139,7 @@ def train():
         pass
 
     # 4. Setup Device & Distributed
-    set_seed(train_cfg.get("seed", 42))
+    set_seed(int(train_cfg.get("seed", 42)))
     rank = int(os.environ.get("RANK", 0))
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -154,23 +155,23 @@ def train():
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if rank == 0:
-        mode = config.get("training_type", "standard").upper()
+        mode = str(config.get("training_type", "standard")).upper()
         print(f"--- Starting {mode} Training ---")
         print(
             f"Device: {device} (Distributed: {is_distributed}, World Size: {world_size})"
         )
 
     # 5. Initialize Data
-    s_train = dataset_cfg.get("subjects_train", [1, 30])
-    s_val = dataset_cfg.get("subjects_val", [81, 90])
+    s_train: List[int] = dataset_cfg.get("subjects_train", [1, 30])
+    s_val: List[int] = dataset_cfg.get("subjects_val", [81, 90])
     augmenter = DataAugmenter(
         config["training"].get("augmentation", {}), dataset_root=args.data_root
     )
 
     # Determine in_channels from model config
-    model_cfg = config.get("model", {})
-    model_name = model_cfg.get("name", "hrnet")
-    in_channels = model_cfg.get(model_name, {}).get("in_channels", 1)
+    model_cfg: Dict[str, Any] = config.get("model", {})
+    model_name = str(model_cfg.get("name", "hrnet"))
+    in_channels = int(model_cfg.get(model_name, {}).get("in_channels", 1))
 
     if config.get("training", {}).get("cyclegan"):
         from src.data.dataset import PairedDataset
@@ -204,7 +205,7 @@ def train():
             in_channels=3,
             return_joints=False,
         )
-        train_dataset = PairedDataset(ds_A, ds_B)
+        train_dataset: Union[VIPCupDataset, PairedDataset] = PairedDataset(ds_A, ds_B)
 
         # Validation for CycleGAN (using small subset of training subjects for monitoring)
         ds_A_val = VIPCupDataset(
@@ -225,9 +226,11 @@ def train():
             in_channels=3,
             return_joints=False,
         )
-        val_dataset = PairedDataset(ds_A_val, ds_B_val)
+        val_dataset: Union[VIPCupDataset, PairedDataset] = PairedDataset(
+            ds_A_val, ds_B_val
+        )
 
-        collate_fn = (
+        collate_fn: Optional[Any] = (
             None  # Standard collate is fine for PairedDataset returning tensors
         )
     else:
@@ -251,7 +254,7 @@ def train():
         )
         collate_fn = collate_skip_none
 
-    train_sampler = (
+    train_sampler: Optional[torch.utils.data.Sampler] = (
         torch.utils.data.DistributedSampler(train_dataset) if is_distributed else None
     )
     train_loader = torch.utils.data.DataLoader(
@@ -290,7 +293,7 @@ def train():
             state = torch.load(latest_ckpt, map_location=device)
 
             # Get start_epoch from checkpoint state OR history (take max)
-            ckpt_epoch = state.get("epoch", 0)
+            ckpt_epoch = int(state.get("epoch", 0))
             hist_epoch = 0
             history_path = Path(config["training"]["save_dir"]) / "history.json"
             if history_path.exists():
@@ -306,7 +309,7 @@ def train():
                 print(f"Resuming from global epoch {start_epoch + 1}")
 
             state = torch.load(latest_ckpt, map_location=device)
-            m_state = state.get("model_state_dict", state)
+            m_state: Dict[str, Any] = state.get("model_state_dict", state)
             # Remove 'module.' prefix if it exists (saved from DDP)
             m_state = {k.replace("module.", ""): v for k, v in m_state.items()}
             model.load_state_dict(m_state)

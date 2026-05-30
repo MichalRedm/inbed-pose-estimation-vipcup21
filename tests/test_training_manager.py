@@ -1,10 +1,11 @@
 import pytest
 from unittest.mock import patch
+from typing import Generator
 from src.training.manager import TrainingManager
 
 
 @pytest.fixture
-def manager():
+def manager() -> Generator[TrainingManager, None, None]:
     import shutil
     from pathlib import Path
 
@@ -16,13 +17,13 @@ def manager():
             shutil.rmtree(run_dir)
 
 
-def test_manager_status_initial(manager):
+def test_manager_status_initial(manager: TrainingManager) -> None:
     status = manager.get_status()
     assert status["is_running"] is False
     assert status["progress"] == 0
 
 
-def test_manager_config_overrides(manager):
+def test_manager_config_overrides(manager: TrainingManager) -> None:
     # Mock _run_training to avoid any thread/process side effects
     with patch.object(TrainingManager, "_run_training"):
         # Explicitly set remote to false for local testing
@@ -35,14 +36,14 @@ def test_manager_config_overrides(manager):
         manager.is_running = False
 
 
-def test_manager_stop_when_not_running(manager):
+def test_manager_stop_when_not_running(manager: TrainingManager) -> None:
     # Stop should return False if not running
     success, message = manager.stop_training()
     assert success is False
     assert "no training in progress" in message.lower()
 
 
-def test_run_id_generation(manager):
+def test_run_id_generation(manager: TrainingManager) -> None:
     # Test if manager generates a run_id
     with patch.object(TrainingManager, "_run_training"):
         manager.start_training({})

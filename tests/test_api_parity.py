@@ -3,7 +3,7 @@ import numpy as np
 from src.utils.pose import decode_heatmaps
 
 
-def test_decoding_parity():
+def test_decoding_parity() -> None:
     """Verify that argmax and soft-argmax produce expected results for a sharp Gaussian."""
     B, J, H, W = 1, 1, 64, 64
     image_size = (256, 256)
@@ -25,7 +25,7 @@ def test_decoding_parity():
     np.testing.assert_allclose(preds_soft[0, 0, 1].item(), 64.0, atol=1.0)
 
 
-def test_soft_argmax_subpixel():
+def test_soft_argmax_subpixel() -> None:
     """Verify that soft-argmax can recover sub-pixel coordinates."""
     B, J, H, W = 1, 1, 64, 64
     image_size = (64, 64)  # Use 1:1 scale for simplicity

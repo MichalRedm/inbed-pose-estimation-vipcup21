@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Tuple, Union, cast
 
 from src.training.losses import AnatomicalLoss, UncertaintyWeighting
 from src.models.layers import SoftArgmax2D
@@ -15,24 +15,49 @@ class PoseLightningModule(pl.LightningModule):
     and consolidating all the training steps, loss terms, and optimizer construction logic.
     """
 
+    model: nn.Module
+    config: Dict[str, Any]
+    criterion: nn.Module
+    unfreeze_epoch: Optional[int]
+    backbone_lr_ratio: float
+    lambda_anatomical: float
+    warmup_epochs: int
+    anatomical_mode: str
+    lambda_coord: float
+    lambda_coord_occluded: float
+    sigma_start: float
+    sigma_end: float
+    using_model_coords: bool
+    soft_argmax: SoftArgmax2D
+    anatomical_criterion: AnatomicalLoss
+    use_uncertainty: bool
+    tasks: List[str]
+    uncertainty_loss: UncertaintyWeighting
+    last_step_metrics: Dict[str, float]
+
     def __init__(
-        self, model: nn.Module, config: Dict[str, Any], criterion: nn.Module = None
-    ):
+        self,
+        model: nn.Module,
+        config: Dict[str, Any],
+        criterion: Optional[nn.Module] = None,
+    ) -> None:
         super().__init__()
         self.model = model
         self.config = config
         self.criterion = criterion or nn.MSELoss()
 
-        training_cfg = config.get("training", {})
-        self.unfreeze_epoch = training_cfg.get("unfreeze_epoch", None)
-        self.backbone_lr_ratio = training_cfg.get("backbone_lr_ratio", 1.0)
-        self.lambda_anatomical = training_cfg.get("lambda_anatomical", 0.0)
-        self.warmup_epochs = training_cfg.get("warmup_epochs", 10)
-        self.anatomical_mode = training_cfg.get("anatomical_mode", "hinge")
-        self.lambda_coord = training_cfg.get("lambda_coord", 0.0)
-        self.lambda_coord_occluded = training_cfg.get("lambda_coord_occluded", 0.0)
-        self.sigma_start = training_cfg.get("sigma_start", 2.0)
-        self.sigma_end = training_cfg.get("sigma_end", 2.0)
+        training_cfg: Dict[str, Any] = config.get("training", {})
+        self.unfreeze_epoch = training_cfg.get("unfreeze_epoch")
+        self.backbone_lr_ratio = float(training_cfg.get("backbone_lr_ratio", 1.0))
+        self.lambda_anatomical = float(training_cfg.get("lambda_anatomical", 0.0))
+        self.warmup_epochs = int(training_cfg.get("warmup_epochs", 10))
+        self.anatomical_mode = str(training_cfg.get("anatomical_mode", "hinge"))
+        self.lambda_coord = float(training_cfg.get("lambda_coord", 0.0))
+        self.lambda_coord_occluded = float(
+            training_cfg.get("lambda_coord_occluded", 0.0)
+        )
+        self.sigma_start = float(training_cfg.get("sigma_start", 2.0))
+        self.sigma_end = float(training_cfg.get("sigma_end", 2.0))
 
         # Flag indicating whether we are currently using model's own coordinate outputs
         self.using_model_coords = False
@@ -51,7 +76,9 @@ class PoseLightningModule(pl.LightningModule):
             )
 
         # Multi-task uncertainty weighting
-        self.use_uncertainty = training_cfg.get("use_uncertainty_weighting", False)
+        self.use_uncertainty = bool(
+            training_cfg.get("use_uncertainty_weighting", False)
+        )
         if self.use_uncertainty:
             # Determine tasks
             self.tasks = ["pose"]
@@ -64,8 +91,12 @@ class PoseLightningModule(pl.LightningModule):
 
             self.uncertainty_loss = UncertaintyWeighting(len(self.tasks))
 
-    def forward(self, x, **kwargs):
-        return self.model(x, **kwargs)
+    def forward(
+        self, x: torch.Tensor, **kwargs: Any
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return cast(
+            Union[torch.Tensor, Tuple[torch.Tensor, ...]], self.model(x, **kwargs)
+        )
 
     def _get_current_lambda_ana(self, epoch: int) -> float:
         if self.warmup_epochs <= 0:
@@ -75,14 +106,16 @@ class PoseLightningModule(pl.LightningModule):
         return self.lambda_anatomical
 
     def _get_current_sigma(self, epoch: int) -> float:
-        num_epochs = self.config.get("training", {}).get("epochs", 30)
+        num_epochs: int = int(self.config.get("training", {}).get("epochs", 30))
         if num_epochs <= 1:
             return self.sigma_start
         # Linear decay
         progress = min(epoch / (num_epochs * 0.7), 1.0)
         return self.sigma_start + (self.sigma_end - self.sigma_start) * progress
 
-    def training_step(self, batch, batch_idx):
+    def training_step(
+        self, batch: Dict[str, Any], batch_idx: int
+    ) -> Optional[torch.Tensor]:
         if batch is None:
             return None
 
@@ -123,7 +156,7 @@ class PoseLightningModule(pl.LightningModule):
             self.using_model_coords = False
 
         loss_pose = self.criterion(outputs, targets)
-        metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
+        metrics: Dict[str, float] = {"loss_pose": loss_pose.item(), "sigma": sigma}
 
         if self.use_uncertainty:
             raw_losses = {"pose": loss_pose}
@@ -187,9 +220,11 @@ class PoseLightningModule(pl.LightningModule):
 
         # Stash batch level metrics for Telemetry Callback
         self.last_step_metrics = metrics
-        return loss
+        return cast(torch.Tensor, loss)
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(
+        self, batch: Dict[str, Any], batch_idx: int
+    ) -> Optional[torch.Tensor]:
         if batch is None:
             return None
 
@@ -217,7 +252,7 @@ class PoseLightningModule(pl.LightningModule):
             self.using_model_coords = False
 
         loss_pose = self.criterion(outputs, targets)
-        metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
+        metrics: Dict[str, float] = {"loss_pose": loss_pose.item(), "sigma": sigma}
 
         if self.use_uncertainty:
             raw_losses = {"pose": loss_pose}
@@ -278,9 +313,9 @@ class PoseLightningModule(pl.LightningModule):
                 f"val_{k}", v, on_step=False, on_epoch=True, prog_bar=True, logger=False
             )
 
-        return loss
+        return cast(torch.Tensor, loss)
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> Any:
         from src.training.factory import build_optimizer
 
         # We pass self as the trainer/mock-trainer to retain full factory compatibility

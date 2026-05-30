@@ -1,21 +1,22 @@
 import json
 from pathlib import Path
 from .config_loader import load_config
+from typing import Any, Dict
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 USER_CONFIG_PATH = PROJECT_ROOT / "configs" / "user_training.json"
 
 
-def get_training_config():
+def get_training_config() -> Dict[str, Any]:
     """
     Get training configuration, preferring user overrides if they exist.
     """
     # Start with defaults from default.yaml
     full_config = load_config()
-    training_defaults = full_config.get("training", {})
+    training_defaults: Dict[str, Any] = full_config.get("training", {})
 
     # Add remote default
-    remote_defaults = full_config.get("remote", {})
+    remote_defaults: Dict[str, Any] = full_config.get("remote", {})
     training_defaults["remote"] = remote_defaults.get("use_remote", False)
 
     # Check for user overrides
@@ -31,7 +32,7 @@ def get_training_config():
     return training_defaults
 
 
-def get_display_metadata_for_config(config: dict) -> dict:
+def get_display_metadata_for_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """Heuristically determine display metadata based on config."""
     train_cfg = config.get("training", {})
     uda_cfg = config.get("uda", {})
@@ -122,7 +123,7 @@ def get_display_metadata_for_config(config: dict) -> dict:
         }
 
 
-def save_training_config(config):
+def save_training_config(config: Dict[str, Any]) -> bool:
     """
     Save training configuration overrides to user_training.json.
     """
@@ -132,7 +133,7 @@ def save_training_config(config):
     persistent_keys = ["lr", "epochs", "batch_size", "remote", "augmentation"]
 
     # Extract values from the root or from a nested 'training' object
-    to_save = {}
+    to_save: Dict[str, Any] = {}
 
     # 1. Check root level
     for k in persistent_keys:

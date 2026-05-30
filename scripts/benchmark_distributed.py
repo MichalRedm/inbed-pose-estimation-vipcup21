@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.utils.remote_gpu import GPUManager
 
 
-def main():
+def main() -> None:
     load_dotenv()
     json_path = "gpu_connection.json"
     if not os.path.exists(json_path):

@@ -1,8 +1,9 @@
 import os
 import torch
+import torch.nn as nn
 import torchvision.transforms.v2 as v2
 from PIL import Image
-from typing import Union
+from typing import Union, Dict, Any, Optional, cast
 
 
 class CycleGANAugmentation:
@@ -11,7 +12,7 @@ class CycleGANAugmentation:
     Translates 'uncovered' IR images to 'covered' IR domains using a pre-trained Generator.
     """
 
-    METADATA = {
+    METADATA: Dict[str, Any] = {
         "id": "cyclegan",
         "name": "CycleGAN Target Translation",
         "description": "Translates clean IR subjects to look like they are under a blanket using a trained CycleGAN generator.",
@@ -21,11 +22,17 @@ class CycleGANAugmentation:
         },
     }
 
+    probability: float
+    enabled: bool
+    device: torch.device
+    generator: Optional[nn.Module]
+    checkpoint_path: str
+
     def __init__(
         self,
         probability: float = 0.5,
         checkpoint_path: str = "models/cyclegan_gen_A2B.pth",
-    ):
+    ) -> None:
         self.probability = probability
         self.enabled = probability > 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -68,15 +75,29 @@ class CycleGANAugmentation:
                 self.enabled = False
 
     def __call__(
-        self, img: Union[Image.Image, torch.Tensor], **kwargs
+        self, img: Union[Image.Image, torch.Tensor], **kwargs: Any
     ) -> Union[Image.Image, torch.Tensor]:
-        force = kwargs.get("force_apply", False)
-        prob = kwargs.get("probability", self.probability)
-        if not self.enabled or (not force and torch.rand(1).item() > prob):
+        force = bool(kwargs.get("force_apply", False))
+        prob = float(kwargs.get("probability", self.probability))
+        if (
+            not self.enabled
+            or self.generator is None
+            or (not force and torch.rand(1).item() > prob)
+        ):
             return img
 
         is_tensor = torch.is_tensor(img)
-        img_t = img if is_tensor else v2.functional.to_image(img).float() / 255.0
+        if is_tensor:
+            img_tensor = cast(torch.Tensor, img)
+            img_t = (
+                img_tensor
+                if img_tensor.dtype == torch.float32
+                else img_tensor.float() / 255.0
+            )
+        else:
+            img_pil = cast(Image.Image, img)
+            img_t = cast(torch.Tensor, v2.functional.to_image(img_pil)).float() / 255.0
+
         original_channels = img_t.shape[0]
 
         # Generator expects batch dimension and normalized [-1, 1]
@@ -103,12 +124,13 @@ class CycleGANAugmentation:
         fake_target = torch.clamp(fake_target, 0, 1)
 
         if not is_tensor:
-            return v2.functional.to_pil_image(fake_target.cpu())
+            return v2.functional.to_pil_image(fake_target.cpu())  # type: ignore[no-any-return]
 
         # Match input tensor format (if it was [0, 255] unscaled)
-        if img.max() > 1.0:
+        img_input = cast(torch.Tensor, img)
+        if img_input.max() > 1.0:
             fake_target = fake_target * 255.0
-        return fake_target.to(img.device)
+        return fake_target.to(img_input.device)
 
 
 class CUTAugmentation:
@@ -117,7 +139,7 @@ class CUTAugmentation:
     Translates 'uncovered' IR images to 'covered' IR domains using a pre-trained Generator.
     """
 
-    METADATA = {
+    METADATA: Dict[str, Any] = {
         "id": "cut",
         "name": "CUT Target Translation",
         "description": "Translates clean IR subjects to look like they are under a blanket using a trained CUT generator.",
@@ -127,11 +149,17 @@ class CUTAugmentation:
         },
     }
 
+    probability: float
+    enabled: bool
+    device: torch.device
+    generator: Optional[nn.Module]
+    checkpoint_path: str
+
     def __init__(
         self,
         probability: float = 0.5,
         checkpoint_path: str = "models/cut_gen.pth",
-    ):
+    ) -> None:
         self.probability = probability
         self.enabled = probability > 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -171,15 +199,29 @@ class CUTAugmentation:
                 self.enabled = False
 
     def __call__(
-        self, img: Union[Image.Image, torch.Tensor], **kwargs
+        self, img: Union[Image.Image, torch.Tensor], **kwargs: Any
     ) -> Union[Image.Image, torch.Tensor]:
-        force = kwargs.get("force_apply", False)
-        prob = kwargs.get("probability", self.probability)
-        if not self.enabled or (not force and torch.rand(1).item() > prob):
+        force = bool(kwargs.get("force_apply", False))
+        prob = float(kwargs.get("probability", self.probability))
+        if (
+            not self.enabled
+            or self.generator is None
+            or (not force and torch.rand(1).item() > prob)
+        ):
             return img
 
         is_tensor = torch.is_tensor(img)
-        img_t = img if is_tensor else v2.functional.to_image(img).float() / 255.0
+        if is_tensor:
+            img_tensor = cast(torch.Tensor, img)
+            img_t = (
+                img_tensor
+                if img_tensor.dtype == torch.float32
+                else img_tensor.float() / 255.0
+            )
+        else:
+            img_pil = cast(Image.Image, img)
+            img_t = cast(torch.Tensor, v2.functional.to_image(img_pil)).float() / 255.0
+
         original_channels = img_t.shape[0]
 
         # Generator expects batch dimension and normalized [-1, 1]
@@ -206,9 +248,10 @@ class CUTAugmentation:
         fake_target = torch.clamp(fake_target, 0, 1)
 
         if not is_tensor:
-            return v2.functional.to_pil_image(fake_target.cpu())
+            return v2.functional.to_pil_image(fake_target.cpu())  # type: ignore[no-any-return]
 
         # Match input tensor format (if it was [0, 255] unscaled)
-        if img.max() > 1.0:
+        img_input = cast(torch.Tensor, img)
+        if img_input.max() > 1.0:
             fake_target = fake_target * 255.0
-        return fake_target.to(img.device)
+        return fake_target.to(img_input.device)

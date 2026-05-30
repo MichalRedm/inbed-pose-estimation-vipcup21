@@ -11,7 +11,7 @@ class TrainingStrategy:
     def get_args(
         self, config: Dict[str, Any], run_id: Optional[str], is_resume: bool
     ) -> List[str]:
-        args = []
+        args: List[str] = []
         if run_id:
             args.extend(["--run_id", run_id])
         if is_resume:
@@ -27,7 +27,7 @@ class StandardStrategy(TrainingStrategy):
         self, config: Dict[str, Any], run_id: Optional[str], is_resume: bool
     ) -> List[str]:
         args = super().get_args(config, run_id, is_resume)
-        uda_cfg = config.get("uda", {})
+        uda_cfg: Dict[str, Any] = config.get("uda", {})
         if uda_cfg.get("enabled", False) or config.get("training_type") == "uda":
             args.append("--uda")
         return args
@@ -47,7 +47,7 @@ class CycleGANStrategy(TrainingStrategy):
 
 def get_training_strategy(config: Dict[str, Any]) -> TrainingStrategy:
     """Factory to get the correct strategy based on config."""
-    train_cfg = config.get("training", {})
+    train_cfg: Dict[str, Any] = config.get("training", {})
     if train_cfg.get("cyclegan", False):
         return CycleGANStrategy()
     return StandardStrategy()

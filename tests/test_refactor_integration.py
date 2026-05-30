@@ -1,11 +1,13 @@
 import pytest
 import torch
+from pathlib import Path
+from typing import cast
 from src.data.dataset import VIPCupDataset
 from src.utils.telemetry import LocalTracker
 from src.api.inference import InferenceService
 
 
-def test_dataset_dynamic_sigma(tmp_path):
+def test_dataset_dynamic_sigma(tmp_path: Path) -> None:
     # Setup dummy data structure
     root = tmp_path / "data"
     raw = root / "raw"
@@ -27,7 +29,7 @@ def test_dataset_dynamic_sigma(tmp_path):
 
     # (3, 14, 1) -> (x, y, occluded)
     joints_gt = np.ones((3, 14, 1)) * 100
-    sio.savemat(subj_dir / "joints_gt_RGB.mat", {"joints_gt": joints_gt})
+    sio.savemat(str(subj_dir / "joints_gt_RGB.mat"), {"joints_gt": joints_gt})
 
     ds = VIPCupDataset(
         root=str(raw), subjects=[1], modalities=["RGB"], covers=["uncover"]
@@ -38,13 +40,13 @@ def test_dataset_dynamic_sigma(tmp_path):
     assert ds.sigma == 3.0
 
     sample = ds[0]
-    target = sample["target"]
+    target = cast(torch.Tensor, sample["target"])
     # Heatmap peak should be wider with larger sigma
     # (Checking if it actually runs without error is the first step)
     assert target.shape == (14, 64, 64)
 
 
-def test_local_tracker(tmp_path):
+def test_local_tracker(tmp_path: Path) -> None:
     db_path = str(tmp_path / "telemetry.db")
     tracker = LocalTracker(db_path=db_path)
 
@@ -61,14 +63,14 @@ def test_local_tracker(tmp_path):
     assert history[0]["pck"] == 0.8
 
 
-def test_inference_service_singleton():
+def test_inference_service_singleton() -> None:
     s1 = InferenceService()
     s2 = InferenceService()
     assert s1 is s2
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-def test_inference_service_predict():
+def test_inference_service_predict() -> None:
     # This requires a real model and checkpoint, which might not be available in CI
     # We'll just test the logic if possible
     pass

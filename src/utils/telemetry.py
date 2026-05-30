@@ -10,12 +10,12 @@ class LocalTracker:
     Provides persistent storage for run configurations and metrics.
     """
 
-    def __init__(self, db_path: str = "results/telemetry.db"):
+    def __init__(self, db_path: str = "results/telemetry.db") -> None:
         self.db_path = db_path
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
 
-    def _init_db(self):
+    def _init_db(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS runs (
@@ -39,14 +39,14 @@ class LocalTracker:
                 "CREATE INDEX IF NOT EXISTS idx_metrics_run ON metrics(run_id)"
             )
 
-    def init_run(self, run_id: str, name: str, config: Dict[str, Any]):
+    def init_run(self, run_id: str, name: str, config: Dict[str, Any]) -> None:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO runs (run_id, name, config) VALUES (?, ?, ?)",
                 (run_id, name, json.dumps(config)),
             )
 
-    def log_metric(self, run_id: str, epoch: int, name: str, value: float):
+    def log_metric(self, run_id: str, epoch: int, name: str, value: float) -> None:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "INSERT INTO metrics (run_id, epoch, name, value) VALUES (?, ?, ?, ?)",
@@ -59,7 +59,7 @@ class LocalTracker:
                 "SELECT epoch, name, value FROM metrics WHERE run_id = ? ORDER BY epoch ASC",
                 (run_id,),
             )
-            history = {}
+            history: Dict[int, Dict[str, Any]] = {}
             for epoch, name, value in cursor.fetchall():
                 if epoch not in history:
                     history[epoch] = {"epoch": epoch}
@@ -72,11 +72,11 @@ class JSONLStream:
     Helper to emit structured logs for real-time dashboard updates.
     """
 
-    def __init__(self, stream_path: str):
+    def __init__(self, stream_path: str) -> None:
         self.stream_path = stream_path
         os.makedirs(os.path.dirname(self.stream_path), exist_ok=True)
 
-    def emit(self, data: Dict[str, Any]):
+    def emit(self, data: Dict[str, Any]) -> None:
         # Add [METRICS] prefix for easier identification if mixed with stdout
         payload = f"[METRICS] {json.dumps(data)}"
         try:

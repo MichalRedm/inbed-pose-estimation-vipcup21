@@ -1,7 +1,7 @@
 import sys
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List, cast
 from pydantic import BaseModel
 
 # Add project root to sys.path to allow imports from src
@@ -12,10 +12,10 @@ if str(project_root) not in sys.path:
 from src.utils import LSP_JOINT_NAMES  # noqa: E402
 
 # Global storage for dataset objects
-dataset_container = {}
+dataset_container: Dict[str, Any] = {}
 
-EVALUATION_CACHE_FILE = project_root / "models" / "evaluation_cache.json"
-runs_static_dir = project_root / "results" / "runs"
+EVALUATION_CACHE_FILE: Path = project_root / "models" / "evaluation_cache.json"
+runs_static_dir: Path = project_root / "results" / "runs"
 
 
 class GPUConfig(BaseModel):
@@ -33,7 +33,7 @@ class AugmentationApplyRequest(BaseModel):
     split: str = "train"
     index: int
     modality: str = "IR"
-    augmentations: list[dict] = []
+    augmentations: List[Dict[str, Any]] = []
 
 
 def format_evaluation_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -62,17 +62,18 @@ def format_evaluation_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
     return metrics
 
 
-def load_evaluation_cache():
+def load_evaluation_cache() -> Dict[str, Any]:
     if EVALUATION_CACHE_FILE.exists():
         try:
             with open(EVALUATION_CACHE_FILE, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+                return cast(Dict[str, Any], data)
         except Exception:
             return {}
     return {}
 
 
-def save_evaluation_cache(cache):
+def save_evaluation_cache(cache: Dict[str, Any]) -> None:
     EVALUATION_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(EVALUATION_CACHE_FILE, "w") as f:
         json.dump(cache, f, indent=4)

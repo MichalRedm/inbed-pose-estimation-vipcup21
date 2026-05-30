@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import itertools
-from typing import Dict, Any
+from typing import Dict, Any, cast
 from .base_trainer import BaseTrainer
 from src.models.cyclegan import GeneratorResNet, Discriminator, GANLoss
 
@@ -12,18 +12,37 @@ class CycleGANTrainer(BaseTrainer):
     Translates between Domain A (Uncovered) and Domain B (Covered).
     """
 
+    G_AB: nn.Module
+    G_BA: nn.Module
+    D_A: nn.Module
+    D_B: nn.Module
+    lr: float
+    b1: float
+    b2: float
+    lambda_cyc: float
+    lambda_id: float
+    criterion_GAN: GANLoss
+    criterion_cycle: nn.Module
+    criterion_identity: nn.Module
+    optimizer_G: torch.optim.Optimizer
+    optimizer_D_A: torch.optim.Optimizer
+    optimizer_D_B: torch.optim.Optimizer
+    scaler_G: torch.amp.GradScaler
+    scaler_D_A: torch.amp.GradScaler
+    scaler_D_B: torch.amp.GradScaler
+
     def __init__(
         self,
         config: Dict[str, Any],
         device: torch.device,
         rank: int = 0,
         world_size: int = 1,
-    ):
+    ) -> None:
         # In CycleGAN, we have 4 models. We pass G_AB as the "primary" model to BaseTrainer
         # although we will handle all 4 manually.
         input_shape = (3, 256, 256)
         # Use pretrained weights if specified in config (default True based on ideas_log)
-        pretrained = config.get("training", {}).get("pretrained_gan", True)
+        pretrained = bool(config.get("training", {}).get("pretrained_gan", True))
         self.G_AB = GeneratorResNet(
             input_shape, num_residual_blocks=6, pretrained=pretrained
         ).to(device)
@@ -36,12 +55,12 @@ class CycleGANTrainer(BaseTrainer):
         super().__init__(self.G_AB, config, device, rank, world_size)
 
         # Hyperparameters
-        train_cfg = config.get("training", {})
-        self.lr = train_cfg.get("lr", 0.0002)
-        self.b1 = train_cfg.get("b1", 0.5)
-        self.b2 = train_cfg.get("b2", 0.999)
-        self.lambda_cyc = train_cfg.get("lambda_cycle", 10.0)
-        self.lambda_id = train_cfg.get("lambda_identity", 5.0)
+        train_cfg: Dict[str, Any] = config.get("training", {})
+        self.lr = float(train_cfg.get("lr", 0.0002))
+        self.b1 = float(train_cfg.get("b1", 0.5))
+        self.b2 = float(train_cfg.get("b2", 0.999))
+        self.lambda_cyc = float(train_cfg.get("lambda_cycle", 10.0))
+        self.lambda_id = float(train_cfg.get("lambda_identity", 5.0))
 
         # Losses
         self.criterion_GAN = GANLoss().to(device)
@@ -68,14 +87,14 @@ class CycleGANTrainer(BaseTrainer):
         self.scaler_D_B = torch.amp.GradScaler("cuda", enabled=use_amp)
 
         # Model compilation (optional, enabled if compile is specified in config and PyTorch 2.x compile is available)
-        compile_cfg = train_cfg.get("compile", False)
+        compile_cfg = bool(train_cfg.get("compile", False))
         if compile_cfg and hasattr(torch, "compile"):
             if self.is_main:
                 print("[CycleGANTrainer] Compiling models...")
-            self.G_AB = torch.compile(self.G_AB)
-            self.G_BA = torch.compile(self.G_BA)
-            self.D_A = torch.compile(self.D_A)
-            self.D_B = torch.compile(self.D_B)
+            self.G_AB = cast(nn.Module, torch.compile(self.G_AB))
+            self.G_BA = cast(nn.Module, torch.compile(self.G_BA))
+            self.D_A = cast(nn.Module, torch.compile(self.D_A))
+            self.D_B = cast(nn.Module, torch.compile(self.D_B))
 
     def _calculate_losses(self, batch: Any) -> Dict[str, torch.Tensor]:
         real_A, real_B = batch
@@ -245,19 +264,19 @@ class CycleGANTrainer(BaseTrainer):
             losses = self._calculate_losses(batch)
         return {k: v.item() for k, v in losses.items() if isinstance(v, torch.Tensor)}
 
-    def fit(self, train_loader, val_loader=None):
+    def fit(self, train_loader: Any, val_loader: Any = None) -> None:
         for epoch in range(self.start_epoch, self.epochs):
             self.current_epoch = epoch
             train_metrics = self.train_epoch(train_loader, epoch)
 
-            val_metrics = {}
+            val_metrics: Dict[str, float] = {}
             if val_loader:
                 val_metrics = self.evaluate(val_loader)
                 # Rename keys for history
                 val_metrics = {f"val_{k}": v for k, v in val_metrics.items()}
 
             if self.is_main:
-                epoch_data = {"epoch": epoch + 1}
+                epoch_data: Dict[str, Any] = {"epoch": epoch + 1}
                 epoch_data.update(train_metrics)
                 epoch_data.update(val_metrics)
                 self.update_history(epoch_data)

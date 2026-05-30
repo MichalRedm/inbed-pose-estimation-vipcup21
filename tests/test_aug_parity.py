@@ -3,17 +3,21 @@ import numpy as np
 import random
 from PIL import Image
 from src.data.augmentations import DataAugmenter as LegacyAugmenter
+from typing import Any, Type
 
 # We will implement the NewAugmenter later in src/data/augmentations.py
 # For now, this test will fail until we implement the new one.
 # To make it pass initially, we can point it to the LegacyAugmenter.
+NewAugmenter: Type[Any]
 try:
-    from src.data.augmentations import DataAugmenterV2 as NewAugmenter
+    from src.data.augmentations import DataAugmenterV2 as NewAugmenter_V2  # type: ignore
+
+    NewAugmenter = NewAugmenter_V2
 except ImportError:
     NewAugmenter = LegacyAugmenter
 
 
-def test_aug_joint_parity():
+def test_aug_joint_parity() -> None:
     """
     Verify that joint transformations (flip, rotate, scale) are consistent.
     Note: Pixel-perfect parity is difficult between PIL and torchvision.v2,

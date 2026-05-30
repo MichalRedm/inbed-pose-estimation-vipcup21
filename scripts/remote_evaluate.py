@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.utils.remote_gpu import GPUManager
 
 
-def main():
+def main() -> None:
     load_dotenv()
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_id", type=str, required=True, help="Run ID to evaluate")

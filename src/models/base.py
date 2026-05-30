@@ -1,5 +1,7 @@
+import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
+from typing import Any, Dict, Union, Tuple
 
 
 class BaseModel(nn.Module, ABC):
@@ -8,7 +10,7 @@ class BaseModel(nn.Module, ABC):
     Ensures a consistent interface for future architectures.
     """
 
-    def __init__(self, config: dict):
+    def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__()
         self.config = config
 
@@ -22,7 +24,9 @@ class BaseModel(nn.Module, ABC):
         pass
 
     @abstractmethod
-    def forward(self, x):
+    def forward(
+        self, x: torch.Tensor, **kwargs: Any
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         """
         Forward pass of the model.
 

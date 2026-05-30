@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Start the In-Bed Pose Estimation API."
     )

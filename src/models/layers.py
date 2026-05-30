@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Tuple
 
 
 class SoftArgmax2D(nn.Module):
@@ -9,7 +10,15 @@ class SoftArgmax2D(nn.Module):
     Converts (B, J, H, W) heatmaps to (B, J, 2) coordinates.
     """
 
-    def __init__(self, base_size=(256, 256), heatmap_size=(64, 64), temperature=10.0):
+    grid_x: torch.Tensor
+    grid_y: torch.Tensor
+
+    def __init__(
+        self,
+        base_size: Tuple[int, int] = (256, 256),
+        heatmap_size: Tuple[int, int] = (64, 64),
+        temperature: float = 10.0,
+    ) -> None:
         super().__init__()
         self.base_size = base_size
         self.heatmap_size = heatmap_size
@@ -26,7 +35,7 @@ class SoftArgmax2D(nn.Module):
         self.register_buffer("grid_x", grid_x)
         self.register_buffer("grid_y", grid_y)
 
-    def forward(self, heatmaps):
+    def forward(self, heatmaps: torch.Tensor) -> torch.Tensor:
         """
         heatmaps: (B, J, H, W)
         Returns: (B, J, 2) where 2 is (x, y)

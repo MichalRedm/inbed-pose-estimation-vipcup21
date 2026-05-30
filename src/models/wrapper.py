@@ -1,4 +1,6 @@
+import torch
 import torch.nn as nn
+from typing import Tuple, Union
 from src.utils.pose import decode_heatmaps
 
 
@@ -13,8 +15,8 @@ class PoseDecodingWrapper(nn.Module):
         model: nn.Module,
         decode_method: str = "argmax",
         temperature: float = 10.0,
-        image_size: tuple = (256, 256),
-    ):
+        image_size: Tuple[int, int] = (256, 256),
+    ) -> None:
         super().__init__()
         self.model = model
         self.decode_method = decode_method
@@ -23,7 +25,7 @@ class PoseDecodingWrapper(nn.Module):
 
         # Determine if the underlying model outputs heatmaps that need decoding
         self._is_heatmap = (
-            hasattr(model, "output_type") and model.output_type == "heatmap"
+            hasattr(model, "output_type") and getattr(model, "output_type") == "heatmap"
         )
 
         # If the model already outputs coordinates, the wrapper just passes them through.
@@ -31,13 +33,15 @@ class PoseDecodingWrapper(nn.Module):
 
     @property
     def in_channels(self) -> int:
-        return getattr(self.model, "in_channels", 1)
+        return int(getattr(self.model, "in_channels", 1))
 
     @property
     def output_type(self) -> str:
         return "coordinates"
 
-    def forward(self, x, return_heatmaps=False):
+    def forward(
+        self, x: torch.Tensor, return_heatmaps: bool = False
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         outputs = self.model(x)
 
         if isinstance(outputs, tuple):
@@ -63,6 +67,6 @@ class PoseDecodingWrapper(nn.Module):
 
         if return_heatmaps:
             if extra:
-                return joints, heatmaps, *extra
-            return joints, heatmaps
+                return (joints, heatmaps, *extra)
+            return (joints, heatmaps)
         return joints

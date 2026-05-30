@@ -5,6 +5,7 @@ import torchvision.models as models
 from torchvision.models import ViT_B_16_Weights
 from .base import BaseModel
 from .registry import register_model
+from typing import Dict, Any
 
 
 @register_model("vitpose")
@@ -23,12 +24,12 @@ class ViTPose(BaseModel):
       Conv2d (256, num_joints, k=1) to yield (B, num_joints, 64, 64) keypoint heatmaps.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
 
         # Handle both full config and sub-config dict structures
         if "model" in config:
-            model_cfg = config.get("model", {}).get("vitpose", {})
+            model_cfg: Dict[str, Any] = config.get("model", {}).get("vitpose", {})
         else:
             model_cfg = config
 
@@ -106,7 +107,7 @@ class ViTPose(BaseModel):
         if pretrained_weights_path:
             self.load_pretrained_coco_weights(pretrained_weights_path)
 
-    def _init_decoder(self):
+    def _init_decoder(self) -> None:
         for m in self.decoder.modules():
             if isinstance(m, nn.ConvTranspose2d):
                 nn.init.normal_(m.weight, std=0.001)
@@ -124,19 +125,21 @@ class ViTPose(BaseModel):
     def output_type(self) -> str:
         return "heatmap"
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         # Apply ImageNet normalization internally
         mean = torch.tensor([0.485, 0.456, 0.406], device=x.device).view(1, 3, 1, 1)
         std = torch.tensor([0.229, 0.224, 0.225], device=x.device).view(1, 3, 1, 1)
         if x.shape[1] == 3:
-            x = (x - mean) / std
+            x_norm = (x - mean) / std
         elif x.shape[1] == 1:
-            x = (x - mean[:, 0:1]) / std[:, 0:1]
+            x_norm = (x - mean[:, 0:1]) / std[:, 0:1]
+        else:
+            x_norm = x
 
-        n, c, h_in, w_in = x.shape
+        n, c, h_in, w_in = x_norm.shape
 
         # 1. Conv projection (patches extraction): (B, 768, h_grid, w_grid)
-        patch_feats = self.vit.conv_proj(x)
+        patch_feats = self.vit.conv_proj(x_norm)
         h, w = patch_feats.shape[2], patch_feats.shape[3]
 
         # Flatten and permute: (B, 768, h_grid, w_grid) -> (B, h_grid * w_grid, 768)
@@ -148,25 +151,28 @@ class ViTPose(BaseModel):
 
         # Reshape to 2D grid
         orig_h = orig_w = int(pos_embed_patches.shape[1] ** 0.5)
-        pos_embed_patches = pos_embed_patches.reshape(
+        pos_embed_patches_grid = pos_embed_patches.reshape(
             1, orig_h, orig_w, self.vit.hidden_dim
         ).permute(0, 3, 1, 2)
 
         # Interpolate patches position embedding to current grid size (h, w)
         if h != orig_h or w != orig_w:
             pos_embed_patches_resized = F.interpolate(
-                pos_embed_patches, size=(h, w), mode="bilinear", align_corners=False
+                pos_embed_patches_grid,
+                size=(h, w),
+                mode="bilinear",
+                align_corners=False,
             )
         else:
-            pos_embed_patches_resized = pos_embed_patches
+            pos_embed_patches_resized = pos_embed_patches_grid
 
         # Reshape back to (1, h * w, 768)
-        pos_embed_patches_resized = pos_embed_patches_resized.permute(
-            0, 2, 3, 1
-        ).reshape(1, h * w, self.vit.hidden_dim)
+        pos_embed_patches_final = pos_embed_patches_resized.permute(0, 2, 3, 1).reshape(
+            1, h * w, self.vit.hidden_dim
+        )
 
         # Add position embeddings and apply dropout
-        tokens = tokens + pos_embed_patches_resized
+        tokens = tokens + pos_embed_patches_final
         tokens = self.vit.encoder.dropout(tokens)
 
         # 3. Transformer Encoder pass
@@ -179,11 +185,11 @@ class ViTPose(BaseModel):
         )
 
         # 4. Upsampling Decoder: (B, num_joints, H_out, W_out)
-        heatmaps = self.decoder(spatial_feats)
+        heatmaps: torch.Tensor = self.decoder(spatial_feats)
 
         return heatmaps
 
-    def load_pretrained_coco_weights(self, coco_path: str):
+    def load_pretrained_coco_weights(self, coco_path: str) -> None:
         print(f"[ViTPose] Loading COCO pretrained weights from {coco_path}...")
         coco_state = torch.load(coco_path, map_location="cpu")
         if "state_dict" in coco_state:
@@ -191,7 +197,7 @@ class ViTPose(BaseModel):
         elif "model" in coco_state:
             coco_state = coco_state["model"]
 
-        new_state = {}
+        new_state: Dict[str, Any] = {}
 
         # 1. Map backbone weights
         new_state["vit.conv_proj.weight"] = coco_state[
@@ -205,23 +211,23 @@ class ViTPose(BaseModel):
         pos_embed_patches = pos_embed_pretrained[:, 1:, :]  # (1, 192, 768)
 
         # Reshape to (1, 768, 16, 12)
-        pos_embed_patches = pos_embed_patches.reshape(
+        pos_embed_patches_grid = pos_embed_patches.reshape(
             1, 16, 12, self.vit.hidden_dim
         ).permute(0, 3, 1, 2)
 
         # Interpolate to 16x16 (the grid size for 256x256 input)
         pos_embed_patches_resized = F.interpolate(
-            pos_embed_patches, size=(16, 16), mode="bilinear", align_corners=False
+            pos_embed_patches_grid, size=(16, 16), mode="bilinear", align_corners=False
         )
-        pos_embed_patches_resized = pos_embed_patches_resized.permute(
-            0, 2, 3, 1
-        ).reshape(1, 256, self.vit.hidden_dim)
+        pos_embed_patches_final = pos_embed_patches_resized.permute(0, 2, 3, 1).reshape(
+            1, 256, self.vit.hidden_dim
+        )
 
         # IMPORTANT: Resize current pos_embedding to match COCO patches size BEFORE load_state_dict
         self.vit.encoder.pos_embedding = nn.Parameter(
-            torch.zeros_like(pos_embed_patches_resized)
+            torch.zeros_like(pos_embed_patches_final)
         )
-        new_state["vit.encoder.pos_embedding"] = pos_embed_patches_resized
+        new_state["vit.encoder.pos_embedding"] = pos_embed_patches_final
 
         # 2. Map blocks
         for i in range(12):
