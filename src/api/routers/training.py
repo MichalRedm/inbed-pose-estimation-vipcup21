@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from torch.utils.data import DataLoader
+from typing import Dict, Any, List, Optional, cast, Union
 
 from src.training.manager import training_manager
 from src.data.dataset import collate_skip_none
@@ -21,12 +22,12 @@ router = APIRouter()
 
 
 @router.get("/training/status")
-async def get_training_status():
+async def get_training_status() -> Dict[str, Any]:
     return training_manager.get_status()
 
 
 @router.post("/training/start")
-async def start_training(config: dict = None):
+async def start_training(config: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
     success, message = training_manager.start_training(config)
     if not success:
         raise HTTPException(status_code=400, detail=message)
@@ -34,7 +35,7 @@ async def start_training(config: dict = None):
 
 
 @router.post("/training/stop")
-async def stop_training():
+async def stop_training() -> Dict[str, str]:
     success, message = training_manager.stop_training()
     if not success:
         raise HTTPException(status_code=400, detail=message)
@@ -42,7 +43,7 @@ async def stop_training():
 
 
 @router.get("/runs")
-async def list_runs():
+async def list_runs() -> Dict[str, List[Dict[str, Any]]]:
     runs_dir = project_root / "results" / "runs"
     if not runs_dir.exists():
         return {"runs": []}
@@ -55,7 +56,7 @@ async def list_runs():
     ):
         if not run_path.is_dir():
             continue
-        run_info = {
+        run_info: Dict[str, Any] = {
             "id": run_path.name,
             "created_at": time.ctime(run_path.stat().st_ctime),
             "status": "active" if run_path.name == active_run_id else "completed",
@@ -80,11 +81,11 @@ async def list_runs():
 
 
 @router.get("/runs/{run_id}")
-async def get_run_details(run_id: str):
+async def get_run_details(run_id: str) -> Dict[str, Any]:
     run_path = project_root / "results" / "runs" / run_id
     if not run_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
-    details = {"id": run_id}
+    details: Dict[str, Any] = {"id": run_id}
     for f_name, key in [("config.json", "config"), ("history.json", "history")]:
         if (run_path / f_name).exists():
             with open(run_path / f_name, "r") as f:
@@ -110,7 +111,7 @@ async def get_run_details(run_id: str):
 
 
 @router.delete("/runs/{run_id}")
-async def delete_run(run_id: str):
+async def delete_run(run_id: str) -> Dict[str, str]:
     run_path = project_root / "results" / "runs" / run_id
     if not run_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
@@ -124,19 +125,19 @@ async def delete_run(run_id: str):
 @router.post("/evaluate")
 async def evaluate_model(
     split: str = "val",
-    checkpoint: str = None,
-    run_id: str = None,
+    checkpoint: Optional[str] = None,
+    run_id: Optional[str] = None,
     force: bool = False,
     remote: bool = False,
-):
+) -> Dict[str, Any]:
     if split == "valid":
         split = "val"
     cache = load_evaluation_cache()
-    checkpoint_path = None
-    eval_config = {}
+    checkpoint_path: Optional[Path] = None
+    eval_config: Dict[str, Any] = {}
     checkpoint_key = checkpoint or (f"{run_id}_best" if run_id else "default")
     if checkpoint:
-        checkpoint_path = project_root / "models" / "checkpoints" / checkpoint
+        checkpoint_path = project_root / "models" / "checkpoints" / Path(checkpoint)
     elif run_id:
         checkpoint_path = (
             project_root
@@ -173,6 +174,9 @@ async def evaluate_model(
         loader = DataLoader(
             ds, batch_size=8, shuffle=False, collate_fn=collate_skip_none
         )
+        if inference_service._model is None:
+            raise HTTPException(status_code=400, detail="Model not loaded")
+
         trainer = PoseTrainer(
             inference_service._model,
             device=inference_service._device,
@@ -188,7 +192,7 @@ async def evaluate_model(
 
 
 @router.get("/models")
-async def list_models():
+async def list_models() -> Dict[str, List[Dict[str, Any]]]:
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
     if not checkpoint_dir.exists():
         return {"models": []}

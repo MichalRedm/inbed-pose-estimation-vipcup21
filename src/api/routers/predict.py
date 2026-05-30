@@ -2,7 +2,9 @@ import io
 import torch
 import numpy as np
 from PIL import Image, UnidentifiedImageError
+from pathlib import Path
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form
+from typing import Dict, Any, Optional, List, Union, Tuple, cast
 
 from src.api.inference import inference_service
 from src.utils import LSP_JOINT_NAMES
@@ -14,12 +16,12 @@ router = APIRouter()
 @router.post("/predict")
 async def predict(
     file: UploadFile = File(...),
-    model_name: str = Form(None),
-    run_id: str = Form(None),
-    checkpoint: str = Form(None),
-):
+    model_name: Optional[str] = Form(None),
+    run_id: Optional[str] = Form(None),
+    checkpoint: Optional[str] = Form(None),
+) -> Dict[str, Any]:
     try:
-        checkpoint_path = None
+        checkpoint_path: Optional[Path] = None
         if run_id:
             checkpoint_path = (
                 project_root
@@ -30,7 +32,7 @@ async def predict(
                 / (checkpoint or "best_model.pth")
             )
         elif model_name:
-            checkpoint_path = project_root / "models" / "checkpoints" / model_name
+            checkpoint_path = project_root / "models" / "checkpoints" / Path(model_name)
         else:
             checkpoints = sorted(
                 list((project_root / "models" / "checkpoints").glob("*.pth"))
@@ -48,22 +50,21 @@ async def predict(
             m = inference_service._model
             # Use standardized in_channels property if available
             if hasattr(m, "in_channels"):
-                in_channels = m.in_channels
+                in_channels = int(getattr(m, "in_channels"))
             # Legacy fallback
-            elif hasattr(m, "model") and hasattr(m.model, "in_channels"):
-                in_channels = m.model.in_channels
+            elif hasattr(m, "model") and hasattr(cast(Any, m).model, "in_channels"):
+                in_channels = int(getattr(cast(Any, m).model, "in_channels"))
 
         image = image.convert("RGB" if in_channels == 3 else "L")
         orig_size = image.size
-        model_size = (
-            tuple(
-                inference_service._config.get("dataset", {}).get(
-                    "image_size", [256, 256]
-                )
+        model_size_list: List[int] = (
+            inference_service._config.get("dataset", {}).get(
+                "image_size", [256, 256]
             )
             if inference_service._config
-            else (256, 256)
+            else [256, 256]
         )
+        model_size = (model_size_list[0], model_size_list[1])
         img_resized = image.resize(model_size)
         img_tensor = torch.from_numpy(np.array(img_resized)).float() / 255.0
         if in_channels == 1:
@@ -71,7 +72,12 @@ async def predict(
         else:
             img_tensor = img_tensor.permute(2, 0, 1).unsqueeze(0)
 
-        preds = inference_service.predict(img_tensor)
+        predict_out = inference_service.predict(img_tensor)
+        if isinstance(predict_out, tuple):
+            preds = predict_out[0]
+        else:
+            preds = predict_out
+
         scale_x, scale_y = orig_size[0] / model_size[0], orig_size[1] / model_size[1]
         results = [
             {
