@@ -4,7 +4,7 @@ import torch
 import torch.fft
 from PIL import Image, ImageDraw, ImageFilter
 import torchvision.transforms.v2 as v2
-from typing import Union, Optional
+from typing import Union, Optional, Tuple, List, Dict, Any, cast
 from pathlib import Path
 
 
@@ -39,7 +39,7 @@ def _match_cumulative_distribution(
     ref_cdf = np.cumsum(ref_counts).astype(np.float64) / reference.size
 
     interp_values = np.interp(src_cdf, ref_cdf, ref_values)
-    return interp_values[src_indices].reshape(source.shape).astype(source.dtype)
+    return interp_values[src_indices].reshape(source.shape).astype(source.dtype) # type: ignore[no-any-return]
 
 
 def fourier_domain_adaptation(
@@ -93,7 +93,7 @@ class ThermalDiffusionAugmenter:
     Simulates the effect of a blanket on IR images by diffusing and dampening the heat signature.
     """
 
-    METADATA = {
+    METADATA: Dict[str, Any] = {
         "id": "thermal_diffusion",
         "name": "Thermal Diffusion (Blanket)",
         "order": 4,
@@ -105,28 +105,32 @@ class ThermalDiffusionAugmenter:
         },
     }
 
-    def __init__(self, probability: float = 0.5, is_training: bool = True):
+    probability: float
+    is_training: bool
+
+    def __init__(self, probability: float = 0.5, is_training: bool = True) -> None:
         self.probability = probability
         self.is_training = is_training
 
     def __call__(
         self,
         image: Union[Image.Image, torch.Tensor],
-        joints: Optional[torch.Tensor] = None,
+        joints: Optional[Any] = None,
         is_ir: bool = True,
-        **kwargs,
+        **kwargs: Any,
     ) -> Union[Image.Image, torch.Tensor]:
-        force = kwargs.get("force_apply", False)
-        prob = kwargs.get("probability", self.probability)
+        force = bool(kwargs.get("force_apply", False))
+        prob = float(kwargs.get("probability", self.probability))
         if not is_ir or (not force and random.random() > prob):
             return image
 
         is_tensor = torch.is_tensor(image)
         if is_tensor:
-            device = image.device
-            img_pil = v2.functional.to_pil_image(image)
+            img_tensor = cast(torch.Tensor, image)
+            device = img_tensor.device
+            img_pil = v2.functional.to_pil_image(img_tensor)
         else:
-            img_pil = image
+            img_pil = cast(Image.Image, image)
 
         original_mode = img_pil.mode
         if original_mode != "L":
@@ -135,45 +139,47 @@ class ThermalDiffusionAugmenter:
         w, h = img_pil.size
 
         # 1. Determine blanket Y start position (base_y)
-        head_y = None
-        shoulders_y = []
-        hips_y = []
-        knees_y = []
+        head_y: Optional[float] = None
+        shoulders_y: List[float] = []
+        hips_y: List[float] = []
+        knees_y: List[float] = []
 
         if joints is not None:
             if torch.is_tensor(joints):
-                if len(joints.shape) == 3:  # (1, N, 2)
-                    j_np = joints[0].cpu().numpy()
-                elif len(joints.shape) == 2:  # (N, 2) or (3, N)
-                    if joints.shape[0] == 3:
-                        j_np = joints[:2, :].T.cpu().numpy()
+                joints_tensor = cast(torch.Tensor, joints)
+                if len(joints_tensor.shape) == 3:  # (1, N, 2)
+                    j_np = joints_tensor[0].cpu().numpy()
+                elif len(joints_tensor.shape) == 2:  # (N, 2) or (3, N)
+                    if joints_tensor.shape[0] == 3:
+                        j_np = joints_tensor[:2, :].T.cpu().numpy()
                     else:
-                        j_np = joints.cpu().numpy()
+                        j_np = joints_tensor.cpu().numpy()
                 else:
-                    j_np = np.array(joints)
+                    j_np = np.array(joints_tensor)
             else:
                 j_np = np.array(joints)
 
             if len(j_np.shape) == 2 and j_np.shape[0] >= 14:
                 if j_np[13, 0] > 0 or j_np[13, 1] > 0:
-                    head_y = j_np[13, 1]
+                    head_y = float(j_np[13, 1])
                 for s_idx in [8, 9]:
                     if j_np[s_idx, 0] > 0 or j_np[s_idx, 1] > 0:
-                        shoulders_y.append(j_np[s_idx, 1])
+                        shoulders_y.append(float(j_np[s_idx, 1]))
                 for h_idx in [2, 3]:
                     if j_np[h_idx, 0] > 0 or j_np[h_idx, 1] > 0:
-                        hips_y.append(j_np[h_idx, 1])
+                        hips_y.append(float(j_np[h_idx, 1]))
                 for k_idx in [1, 4]:
                     if j_np[k_idx, 0] > 0 or j_np[k_idx, 1] > 0:
-                        knees_y.append(j_np[k_idx, 1])
+                        knees_y.append(float(j_np[k_idx, 1]))
 
         min_allowed_y = int(h * 0.15)
         if head_y is not None:
             min_allowed_y = max(min_allowed_y, int(head_y + 15))
 
+        base_y_val: float
         if "base_y_ratio" in kwargs:
-            base_y = int(kwargs["base_y_ratio"] * h)
-            base_y = max(min_allowed_y, base_y)
+            base_y_val = float(int(float(kwargs["base_y_ratio"]) * h))
+            base_y_val = float(max(min_allowed_y, int(base_y_val)))
         else:
             coverage_choices = []
             if shoulders_y:
@@ -183,28 +189,28 @@ class ThermalDiffusionAugmenter:
             if knees_y:
                 coverage_choices.append(min(knees_y))
             if coverage_choices:
-                base_y = random.choice(coverage_choices)
-                base_y += random.randint(-15, 15)
+                base_y_val = float(random.choice(coverage_choices))
+                base_y_val += random.randint(-15, 15)
             else:
-                base_y = random.randint(int(h * 0.25), int(h * 0.7))
-            base_y = max(min_allowed_y, min(base_y, h - 20))
+                base_y_val = float(random.randint(int(h * 0.25), int(h * 0.7)))
+            base_y_val = float(max(min_allowed_y, min(base_y_val, h - 20)))
 
-        base_y = int(base_y)
+        base_y = int(base_y_val)
 
         # 2. Create wavy mask
         mask = Image.new("L", img_pil.size, 0)
         draw = ImageDraw.Draw(mask)
-        wavy_points = []
+        wavy_points: List[Tuple[int, int]] = []
         num_points = 20
         freq = random.uniform(1.5, 3.5)
         amp = random.uniform(4, 15)
         phase = random.uniform(0, 2 * np.pi)
 
         for i in range(num_points + 1):
-            x = int(i * w / num_points)
-            y = int(base_y + amp * np.sin(freq * (x / w) * 2 * np.pi + phase))
-            y = max(0, min(h - 1, y))
-            wavy_points.append((x, y))
+            px = int(i * w / num_points)
+            py = int(base_y + amp * np.sin(freq * (px / w) * 2 * np.pi + phase))
+            py = max(0, min(h - 1, py))
+            wavy_points.append((px, py))
 
         polygon_points = list(wavy_points)
         polygon_points.append((w, h))
@@ -236,8 +242,7 @@ class ThermalDiffusionAugmenter:
             drape_draw.line(
                 pts,
                 fill=random.randint(40, 120),
-                width=random.randint(25, 50),
-                joint="round",
+                width=random.randint(25, 50)
             )
         drape_np = (
             np.array(
@@ -267,8 +272,7 @@ class ThermalDiffusionAugmenter:
             wrinkle_draw.line(
                 pts,
                 fill=random.randint(80, 160),
-                width=random.randint(3, 7),
-                joint="round",
+                width=random.randint(3, 7)
             )
         wrinkle_np = (
             np.array(
@@ -288,8 +292,9 @@ class ThermalDiffusionAugmenter:
 
         # 6. Simulate body heat
         body_heat = np.maximum(img_np - ambient_est, 0.0)
-        body_heat_norm = body_heat / (np.max(body_heat) + 1e-5)
-        body_heat_boosted = np.power(body_heat_norm, 1.3) * np.max(body_heat)
+        max_heat = np.max(body_heat)
+        body_heat_norm = body_heat / (max_heat + 1e-5)
+        body_heat_boosted = np.power(body_heat_norm, 1.3) * max_heat
         heat_pil = Image.fromarray(np.clip(body_heat_boosted, 0, 255).astype(np.uint8))
         bloom_np = np.array(
             heat_pil.filter(ImageFilter.GaussianBlur(radius=random.uniform(8.0, 16.0)))
@@ -301,13 +306,13 @@ class ThermalDiffusionAugmenter:
             bloom_np * (1.0 - combined_drape_np) + contact_np * combined_drape_np
         )
 
-        damp_factor = kwargs.get("damp_factor", random.uniform(0.18, 0.42))
+        damp_factor = float(kwargs.get("damp_factor", random.uniform(0.18, 0.42)))
         dampened_np = blanket_base + mixed_heat_np * damp_factor * combined_drape_np
 
         # 8. Shadow
         shadow_mask = Image.new("L", img_pil.size, 0)
         ImageDraw.Draw(shadow_mask).line(
-            wavy_points, fill=255, width=random.randint(4, 8), joint="round"
+            wavy_points, fill=255, width=random.randint(4, 8)
         )
         shadow_np = (
             np.array(
@@ -325,7 +330,7 @@ class ThermalDiffusionAugmenter:
         if original_mode != "L":
             final_image = final_image.convert(original_mode)
         if is_tensor:
-            return v2.functional.to_image(final_image).to(device)
+            return v2.functional.to_image(final_image).to(device)  # type: ignore[no-any-return]
         return final_image
 
 
@@ -335,7 +340,7 @@ class AdvancedCoverAugmenter:
     Uses a dynamic reference bank of real covered images from the training set.
     """
 
-    METADATA = {
+    METADATA: Dict[str, Any] = {
         "id": "advanced_cover",
         "name": "Advanced Synthetic Cover",
         "order": 4,
@@ -352,22 +357,23 @@ class AdvancedCoverAugmenter:
         },
     }
 
+    probability: float
+    bank_size: int
+    dataset_root: Path
+    reference_bank: List[Path]
+
     def __init__(
-        self, dataset_root: str, probability: float = 0.5, bank_size: int = 100
-    ):
+        self, dataset_root: Union[str, Path], probability: float = 0.5, bank_size: int = 100
+    ) -> None:
         self.probability = probability
         self.bank_size = bank_size
         self.dataset_root = Path(dataset_root)
         self.reference_bank = []
         self._load_reference_bank()
 
-    def _load_reference_bank(self):
+    def _load_reference_bank(self) -> None:
         """Find real covered images in the training set (Subjects 1-80)."""
-        covered_images = set()
-
-        # We look for 'cover1' and 'cover2' directories within training subject folders.
-        # Training subjects are usually 1-80.
-        # Structure can be: root/train/Subject_XX/IR/coverX/ or root/train/train/000XX/IR/coverX/
+        covered_images: set[Path] = set()
 
         # Search all possible training directories
         search_roots = [
@@ -381,16 +387,10 @@ class AdvancedCoverAugmenter:
                 continue
             for cover in ["cover1", "cover2"]:
                 # Recursive glob to find images inside cover1/cover2 directories
-                # This is more robust to different nesting levels
                 for img_ext in ["*.png", "*.jpg"]:
                     for img_path in root.rglob(f"**/IR/{cover}/{img_ext}"):
                         covered_images.add(img_path)
 
-                # Also try without IR subfolder just in case
-                # (Note: we check covered_images set here, but it's per cover)
-                # To keep logic similar to before:
-                # if not any(str(p).endswith(f'/{cover}/*.png') for p in covered_images): ...
-                # Actually, let's just always try both paths to be safe.
                 for img_ext in ["*.png", "*.jpg"]:
                     for img_path in root.rglob(f"**/{cover}/{img_ext}"):
                         covered_images.add(img_path)
@@ -402,14 +402,9 @@ class AdvancedCoverAugmenter:
                     covered_images.add(img_path)
 
         # Filter for training subjects if possible (1-80)
-        # In SLP, subjects 1-80 are training.
-        # Paths usually contain Subject_XX or 000XX.
-        final_images = []
+        final_images: List[Path] = []
         for img_path in covered_images:
             path_str = str(img_path)
-            # Simple heuristic: if it contains a subject ID > 80, it might be validation/test
-            # But usually they are in 'train' vs 'test' folders.
-            # If we found them under a 'train' search root, they are likely safe.
             if "valid" in path_str.lower() or "test" in path_str.lower():
                 continue
             final_images.append(img_path)
@@ -429,12 +424,12 @@ class AdvancedCoverAugmenter:
     def __call__(
         self,
         image: Union[Image.Image, torch.Tensor],
-        joints: Optional[torch.Tensor] = None,
+        joints: Optional[Any] = None,
         is_ir: bool = True,
-        **kwargs,
+        **kwargs: Any,
     ) -> Union[Image.Image, torch.Tensor]:
-        force = kwargs.get("force_apply", False)
-        prob = kwargs.get("probability", self.probability)
+        force = bool(kwargs.get("force_apply", False))
+        prob = float(kwargs.get("probability", self.probability))
         if (
             not is_ir
             or not self.reference_bank
@@ -444,10 +439,11 @@ class AdvancedCoverAugmenter:
 
         is_tensor = torch.is_tensor(image)
         if is_tensor:
-            device = image.device
-            img_pil = v2.functional.to_pil_image(image)
+            img_tensor = cast(torch.Tensor, image)
+            device = img_tensor.device
+            img_pil = v2.functional.to_pil_image(img_tensor)
         else:
-            img_pil = image
+            img_pil = cast(Image.Image, image)
 
         original_mode = img_pil.mode
         if original_mode != "L":
@@ -455,25 +451,26 @@ class AdvancedCoverAugmenter:
 
         w, h = img_pil.size
 
-        # 1. Determine blanket Y start position (Logic from ThermalDiffusionAugmenter)
-        head_y = None
+        # 1. Determine blanket Y start position
+        head_y: Optional[float] = None
         if joints is not None:
             if torch.is_tensor(joints):
-                if len(joints.shape) == 3:
-                    j_np = joints[0].cpu().numpy()
-                elif len(joints.shape) == 2:
+                joints_tensor = cast(torch.Tensor, joints)
+                if len(joints_tensor.shape) == 3:
+                    j_np = joints_tensor[0].cpu().numpy()
+                elif len(joints_tensor.shape) == 2:
                     j_np = (
-                        joints[:2, :].T.cpu().numpy()
-                        if joints.shape[0] == 3
-                        else joints.cpu().numpy()
+                        joints_tensor[:2, :].T.cpu().numpy()
+                        if joints_tensor.shape[0] == 3
+                        else joints_tensor.cpu().numpy()
                     )
                 else:
-                    j_np = np.array(joints)
+                    j_np = np.array(joints_tensor)
             else:
                 j_np = np.array(joints)
             if len(j_np.shape) == 2 and j_np.shape[0] >= 14:
                 if j_np[13, 0] > 0 or j_np[13, 1] > 0:
-                    head_y = j_np[13, 1]
+                    head_y = float(j_np[13, 1])
 
         min_allowed_y = int(h * 0.15)
         if head_y is not None:
@@ -483,7 +480,7 @@ class AdvancedCoverAugmenter:
         # 2. Create wavy mask
         mask_pil = Image.new("L", img_pil.size, 0)
         draw = ImageDraw.Draw(mask_pil)
-        wavy_points = []
+        wavy_points: List[Tuple[int, int]] = []
         num_points = 20
         freq, amp, phase = (
             random.uniform(1.5, 3.5),
@@ -491,10 +488,10 @@ class AdvancedCoverAugmenter:
             random.uniform(0, 2 * np.pi),
         )
         for i in range(num_points + 1):
-            x = int(i * w / num_points)
-            y = int(base_y + amp * np.sin(freq * (x / w) * 2 * np.pi + phase))
-            y = max(0, min(h - 1, y))
-            wavy_points.append((x, y))
+            px = int(i * w / num_points)
+            py = int(base_y + amp * np.sin(freq * (px / w) * 2 * np.pi + phase))
+            py = max(0, min(h - 1, py))
+            wavy_points.append((px, py))
         polygon_points = list(wavy_points) + [(w, h), (0, h)]
         draw.polygon(polygon_points, fill=255)
         mask_pil = mask_pil.filter(
@@ -511,15 +508,15 @@ class AdvancedCoverAugmenter:
         styled_np = src_np.copy()
 
         # Histogram Matching
-        if random.random() < kwargs.get("hist_match_prob", 0.5):
+        if random.random() < float(kwargs.get("hist_match_prob", 0.5)):
             styled_np = histogram_matching(styled_np, ref_np)
 
         # FDA
-        if random.random() < kwargs.get("fda_prob", 0.5):
+        if random.random() < float(kwargs.get("fda_prob", 0.5)):
             styled_t = torch.from_numpy(styled_np).unsqueeze(0) / 255.0
             ref_t = torch.from_numpy(ref_np).unsqueeze(0) / 255.0
             styled_t = fourier_domain_adaptation(
-                styled_t, ref_t, beta=kwargs.get("fda_beta", 0.01)
+                styled_t, ref_t, beta=float(kwargs.get("fda_beta", 0.01))
             )
             styled_np = (styled_t.squeeze(0).numpy() * 255.0).clip(0, 255)
 
@@ -531,5 +528,5 @@ class AdvancedCoverAugmenter:
         if original_mode != "L":
             final_image = final_image.convert(original_mode)
         if is_tensor:
-            return v2.functional.to_image(final_image).to(device)
+            return v2.functional.to_image(final_image).to(device)  # type: ignore[no-any-return]
         return final_image
