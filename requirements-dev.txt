@@ -3,3 +3,9 @@ pytest
 paramiko
 scp
 httpx
+mypy
+types-PyYAML
+types-paramiko
+types-tqdm
+pandas-stubs
+types-Pillow
