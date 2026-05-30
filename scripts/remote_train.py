@@ -274,7 +274,8 @@ def main():
                         else:
                             import torch
 
-                            torch.load(str(local_path), map_location="cpu")
+                            with open(str(local_path), "rb") as f:
+                                torch.load(f, map_location="cpu")
                             is_valid = True
                             print(
                                 f"[resume] Local {fname} integrity verified successfully."
@@ -440,9 +441,8 @@ def main():
                                         try:
                                             import torch
 
-                                            torch.load(
-                                                str(temp_local_path), map_location="cpu"
-                                            )
+                                            with open(str(temp_local_path), "rb") as f:
+                                                torch.load(f, map_location="cpu")
                                         except Exception as integrity_err:
                                             print(
                                                 f"[sync] Warning: Downloaded {fname} failed integrity check: {integrity_err}"
