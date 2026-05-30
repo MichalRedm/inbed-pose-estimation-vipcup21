@@ -1,8 +1,9 @@
 import torch
 import numpy as np
+from typing import List, Tuple, Optional, Union, Any
 
 # LSP-style joint connections for skeletal visualization
-LSP_SKELETON = [
+LSP_SKELETON: List[Tuple[int, int]] = [
     (13, 12),  # Head to Thorax
     (12, 8),
     (12, 9),  # Thorax to Shoulders
@@ -20,7 +21,7 @@ LSP_SKELETON = [
 ]
 
 # Joint names for debugging/legend
-LSP_JOINT_NAMES = [
+LSP_JOINT_NAMES: List[str] = [
     "R_Ankle",
     "R_Knee",
     "R_Hip",
@@ -38,7 +39,12 @@ LSP_JOINT_NAMES = [
 ]
 
 
-def decode_heatmaps(heatmaps, image_size, method="argmax", temperature=10.0):
+def decode_heatmaps(
+    heatmaps: Union[torch.Tensor, np.ndarray],
+    image_size: Tuple[int, int],
+    method: str = "argmax",
+    temperature: float = 10.0,
+) -> torch.Tensor:
     """
     Convert heatmaps (B, J, H, W) to joint coordinates (B, J, 2) in image space.
 
@@ -47,15 +53,17 @@ def decode_heatmaps(heatmaps, image_size, method="argmax", temperature=10.0):
       - "soft-argmax": Expected value / Center of mass (precise, robust)
     """
     if isinstance(heatmaps, np.ndarray):
-        heatmaps = torch.from_numpy(heatmaps)
+        heatmaps_torch = torch.from_numpy(heatmaps)
+    else:
+        heatmaps_torch = heatmaps
 
-    B, J, H, W = heatmaps.shape
+    B, J, H, W = heatmaps_torch.shape
     img_h, img_w = image_size
-    device = heatmaps.device
+    device = heatmaps_torch.device
 
     if method == "soft-argmax":
         # Apply temperature-scaled softmax to get probability distribution
-        flat = heatmaps.view(B, J, -1)
+        flat = heatmaps_torch.view(B, J, -1)
         probs = torch.softmax(flat * temperature, dim=-1)
         probs = probs.view(B, J, H, W)
 
@@ -72,7 +80,7 @@ def decode_heatmaps(heatmaps, image_size, method="argmax", temperature=10.0):
         return torch.stack([x, y], dim=-1)
     else:
         # Standard argmax
-        flat = heatmaps.view(B, J, -1)
+        flat = heatmaps_torch.view(B, J, -1)
         idx = flat.argmax(dim=-1)
         y = (idx // W).float()
         x = (idx % W).float()
@@ -83,34 +91,44 @@ def decode_heatmaps(heatmaps, image_size, method="argmax", temperature=10.0):
 
 
 def draw_pose(
-    ax, joints, visibility=None, color="red", linestyle="-", label=None, alpha=1.0
-):
+    ax: Any,
+    joints: Union[torch.Tensor, np.ndarray],
+    visibility: Optional[Union[torch.Tensor, np.ndarray]] = None,
+    color: str = "red",
+    linestyle: str = "-",
+    label: Optional[str] = None,
+    alpha: float = 1.0,
+) -> None:
     """
     Draw joints and skeletal connections on a Matplotlib axis.
     joints: (J, 2) array or tensor of [x, y] coordinates.
     visibility: (J,) array or tensor of visibility flags (1 or True: draw, 0 or False: skip).
     """
     if torch.is_tensor(joints):
-        joints = joints.cpu().numpy()
+        joints_np = joints.cpu().numpy()
+    else:
+        joints_np = joints
 
     if visibility is not None:
         if torch.is_tensor(visibility):
-            visibility = visibility.cpu().numpy()
+            visibility_np = visibility.cpu().numpy()
+        else:
+            visibility_np = visibility
     else:
         # Default to all visible if not provided
-        visibility = np.ones(len(joints))
+        visibility_np = np.ones(len(joints_np))
 
     # Mask for valid joints
-    is_visible = visibility.astype(bool)
+    is_visible = visibility_np.astype(bool)
 
     # Draw connections
     line_drawn = False
     for i, (j1, j2) in enumerate(LSP_SKELETON):
-        if j1 < len(joints) and j2 < len(joints):
+        if j1 < len(joints_np) and j2 < len(joints_np):
             # Only draw if both joints are visible
             if is_visible[j1] and is_visible[j2]:
-                x = [joints[j1, 0], joints[j2, 0]]
-                y = [joints[j1, 1], joints[j2, 1]]
+                x = [joints_np[j1, 0], joints_np[j2, 0]]
+                y = [joints_np[j1, 1], joints_np[j2, 1]]
 
                 # Only add label to the first actual line drawn
                 plot_label = label if not line_drawn else None
@@ -128,8 +146,8 @@ def draw_pose(
     # Draw joint points (only visible ones)
     if np.any(is_visible):
         ax.scatter(
-            joints[is_visible, 0],
-            joints[is_visible, 1],
+            joints_np[is_visible, 0],
+            joints_np[is_visible, 1],
             color=color,
             s=20,
             edgecolors="white",
@@ -138,7 +156,11 @@ def draw_pose(
         )
 
 
-def compute_mpjpe(preds, gts, visibility=None):
+def compute_mpjpe(
+    preds: torch.Tensor,
+    gts: Union[torch.Tensor, np.ndarray],
+    visibility: Optional[Union[torch.Tensor, np.ndarray]] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Compute Mean Per Joint Position Error.
     preds: (B, J, 2)
@@ -148,37 +170,44 @@ def compute_mpjpe(preds, gts, visibility=None):
     """
     device = preds.device
     if not torch.is_tensor(gts):
-        gts = torch.from_numpy(gts).to(device)
+        gt_tensor = torch.from_numpy(gts).to(device)
     else:
-        gts = gts.to(device)
+        gt_tensor = gts.to(device)
 
     if visibility is not None:
         if not torch.is_tensor(visibility):
-            visibility = torch.from_numpy(visibility).to(device)
+            vis_tensor = torch.from_numpy(visibility).to(device)
         else:
-            visibility = visibility.to(device)
+            vis_tensor = visibility.to(device)
 
-        if len(visibility.shape) == 3:  # (B, 3, J)
-            visibility = (visibility[:, 2, :] <= 1).float()
+        if len(vis_tensor.shape) == 3:  # (B, 3, J)
+            vis_mask = (vis_tensor[:, 2, :] <= 1).float()
+        else:
+            vis_mask = vis_tensor
     else:
-        visibility = torch.ones(preds.shape[:2], device=device)
+        vis_mask = torch.ones(preds.shape[:2], device=device)
 
     # Distance between preds and gts
-    dist = torch.sqrt(torch.sum((preds - gts) ** 2, dim=-1))  # (B, J)
+    dist = torch.sqrt(torch.sum((preds - gt_tensor) ** 2, dim=-1))  # (B, J)
 
     # Apply visibility mask
-    dist = dist * visibility
+    dist = dist * vis_mask
 
-    sum_vis = torch.sum(visibility, dim=0)
+    sum_vis = torch.sum(vis_mask, dim=0)
     per_joint_error = torch.sum(dist, dim=0) / torch.clamp(sum_vis, min=1e-6)
 
-    total_vis = torch.sum(visibility)
+    total_vis = torch.sum(vis_mask)
     mean_error = torch.sum(dist) / torch.clamp(total_vis, min=1e-6)
 
     return mean_error, per_joint_error
 
 
-def compute_pck(preds, gts, visibility=None, threshold=0.5):
+def compute_pck(
+    preds: torch.Tensor,
+    gts: Union[torch.Tensor, np.ndarray],
+    visibility: Optional[Union[torch.Tensor, np.ndarray]] = None,
+    threshold: float = 0.5,
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Compute Percentage of Correct Keypoints.
     threshold: If < 1.0, it's relative to torso diameter (PCK@threshold).
@@ -186,29 +215,31 @@ def compute_pck(preds, gts, visibility=None, threshold=0.5):
     """
     device = preds.device
     if not torch.is_tensor(gts):
-        gts = torch.from_numpy(gts).to(device)
+        gt_tensor = torch.from_numpy(gts).to(device)
     else:
-        gts = gts.to(device)
+        gt_tensor = gts.to(device)
 
     if visibility is not None:
         if not torch.is_tensor(visibility):
-            visibility = torch.from_numpy(visibility).to(device)
+            vis_tensor = torch.from_numpy(visibility).to(device)
         else:
-            visibility = visibility.to(device)
+            vis_tensor = visibility.to(device)
 
-        if len(visibility.shape) == 3:  # (B, 3, J)
-            visibility = (visibility[:, 2, :] <= 1).float()
+        if len(vis_tensor.shape) == 3:  # (B, 3, J)
+            vis_mask = (vis_tensor[:, 2, :] <= 1).float()
+        else:
+            vis_mask = vis_tensor
     else:
-        visibility = torch.ones(preds.shape[:2], device=device)
+        vis_mask = torch.ones(preds.shape[:2], device=device)
 
-    dist = torch.sqrt(torch.sum((preds - gts) ** 2, dim=-1))  # (B, J)
+    dist = torch.sqrt(torch.sum((preds - gt_tensor) ** 2, dim=-1))  # (B, J)
 
     if threshold < 1.0:
         # Relative threshold (PCK@threshold)
         # Use distance between midpoint of shoulders and midpoint of hips as torso reference
         # Indices: 8:RShoulder, 9:LShoulder, 2:RHip, 3:LHip
-        shoulder_mid = (gts[:, 8, :] + gts[:, 9, :]) / 2.0
-        hip_mid = (gts[:, 2, :] + gts[:, 3, :]) / 2.0
+        shoulder_mid = (gt_tensor[:, 8, :] + gt_tensor[:, 9, :]) / 2.0
+        hip_mid = (gt_tensor[:, 2, :] + gt_tensor[:, 3, :]) / 2.0
         torso_dist = torch.sqrt(
             torch.sum((shoulder_mid - hip_mid) ** 2, dim=-1)
         )  # (B,)
@@ -218,14 +249,14 @@ def compute_pck(preds, gts, visibility=None, threshold=0.5):
         # Reshape torso_dist to (B, 1) for broadcasting
         effective_threshold = torso_dist.unsqueeze(-1) * threshold
     else:
-        effective_threshold = threshold
+        effective_threshold = torch.tensor(threshold, device=device)
 
-    correct = (dist <= effective_threshold).float() * visibility
+    correct = (dist <= effective_threshold).float() * vis_mask
 
-    sum_vis = torch.sum(visibility, dim=0)
+    sum_vis = torch.sum(vis_mask, dim=0)
     per_joint_pck = torch.sum(correct, dim=0) / torch.clamp(sum_vis, min=1e-6)
 
-    total_vis = torch.sum(visibility)
+    total_vis = torch.sum(vis_mask)
     mean_pck = torch.sum(correct) / torch.clamp(total_vis, min=1e-6)
 
     return mean_pck, per_joint_pck

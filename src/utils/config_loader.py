@@ -2,9 +2,10 @@ import os
 import re
 import yaml
 from dotenv import load_dotenv
+from typing import Any, Dict, List, Optional, Union
 
 
-def _sanitize_config_types(config):
+def _sanitize_config_types(config: Any) -> None:
     """
     Recursively convert string values for known numeric config keys to float/int.
     This protects against YAML 1.1 parsers loading scientific notation (like 5e-5) as strings.
@@ -44,14 +45,14 @@ def _sanitize_config_types(config):
                         pass
 
 
-def load_config(config_path="configs/default.yaml", use_user_overrides=True):
+def load_config(config_path: str = "configs/default.yaml", use_user_overrides: bool = True) -> Dict[str, Any]:
     """
     Load configuration from YAML and merge with environment variables.
     """
     load_dotenv()
 
     with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
+        config: Dict[str, Any] = yaml.safe_load(f)
 
     # Sanitize scientific notation strings to numeric types
     _sanitize_config_types(config)
@@ -87,7 +88,7 @@ def load_config(config_path="configs/default.yaml", use_user_overrides=True):
     return config
 
 
-def _override_with_env(config, prefix="APP"):
+def _override_with_env(config: Dict[str, Any], prefix: str = "APP") -> None:
     for key, value in config.items():
         env_key = f"{prefix}_{key.upper()}"
         if isinstance(value, dict):
