@@ -1,3 +1,8 @@
+"""
+Thermal-specific data augmentations for simulating blankets and sensor behavior.
+Includes physical diffusion models, Fourier Domain Adaptation (FDA), and histogram matching.
+"""
+
 import random
 import numpy as np
 import torch
@@ -11,7 +16,13 @@ from pathlib import Path
 def histogram_matching(source: np.ndarray, reference: np.ndarray) -> np.ndarray:
     """
     Matches the histogram of the source image to the reference image.
-    source, reference: np.ndarray (H, W) or (H, W, C) in [0, 255]
+
+    Args:
+        source: Source image array in [0, 255].
+        reference: Reference image array in [0, 255].
+
+    Returns:
+        The source image with its histogram matched to the reference.
     """
     if source.ndim == 2:
         return _match_cumulative_distribution(source, reference)
@@ -30,6 +41,7 @@ def histogram_matching(source: np.ndarray, reference: np.ndarray) -> np.ndarray:
 def _match_cumulative_distribution(
     source: np.ndarray, reference: np.ndarray
 ) -> np.ndarray:
+    """Internal helper for histogram matching on a single channel."""
     src_values, src_indices, src_counts = np.unique(
         source, return_inverse=True, return_counts=True
     )
@@ -46,9 +58,16 @@ def fourier_domain_adaptation(
     src_img: torch.Tensor, trg_img: torch.Tensor, beta: float = 0.01
 ) -> torch.Tensor:
     """
-    Fourier Domain Adaptation (FDA)
-    src_img, trg_img: torch.Tensor [C, H, W]
-    beta: boundary for low-frequency swap
+    Fourier Domain Adaptation (FDA) for style transfer.
+    Swaps the low-frequency components of the source image with the target image.
+
+    Args:
+        src_img: Source image tensor of shape (C, H, W).
+        trg_img: Target image tensor of shape (C, H, W).
+        beta: Boundary ratio for the low-frequency swap.
+
+    Returns:
+        The source image adapted to the target's style.
     """
     # Get FFT
     fft_src = torch.fft.fftn(src_img, dim=(-2, -1))
@@ -91,6 +110,7 @@ def fourier_domain_adaptation(
 class ThermalDiffusionAugmenter:
     """
     Simulates the effect of a blanket on IR images by diffusing and dampening the heat signature.
+    Uses wavy masks and procedural wrinkle generation for realism.
     """
 
     METADATA: Dict[str, Any] = {
@@ -109,6 +129,13 @@ class ThermalDiffusionAugmenter:
     is_training: bool
 
     def __init__(self, probability: float = 0.5, is_training: bool = True) -> None:
+        """
+        Initializes the thermal diffusion augmenter.
+
+        Args:
+            probability: Probability of applying the effect.
+            is_training: If True, uses random parameters for augmentation.
+        """
         self.probability = probability
         self.is_training = is_training
 
@@ -119,6 +146,18 @@ class ThermalDiffusionAugmenter:
         is_ir: bool = True,
         **kwargs: Any,
     ) -> Union[Image.Image, torch.Tensor]:
+        """
+        Applies thermal diffusion.
+
+        Args:
+            image: Input image.
+            joints: Input joint coordinates (used to anchor the blanket position).
+            is_ir: If False, the augmentation is skipped.
+            **kwargs: Override for probability, damp_factor, blur_radius, and base_y_ratio.
+
+        Returns:
+            Augmented image.
+        """
         force = bool(kwargs.get("force_apply", False))
         prob = float(kwargs.get("probability", self.probability))
         if not is_ir or (not force and random.random() > prob):
@@ -364,6 +403,14 @@ class AdvancedCoverAugmenter:
         probability: float = 0.5,
         bank_size: int = 100,
     ) -> None:
+        """
+        Initializes the advanced cover augmenter.
+
+        Args:
+            dataset_root: Root directory of the dataset to find reference images.
+            probability: Probability of applying the augmentation.
+            bank_size: Number of real covered images to keep in the reference bank.
+        """
         self.probability = probability
         self.bank_size = bank_size
         self.dataset_root = Path(dataset_root)
@@ -371,7 +418,10 @@ class AdvancedCoverAugmenter:
         self._load_reference_bank()
 
     def _load_reference_bank(self) -> None:
-        """Find real covered images in the training set (Subjects 1-80)."""
+        """
+        Scans the dataset for real covered images to build a style reference bank.
+        Filters for training subjects to avoid data leakage.
+        """
         covered_images: set[Path] = set()
 
         # Search all possible training directories
@@ -427,6 +477,18 @@ class AdvancedCoverAugmenter:
         is_ir: bool = True,
         **kwargs: Any,
     ) -> Union[Image.Image, torch.Tensor]:
+        """
+        Applies advanced synthetic cover augmentation.
+
+        Args:
+            image: Input image.
+            joints: Input joint coordinates (used to anchor the blanket position).
+            is_ir: If False, the augmentation is skipped.
+            **kwargs: Override for probability, fda_prob, hist_match_prob, and fda_beta.
+
+        Returns:
+            Augmented image.
+        """
         force = bool(kwargs.get("force_apply", False))
         prob = float(kwargs.get("probability", self.probability))
         if (

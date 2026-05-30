@@ -1,3 +1,7 @@
+"""
+Domain translation data augmentations using GAN-based style transfer.
+"""
+
 import os
 import torch
 import torch.nn as nn
@@ -33,6 +37,13 @@ class CycleGANAugmentation:
         probability: float = 0.5,
         checkpoint_path: str = "models/cyclegan_gen_A2B.pth",
     ) -> None:
+        """
+        Initializes the CycleGAN augmentation.
+
+        Args:
+            probability: Probability of applying the translation.
+            checkpoint_path: Path to the generator checkpoint.
+        """
         self.probability = probability
         self.enabled = probability > 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -77,6 +88,16 @@ class CycleGANAugmentation:
     def __call__(
         self, img: Union[Image.Image, torch.Tensor], **kwargs: Any
     ) -> Union[Image.Image, torch.Tensor]:
+        """
+        Applies CycleGAN translation.
+
+        Args:
+            img: Input image.
+            **kwargs: Override for probability and force_apply.
+
+        Returns:
+            Translated image.
+        """
         force = bool(kwargs.get("force_apply", False))
         prob = float(kwargs.get("probability", self.probability))
         if (
@@ -160,6 +181,13 @@ class CUTAugmentation:
         probability: float = 0.5,
         checkpoint_path: str = "models/cut_gen.pth",
     ) -> None:
+        """
+        Initializes the CUT augmentation.
+
+        Args:
+            probability: Probability of applying the translation.
+            checkpoint_path: Path to the generator checkpoint.
+        """
         self.probability = probability
         self.enabled = probability > 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -201,6 +229,16 @@ class CUTAugmentation:
     def __call__(
         self, img: Union[Image.Image, torch.Tensor], **kwargs: Any
     ) -> Union[Image.Image, torch.Tensor]:
+        """
+        Applies CUT translation.
+
+        Args:
+            img: Input image.
+            **kwargs: Override for probability and force_apply.
+
+        Returns:
+            Translated image.
+        """
         force = bool(kwargs.get("force_apply", False))
         prob = float(kwargs.get("probability", self.probability))
         if (
