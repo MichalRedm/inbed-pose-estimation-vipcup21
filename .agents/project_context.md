@@ -39,6 +39,9 @@ Finalize and validate the production-grade architectural refactoring of the pose
 - [x] Implemented, synchronized, and benchmarked COCO pre-trained ViTPose fine-tuning (Loop 43), diagnosing structural attention token mismatches and representation washouts.
 - [x] Discovered true dataset composition (Train: 1-30 annotated source, 31-80 unannotated target). Pivoting strategy to explore Semi-Supervised Learning (SSL) and true Unsupervised Domain Adaptation (UDA).
 - [x] Refactored CycleGAN generator (Loop 47) to enforce 1-channel monochromatic output for realistic thermal domain translation.
+- [x] Modularized FastAPI `src/api/main.py` using cohesive sub-routers and async lifespan context manager.
+- [x] Decoupled telemetry updates (`history.json`) and downloads from large `.pth` checkpoints in `remote_train.py` and PyTorch Lightning callbacks.
+- [x] Standardized evaluation loss scaling in coordinate-regression pose estimation models to align validation metrics scale.
 
 ## Dashboard-Driven ML
 - **Real-time Monitoring**: All training and evaluation MUST be performed via the Dashboard API (see `ml_operations.md` rule).

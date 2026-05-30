@@ -15,6 +15,7 @@ This repository implements a high-resolution pose estimation pipeline using **HR
 - **Robust CI/CD**: Automated linting, formatting, and unit testing via GitHub Actions.
 - **Inference API**: FastAPI-based server for real-time human pose estimation from images.
 - **Remote Training support**: Modular utilities for managing training on remote GPU backends.
+- **Decoupled Real-time Telemetry**: Streamlined multi-threaded synchronization system separating large checkpoint files (`.pth`) from telemetry metadata (`history.json`), preventing SSH pipes and dashboard updates from blocking during heavy transfers.
 - **ACS Compliant**: Uses the Agentic Collaboration Standard for persistent project context.
 
 ---

@@ -38,21 +38,19 @@ class PoseTrainer:
 
             images = batch["image"].to(self.device)
 
-            # Select target based on model output type
-            if self.model.output_type == "heatmap":
-                targets = batch["target"].to(self.device)
-            else:
-                # For coordinate models, use joints (B, 3, 14) -> (B, 14, 2)
-                # We extract only (x, y) and normalize if necessary,
-                # but for now we'll assume the model predicts pixels or the loss handles it.
-                # Standard practice for regression: (B, num_joints * 2) or (B, num_joints, 2)
-                targets = batch["joints"][:, :2, :].permute(0, 2, 1).to(self.device)
-
-            # Forward pass
+            image_size = self.config.get("dataset", {}).get("image_size", (256, 256))
             outputs = self.model(images)
 
             # Loss calculation
-            loss = self.criterion(outputs, targets)
+            if self.model.output_type == "heatmap":
+                targets = batch["target"].to(self.device)
+                loss = self.criterion(outputs, targets)
+            else:
+                targets = batch["joints"][:, :2, :].permute(0, 2, 1).to(self.device)
+                # Normalize coordinates by image size to scale the training loss to the standard [0, 1] range
+                h, w = image_size
+                scale = torch.tensor([w, h], dtype=torch.float32, device=self.device)
+                loss = self.criterion(outputs / scale, targets / scale)
 
             # Backward pass
             self.optimizer.zero_grad()
@@ -130,13 +128,17 @@ class PoseTrainer:
             images = batch["image"].to(self.device)
             joints = batch["joints"]  # (B, 3, 14)
 
+            outputs = self.model(images)
+
             if self.model.output_type == "heatmap":
                 targets = batch["target"].to(self.device)
+                loss = self.criterion(outputs, targets)
             else:
                 targets = batch["joints"][:, :2, :].permute(0, 2, 1).to(self.device)
-
-            outputs = self.model(images)
-            loss = self.criterion(outputs, targets)
+                # Normalize coordinates by image size to scale the evaluation loss to the standard [0, 1] range
+                h, w = image_size
+                scale = torch.tensor([w, h], dtype=torch.float32, device=self.device)
+                loss = self.criterion(outputs / scale, targets / scale)
 
             total_loss += loss.item()
             batches += 1

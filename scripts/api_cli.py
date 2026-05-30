@@ -48,7 +48,7 @@ def get_status():
         print(f"Progress: {data.get('progress', 0.0) * 100:.1f}%")
         print(f"Message: {data.get('status_message', 'N/A')}")
 
-        if data.get("loss_history"):
+        if data.get("loss_history") and data["loss_history"][-1] is not None:
             print(f"Latest Loss: {data['loss_history'][-1]:.4f}")
     except Exception as e:
         print(f"Error getting status: {e}")
