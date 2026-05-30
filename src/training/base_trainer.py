@@ -20,7 +20,7 @@ from src.utils.telemetry import LocalTracker, JSONLStream
 class BaseTrainer(ABC):
     """
     Abstract base class for trainers.
-    
+
     Provides:
       - Distributed training coordination.
       - Atomic checkpoint saving with verification.

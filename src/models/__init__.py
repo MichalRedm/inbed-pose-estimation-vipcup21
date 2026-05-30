@@ -53,7 +53,7 @@ def load_model_for_inference(
 ) -> nn.Module:
     """
     Loads a model from a checkpoint and wraps it for inference.
-    
+
     Automatically handles:
       - PoseDecodingWrapper application for heatmap models.
       - Transient file corruption with retries.

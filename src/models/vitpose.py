@@ -136,7 +136,7 @@ class ViTPose(BaseModel):
     def forward(self, x: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """
         Forward pass of ViTPose.
-        
+
         Performs dynamic positional embedding interpolation and bypasses class tokens.
 
         Args:

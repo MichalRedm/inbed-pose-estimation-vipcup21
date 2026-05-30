@@ -52,7 +52,7 @@ def compute_pck(
 ) -> Tuple[torch.Tensor, torch.Tensor, float]:
     """
     Computes PCK@threshold per joint.
-    
+
     Visibility mask: vis <= 1 (includes both visible=0 and occluded=1).
     Joints with vis==2 (out-of-frame/unannotated) are excluded.
 

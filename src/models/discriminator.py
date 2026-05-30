@@ -18,7 +18,7 @@ class GradientReversalFunction(Function):
     def forward(ctx: Any, x: torch.Tensor, alpha: float) -> torch.Tensor:
         """
         Forward pass.
-        
+
         Args:
             x: Input tensor.
             alpha: Scale factor for the gradient.
@@ -33,7 +33,7 @@ class GradientReversalFunction(Function):
     def backward(ctx: Any, grad_output: torch.Tensor) -> Tuple[torch.Tensor, None]:
         """
         Backward pass.
-        
+
         Args:
             grad_output: Input gradient.
 

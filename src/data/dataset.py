@@ -19,7 +19,7 @@ def collate_skip_none(
 ) -> Optional[Dict[str, Any]]:
     """
     Custom collate_fn that drops samples missing a target heatmap.
-    
+
     Required because unannotated samples (covered subjects without labels)
     return target=None, which PyTorch's default collate cannot handle.
 
