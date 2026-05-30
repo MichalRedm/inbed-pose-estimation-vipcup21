@@ -1,90 +1,26 @@
 import torch
 import torch.nn as nn
-from typing import Dict, Any
 import torch.nn.functional as F
-from .base_trainer import BaseTrainer
-from .losses import AnatomicalLoss, UncertaintyWeighting
-from ..models.layers import SoftArgmax2D
+import pytorch_lightning as pl
+from typing import Dict, Any
+
+from src.training.losses import AnatomicalLoss, UncertaintyWeighting
+from src.models.layers import SoftArgmax2D
+from src.training.standard_trainer import generate_pytorch_heatmaps
 
 
-def generate_pytorch_heatmaps(
-    joints: torch.Tensor, heatmap_size=(64, 64), image_size=(256, 256), sigma=2.0
-) -> torch.Tensor:
+class PoseLightningModule(pl.LightningModule):
     """
-    Generate 2D Gaussian heatmaps on PyTorch tensors directly on the target device.
-    joints: tensor of shape (B, 3, 14) -> (coords, joints) -> joints[:, :2, :] is (x, y)
-    heatmap_size: (H_out, W_out)
-    image_size: (H_in, W_in)
-    sigma: float
-    """
-    B, _, J = joints.shape
-    H_out, W_out = heatmap_size
-    H_in, W_in = image_size
-    device = joints.device
-
-    # Scale joints to heatmap size
-    scale_x = W_out / W_in
-    scale_y = H_out / H_in
-
-    mu_x = joints[:, 0, :] * scale_x  # (B, J)
-    mu_y = joints[:, 1, :] * scale_y  # (B, J)
-    visibility = joints[:, 2, :]  # (B, J)
-
-    # Create coordinate grids
-    grid_y, grid_x = torch.meshgrid(
-        torch.arange(H_out, device=device, dtype=torch.float32),
-        torch.arange(W_out, device=device, dtype=torch.float32),
-        indexing="ij",
-    )  # (H_out, W_out)
-
-    grid_x = grid_x.view(1, 1, H_out, W_out)  # (1, 1, H_out, W_out)
-    grid_y = grid_y.view(1, 1, H_out, W_out)  # (1, 1, H_out, W_out)
-
-    mu_x = mu_x.view(B, J, 1, 1)  # (B, J, 1, 1)
-    mu_y = mu_y.view(B, J, 1, 1)  # (B, J, 1, 1)
-
-    # Generate Gaussian
-    dist_sq = (grid_x - mu_x) ** 2 + (grid_y - mu_y) ** 2
-    sigma_val = float(sigma)
-    heatmaps = torch.exp(-dist_sq / (2 * sigma_val**2))
-
-    # Apply visibility and out-of-bounds mask
-    invalid_mask = (visibility > 1) | (
-        (joints[:, 0, :] == 0) & (joints[:, 1, :] == 0)
-    )  # (B, J)
-    invalid_mask = invalid_mask.view(B, J, 1, 1)
-
-    heatmaps = heatmaps.masked_fill(invalid_mask, 0.0)
-
-    # Also mask out individual joints that are out of bounds
-    out_of_bounds = (
-        (mu_x < 0) | (mu_y < 0) | (mu_x >= W_out) | (mu_y >= H_out)
-    )  # (B, J, 1, 1)
-    heatmaps = heatmaps.masked_fill(out_of_bounds, 0.0)
-
-    return heatmaps
-
-
-class StandardTrainer(BaseTrainer):
-    """
-    Standard supervised trainer for pose estimation with optional anatomical constraints.
+    Standard PyTorch Lightning Module wrapping the pose estimation architectures (ViTPose, HRNet)
+    and consolidating all the training steps, loss terms, and optimizer construction logic.
     """
 
-    def __init__(
-        self,
-        model: nn.Module,
-        optimizer: torch.optim.Optimizer,
-        criterion: nn.Module,
-        config: Dict[str, Any],
-        device: torch.device,
-        rank: int = 0,
-        world_size: int = 1,
-    ):
-        super().__init__(model, config, device, rank, world_size)
-        self.optimizer = optimizer
-        self.criterion = criterion
+    def __init__(self, model: nn.Module, config: Dict[str, Any], criterion: nn.Module = None):
+        super().__init__()
+        self.model = model
+        self.config = config
+        self.criterion = criterion or nn.MSELoss()
 
-        # Anatomical constraints setup
         training_cfg = config.get("training", {})
         self.unfreeze_epoch = training_cfg.get("unfreeze_epoch", None)
         self.backbone_lr_ratio = training_cfg.get("backbone_lr_ratio", 1.0)
@@ -95,18 +31,22 @@ class StandardTrainer(BaseTrainer):
         self.lambda_coord_occluded = training_cfg.get("lambda_coord_occluded", 0.0)
         self.sigma_start = training_cfg.get("sigma_start", 2.0)
         self.sigma_end = training_cfg.get("sigma_end", 2.0)
+
+        # Flag indicating whether we are currently using model's own coordinate outputs
+        self.using_model_coords = False
+
         if (
             self.lambda_anatomical > 0
             or self.lambda_coord > 0
             or self.lambda_coord_occluded > 0
         ):
             # Use high temperature to ensure soft-argmax focuses on the actual peak
-            self.soft_argmax = SoftArgmax2D(temperature=100.0).to(device)
+            self.soft_argmax = SoftArgmax2D(temperature=100.0)
 
         if self.lambda_anatomical > 0:
             self.anatomical_criterion = AnatomicalLoss(
-                device=device, mode=self.anatomical_mode
-            ).to(device)
+                device="cpu", mode=self.anatomical_mode
+            )
 
         # Multi-task uncertainty weighting
         self.use_uncertainty = training_cfg.get("use_uncertainty_weighting", False)
@@ -120,15 +60,14 @@ class StandardTrainer(BaseTrainer):
             if self.lambda_anatomical > 0:
                 self.tasks.append("ana")
 
-            self.uncertainty_loss = UncertaintyWeighting(len(self.tasks)).to(device)
-            if self.is_main:
-                print(f"[Trainer] Using Uncertainty Weighting for tasks: {self.tasks}")
+            self.uncertainty_loss = UncertaintyWeighting(len(self.tasks))
+
+    def forward(self, x, **kwargs):
+        return self.model(x, **kwargs)
 
     def _get_current_lambda_ana(self, epoch: int) -> float:
-        # Linear warmup over configurable epochs
         if self.warmup_epochs <= 0:
             return self.lambda_anatomical
-
         if epoch < self.warmup_epochs:
             return self.lambda_anatomical * (epoch / self.warmup_epochs)
         return self.lambda_anatomical
@@ -137,31 +76,28 @@ class StandardTrainer(BaseTrainer):
         num_epochs = self.config.get("training", {}).get("epochs", 30)
         if num_epochs <= 1:
             return self.sigma_start
-
         # Linear decay
-        progress = min(
-            epoch / (num_epochs * 0.7), 1.0
-        )  # Reach sigma_end at 70% of training
+        progress = min(epoch / (num_epochs * 0.7), 1.0)
         return self.sigma_start + (self.sigma_end - self.sigma_start) * progress
 
-    def train_epoch(self, dataloader, epoch: int) -> Dict[str, float]:
-        self.current_epoch = epoch  # Store current epoch for steps
+    def training_step(self, batch, batch_idx):
+        if batch is None:
+            return None
 
-        # Dynamic Sigma Scheduling (moved to Dataset)
-        if hasattr(dataloader.dataset, "set_sigma"):
-            sigma = self._get_current_sigma(epoch)
-            dataloader.dataset.set_sigma(sigma)
+        images = batch["image"]
+        joints = batch["joints"]  # (B, 3, 14)
 
-        return super().train_epoch(dataloader, epoch)
-
-    def _train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
-        images = batch["image"].to(self.device)
-        joints = batch["joints"].to(self.device)  # (B, 3, 14)
-
-        # Track current sigma for metrics and dynamic curriculum
+        # Dynamic Sigma Curriculum
         sigma = self._get_current_sigma(self.current_epoch)
 
-        # Generate target heatmaps dynamically with high precision on the GPU!
+        # Dynamically set dataset sigma for matching the curriculum
+        # PL loader accesses the dataset directly.
+        if hasattr(self.trainer, "train_dataloader") and self.trainer.train_dataloader is not None:
+            dataset = getattr(self.trainer.train_dataloader, "dataset", None)
+            if dataset is not None and hasattr(dataset, "set_sigma"):
+                dataset.set_sigma(sigma)
+
+        # Generate target heatmaps dynamically
         targets = generate_pytorch_heatmaps(
             joints=joints, heatmap_size=(64, 64), image_size=(256, 256), sigma=sigma
         )
@@ -176,10 +112,10 @@ class StandardTrainer(BaseTrainer):
             and "return_refined" in model_to_call.forward.__code__.co_varnames
         ):
             outputs, pred_coords = self.model(images, return_refined=True)
-            using_model_coords = True
+            self.using_model_coords = True
         else:
             outputs = self.model(images)
-            using_model_coords = False
+            self.using_model_coords = False
 
         loss_pose = self.criterion(outputs, targets)
         metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
@@ -191,7 +127,7 @@ class StandardTrainer(BaseTrainer):
 
         # 1. Coordinate regression loss
         if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
-            if not using_model_coords:
+            if not self.using_model_coords:
                 pred_coords = self.soft_argmax(outputs)
 
             gt_coords = joints[:, :2, :].permute(0, 2, 1)
@@ -222,7 +158,8 @@ class StandardTrainer(BaseTrainer):
         # 2. Anatomical consistency loss
         if self.lambda_anatomical > 0:
             curr_lambda = self._get_current_lambda_ana(self.current_epoch)
-            pred_coords = self.soft_argmax(outputs)
+            if not self.using_model_coords:
+                pred_coords = self.soft_argmax(outputs)
             loss_ana = self.anatomical_criterion(pred_coords)
             metrics["loss_ana"] = loss_ana.item()
             metrics["lambda_ana"] = curr_lambda
@@ -237,25 +174,29 @@ class StandardTrainer(BaseTrainer):
             loss, weighted_metrics = self.uncertainty_loss(raw_losses)
             metrics.update(weighted_metrics)
 
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-
         metrics["loss"] = loss.item()
-        return metrics
+        
+        # Log to lightning
+        for k, v in metrics.items():
+            self.log(k, v, on_step=True, on_epoch=True, prog_bar=True, logger=False)
 
-    def _val_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
-        images = batch["image"].to(self.device)
-        joints = batch["joints"].to(self.device)
+        # Stash batch level metrics for Telemetry Callback
+        self.last_step_metrics = metrics
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        if batch is None:
+            return None
+
+        images = batch["image"]
+        joints = batch["joints"]
 
         sigma = self._get_current_sigma(self.current_epoch)
 
-        # Generate target heatmaps dynamically with high precision on the GPU!
         targets = generate_pytorch_heatmaps(
             joints=joints, heatmap_size=(64, 64), image_size=(256, 256), sigma=sigma
         )
 
-        # Forward pass
         model_to_call = (
             self.model.module if hasattr(self.model, "module") else self.model
         )
@@ -265,10 +206,10 @@ class StandardTrainer(BaseTrainer):
             and "return_refined" in model_to_call.forward.__code__.co_varnames
         ):
             outputs, pred_coords = self.model(images, return_refined=True)
-            using_model_coords = True
+            self.using_model_coords = True
         else:
             outputs = self.model(images)
-            using_model_coords = False
+            self.using_model_coords = False
 
         loss_pose = self.criterion(outputs, targets)
         metrics = {"loss_pose": loss_pose.item(), "sigma": sigma}
@@ -279,7 +220,7 @@ class StandardTrainer(BaseTrainer):
             loss = loss_pose
 
         if self.lambda_coord > 0 or self.lambda_coord_occluded > 0:
-            if not using_model_coords:
+            if not self.using_model_coords:
                 pred_coords = self.soft_argmax(outputs)
 
             gt_coords = joints[:, :2, :].permute(0, 2, 1)
@@ -309,7 +250,8 @@ class StandardTrainer(BaseTrainer):
 
         if self.lambda_anatomical > 0:
             curr_lambda = self._get_current_lambda_ana(self.current_epoch)
-            pred_coords = self.soft_argmax(outputs)
+            if not self.using_model_coords:
+                pred_coords = self.soft_argmax(outputs)
             loss_ana = self.anatomical_criterion(pred_coords)
             metrics["loss_ana"] = loss_ana.item()
             metrics["lambda_ana"] = curr_lambda
@@ -324,62 +266,15 @@ class StandardTrainer(BaseTrainer):
             metrics.update(weighted_metrics)
 
         metrics["loss"] = loss.item()
-        return metrics
 
-    def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
-        return {"optimizer_state_dict": self.optimizer.state_dict()}
+        # Log validation metrics prefixed with val_
+        for k, v in metrics.items():
+            self.log(f"val_{k}", v, on_step=False, on_epoch=True, prog_bar=True, logger=False)
 
-    def fit(self, train_loader, val_loader=None):
-        from .lightning_module import PoseLightningModule
-        from .lightning_callbacks import DashboardTelemetryCallback, ProgressiveUnfreezingCallback
+        return loss
 
-        # 1. Instantiate Lightning Module
-        lightning_module = PoseLightningModule(
-            model=self.model,
-            config=self.config,
-            criterion=self.criterion,
-        )
-
-        # Sync the unfreeze_epoch state if needed
-        lightning_module.unfreeze_epoch = self.unfreeze_epoch
-
-        # 2. Instantiate custom callbacks
-        callbacks = [DashboardTelemetryCallback(self)]
-        if self.unfreeze_epoch is not None:
-            callbacks.append(ProgressiveUnfreezingCallback())
-
-        # 3. Configure Trainer options
-        # We automate device placement, DDP strategy, etc.
-        accelerator = "gpu" if torch.cuda.is_available() and self.device.type == "cuda" else "cpu"
-        devices = 1
-        if self.device.type == "cuda" and self.device.index is not None:
-            devices = [self.device.index]
-
-        strategy = "auto"
-        if self.world_size > 1:
-            strategy = "ddp"
-            devices = self.world_size
-
-        # PyTorch Lightning Trainer setup
-        import pytorch_lightning as pl
-        
-        # Avoid print banner / progress bar spam if we are running in headless / DDP logs
-        trainer = pl.Trainer(
-            max_epochs=self.epochs,
-            accelerator=accelerator,
-            devices=devices,
-            strategy=strategy,
-            callbacks=callbacks,
-            enable_checkpointing=False,  # We handle our own checkpoints atomically
-            logger=False,  # We handle our own database logging
-            enable_progress_bar=self.is_main,  # Standard progress bar for main process
-        )
-
-        # 4. Fit using PL Trainer
-        if self.is_main:
-            print(f"[StandardTrainer] Starting refactored PyTorch Lightning training loop...")
-            print(f"[StandardTrainer] Accelerator: {accelerator}, Devices: {devices}, Strategy: {strategy}")
-
-        # Start training
-        trainer.fit(lightning_module, train_loader, val_loader)
-
+    def configure_optimizers(self):
+        from src.training.factory import build_optimizer
+        # We pass self as the trainer/mock-trainer to retain full factory compatibility
+        optimizer = build_optimizer(self.model, self, self.config)
+        return optimizer
