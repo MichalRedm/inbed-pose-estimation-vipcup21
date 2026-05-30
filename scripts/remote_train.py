@@ -355,9 +355,8 @@ def main():
                 downloaded.add(fname)
         print(f"Ignored {len(downloaded)} existing remote checkpoints.")
 
-        def poll_and_download(session):
-            """Download any checkpoint not yet synced locally with strict size verification."""
-            # 1. Sync history.json and config.json FIRST (Fast, updates dashboard)
+        def poll_metadata(session):
+            """Sync history.json and config.json (Fast, updates dashboard)."""
             for r_path, l_path in [
                 (remote_history_path, local_history_path),
                 (remote_config_path, local_config_path),
@@ -378,7 +377,8 @@ def main():
                 except Exception:
                     pass  # might not exist yet
 
-            # 2. Sync .pth checkpoints
+        def poll_checkpoints(session):
+            """Download any checkpoint not yet synced locally with strict size verification."""
             result = session.run(
                 f"ls {remote_ckpt_dir}/*.pth 2>/dev/null || true",
                 stream=False,
@@ -510,21 +510,37 @@ def main():
         training_thread = threading.Thread(target=run_training, daemon=True)
         training_thread.start()
 
-        def run_polling():
-            # Open a separate session for background polling
+        def run_metadata_polling():
+            # Open a separate session for background metadata polling (extremely fast and lightweight)
             try:
-                with mgr.use(backend_name) as poll_session:
-                    poll_and_download(poll_session)
-                    poll_interval = 30
+                with mgr.use(backend_name) as metadata_session:
+                    poll_metadata(metadata_session)
+                    poll_interval = 5  # Poll metadata every 5 seconds for real-time dashboard updates!
                     while training_thread.is_alive():
                         time.sleep(poll_interval)
                         try:
-                            poll_and_download(poll_session)
+                            poll_metadata(metadata_session)
+                        except Exception as exc:
+                            pass
+                    poll_metadata(metadata_session)
+            except Exception as e:
+                print(f"[sync] Background metadata poller crashed: {e}")
+
+        def run_checkpoint_polling():
+            # Open a separate session for background checkpoint polling (heavier checks)
+            try:
+                with mgr.use(backend_name) as ckpt_session:
+                    poll_checkpoints(ckpt_session)
+                    poll_interval = 30  # Check checkpoints every 30 seconds
+                    while training_thread.is_alive():
+                        time.sleep(poll_interval)
+                        try:
+                            poll_checkpoints(ckpt_session)
                         except Exception as exc:
                             print(f"[sync] Warning: checkpoint poll failed: {exc}")
-                    poll_and_download(poll_session)
+                    poll_checkpoints(ckpt_session)
             except Exception as e:
-                print(f"[sync] Background poller crashed: {e}")
+                print(f"[sync] Background checkpoint poller crashed: {e}")
 
         def run_streaming():
             # Open a dedicated session for real-time metric streaming
@@ -591,22 +607,36 @@ def main():
                         break
 
         # Start background helper threads
-        poller_thread = threading.Thread(target=run_polling, daemon=True)
+        metadata_poller_thread = threading.Thread(target=run_metadata_polling, daemon=True)
+        ckpt_poller_thread = threading.Thread(target=run_checkpoint_polling, daemon=True)
         streamer_thread = threading.Thread(target=run_streaming, daemon=True)
 
-        poller_thread.start()
+        metadata_poller_thread.start()
+        ckpt_poller_thread.start()
         streamer_thread.start()
 
         training_thread.join()
-        poller_thread.join(timeout=60)
+        metadata_poller_thread.join(timeout=10)
+        ckpt_poller_thread.join(timeout=60)
 
         # FINAL STRIKE SYNCHRONOUS SYNC: Run one final, strict, synchronous verification sync on the main thread
         print("\n[sync] Running final strict verification sync...")
         try:
-            poll_and_download(gpu)
+            print("[sync] Running final metadata sync (history.json, config.json)...")
+            poll_metadata(gpu)
+            print("[sync] Final metadata sync complete.")
         except Exception as sync_err:
             print(
-                f"[sync] Warning: Final synchronous sync encountered an error: {sync_err}"
+                f"[sync] Warning: Final metadata sync encountered an error: {sync_err}"
+            )
+
+        try:
+            print("[sync] Running final checkpoint sync...")
+            poll_checkpoints(gpu)
+            print("[sync] Final checkpoint sync complete.")
+        except Exception as sync_err:
+            print(
+                f"[sync] Warning: Final checkpoint sync encountered an error: {sync_err}"
             )
 
         result = training_result[0] if training_result else None

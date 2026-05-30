@@ -77,8 +77,55 @@ class DashboardTelemetryCallback(pl.Callback):
                 for k, v in avg_train_metrics.items():
                     self.parent.tracker.log_metric(run_name, trainer.current_epoch + 1, k, v)
 
-            # Store averaged metrics on the pl_module so validation end can fetch them
-            pl_module.averaged_train_metrics = avg_train_metrics
+            # Fetch validation metrics compiled in on_validation_epoch_end
+            val_metrics = getattr(pl_module, "last_val_metrics", {})
+
+            # Reset last_val_metrics on pl_module to prevent carryover
+            if hasattr(pl_module, "last_val_metrics"):
+                delattr(pl_module, "last_val_metrics")
+
+            # Only on main process do we log, stream summaries, and save checkpoints
+            if self.parent.is_main:
+                # 1. Stream comprehensive final epoch summary payload (so dashboard updates)
+                summary_payload = {
+                    "epoch": trainer.current_epoch + 1,
+                    "progress": 1.0,
+                    "is_summary": True,
+                }
+                summary_payload.update(avg_train_metrics)
+                summary_payload.update(val_metrics)
+                self.parent._stream_metric(summary_payload)
+
+                # 2. Determine if it is the best model checkpoint
+                val_pck = val_metrics.get("val_pck", -1.0)
+                val_loss = val_metrics.get("val_loss", float("inf"))
+                is_best = val_pck > self.parent.best_val_pck
+                
+                if is_best:
+                    self.parent.best_val_pck = val_pck
+                
+                if val_loss < self.parent.best_val_loss:
+                    self.parent.best_val_loss = val_loss
+
+                # 3. Save atomic, backward-compatible checkpoint (.pth format)
+                # This uses the raw model and exactly the old dictionary layout
+                try:
+                    self.parent.save_checkpoint(f"epoch_{trainer.current_epoch + 1}", is_best=is_best)
+                except Exception as save_err:
+                    if self.parent.is_main:
+                        print(f"[Callback Error] Error saving checkpoint: {save_err}")
+
+                # 4. Update local history.json
+                try:
+                    epoch_data = {
+                        "epoch": trainer.current_epoch + 1,
+                        **avg_train_metrics,
+                        **val_metrics,
+                    }
+                    self.parent.update_history(epoch_data)
+                except Exception as hist_err:
+                    if self.parent.is_main:
+                        print(f"[Callback Error] Error updating history.json: {hist_err}")
         except Exception as e:
             if self.parent.is_main:
                 print(f"[Callback Error] Error in on_train_epoch_end: {e}")
@@ -101,9 +148,6 @@ class DashboardTelemetryCallback(pl.Callback):
             if val_dataloader is None:
                 return
 
-            # Fetch averaged training metrics
-            train_metrics = getattr(pl_module, "averaged_train_metrics", {})
-            
             # Compute validation loss
             val_metrics = {}
             for k, v in trainer.callback_metrics.items():
@@ -119,41 +163,11 @@ class DashboardTelemetryCallback(pl.Callback):
             decode_method = self.parent.config.get("training", {}).get("decode_method", "argmax")
             val_pck = self.parent.compute_val_pck(val_dataloader, decode_method=decode_method)
 
-            # Only on main process do we log, stream summaries, and save checkpoints
-            if self.parent.is_main:
-                # 1. Stream comprehensive final epoch summary payload (so dashboard updates)
-                summary_payload = {
-                    "epoch": trainer.current_epoch + 1,
-                    "progress": 1.0,
-                    "is_summary": True,
-                }
-                summary_payload.update(train_metrics)
-                summary_payload.update({f"val_{k}": v for k, v in val_metrics.items()})
-                summary_payload["val_pck"] = val_pck
-                self.parent._stream_metric(summary_payload)
-
-                # 2. Determine if it is the best model checkpoint
-                val_loss = val_metrics.get("loss", float("inf"))
-                is_best = val_pck > self.parent.best_val_pck
-                
-                if is_best:
-                    self.parent.best_val_pck = val_pck
-                
-                if val_loss < self.parent.best_val_loss:
-                    self.parent.best_val_loss = val_loss
-
-                # 3. Save atomic, backward-compatible checkpoint (.pth format)
-                # This uses the raw model and exactly the old dictionary layout
-                self.parent.save_checkpoint(f"epoch_{trainer.current_epoch + 1}", is_best=is_best)
-
-                # 4. Update local history.json
-                epoch_data = {
-                    "epoch": trainer.current_epoch + 1,
-                    **train_metrics,
-                    **{f"val_{k}": v for k, v in val_metrics.items()},
-                    "val_pck": val_pck,
-                }
-                self.parent.update_history(epoch_data)
+            # Store on pl_module to be fetched by on_train_epoch_end
+            pl_module.last_val_metrics = {
+                "val_pck": val_pck,
+                **{f"val_{k}": v for k, v in val_metrics.items()}
+            }
         except Exception as e:
             if self.parent.is_main:
                 print(f"[Callback Error] Error in on_validation_epoch_end: {e}")
