@@ -1,3 +1,7 @@
+"""
+Custom neural network layers for pose estimation.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,6 +23,14 @@ class SoftArgmax2D(nn.Module):
         heatmap_size: Tuple[int, int] = (64, 64),
         temperature: float = 10.0,
     ) -> None:
+        """
+        Initializes SoftArgmax2D.
+
+        Args:
+            base_size: The target image resolution (Height, Width).
+            heatmap_size: The input heatmap resolution (Height, Width).
+            temperature: Temperature parameter for softmax scaling.
+        """
         super().__init__()
         self.base_size = base_size
         self.heatmap_size = heatmap_size
@@ -37,8 +49,13 @@ class SoftArgmax2D(nn.Module):
 
     def forward(self, heatmaps: torch.Tensor) -> torch.Tensor:
         """
-        heatmaps: (B, J, H, W)
-        Returns: (B, J, 2) where 2 is (x, y)
+        Performs differentiable coordinate decoding.
+
+        Args:
+            heatmaps: Input heatmaps of shape (B, J, H, W).
+
+        Returns:
+            Coordinates of shape (B, J, 2) where 2 is (x, y).
         """
         B, J, H, W = heatmaps.shape
 
