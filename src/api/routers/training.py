@@ -18,16 +18,19 @@ from src.api.state import (
     save_evaluation_cache,
 )
 
+RUNS_CACHE: Dict[str, Dict[str, Any]] = {}
+RUN_DETAILS_CACHE: Dict[str, Dict[str, Any]] = {}
+
 router = APIRouter()
 
 
 @router.get("/training/status")
-async def get_training_status() -> Dict[str, Any]:
+def get_training_status() -> Dict[str, Any]:
     return training_manager.get_status()
 
 
 @router.post("/training/start")
-async def start_training(config: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+def start_training(config: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
     success, message = training_manager.start_training(config)
     if not success:
         raise HTTPException(status_code=400, detail=message)
@@ -35,7 +38,7 @@ async def start_training(config: Optional[Dict[str, Any]] = None) -> Dict[str, s
 
 
 @router.post("/training/stop")
-async def stop_training() -> Dict[str, str]:
+def stop_training() -> Dict[str, str]:
     success, message = training_manager.stop_training()
     if not success:
         raise HTTPException(status_code=400, detail=message)
@@ -43,7 +46,7 @@ async def stop_training() -> Dict[str, str]:
 
 
 @router.get("/runs")
-async def list_runs() -> Dict[str, List[Dict[str, Any]]]:
+def list_runs() -> Dict[str, List[Dict[str, Any]]]:
     runs_dir = project_root / "results" / "runs"
     if not runs_dir.exists():
         return {"runs": []}
@@ -51,37 +54,75 @@ async def list_runs() -> Dict[str, List[Dict[str, Any]]]:
     active_run_id = (
         training_manager.current_run_id if training_manager.is_running else None
     )
-    for run_path in sorted(
-        runs_dir.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True
-    ):
-        if not run_path.is_dir():
+
+    try:
+        run_paths = [x for x in runs_dir.iterdir() if x.is_dir()]
+    except Exception:
+        return {"runs": []}
+
+    for run_path in run_paths:
+        run_id = run_path.name
+
+        # Check cache for non-active completed runs
+        if run_id != active_run_id and run_id in RUNS_CACHE:
+            cached_entry = RUNS_CACHE[run_id].copy()
+            cached_entry["status"] = "completed"
+            runs.append(cached_entry)
             continue
-        run_info: Dict[str, Any] = {
-            "id": run_path.name,
-            "created_at": time.ctime(run_path.stat().st_ctime),
-            "status": "active" if run_path.name == active_run_id else "completed",
-        }
-        eval_file = next(
-            (
-                f
-                for f in [run_path / "eval_results.json", run_path / "evaluation.json"]
-                if f.exists()
-            ),
-            None,
-        )
-        if eval_file:
-            try:
-                with open(eval_file, "r") as f:
-                    eval_data = json.load(f)
-                    run_info["eval_pck"] = eval_data.get("pck")
-            except Exception:
-                pass
-        runs.append(run_info)
+
+        try:
+            stat_info = run_path.stat()
+            run_info: Dict[str, Any] = {
+                "id": run_id,
+                "created_at": time.ctime(stat_info.st_ctime),
+                "status": "active" if run_id == active_run_id else "completed",
+                "st_ctime": stat_info.st_ctime,
+            }
+            eval_file = next(
+                (
+                    f
+                    for f in [
+                        run_path / "eval_results.json",
+                        run_path / "evaluation.json",
+                    ]
+                    if f.exists()
+                ),
+                None,
+            )
+            if eval_file:
+                try:
+                    with open(eval_file, "r") as f:
+                        eval_data = json.load(f)
+                        run_info["eval_pck"] = eval_data.get("pck")
+                except Exception:
+                    pass
+
+            # Only cache completed runs
+            if run_id != active_run_id:
+                RUNS_CACHE[run_id] = run_info
+
+            runs.append(run_info)
+        except Exception:
+            pass
+
+    # Sort runs by st_ctime descending
+    runs.sort(key=lambda x: x.get("st_ctime", 0), reverse=True)
+
+    # Remove st_ctime from output
+    for r in runs:
+        r.pop("st_ctime", None)
+
     return {"runs": runs}
 
 
 @router.get("/runs/{run_id}")
-async def get_run_details(run_id: str) -> Dict[str, Any]:
+def get_run_details(run_id: str) -> Dict[str, Any]:
+    active_run_id = (
+        training_manager.current_run_id if training_manager.is_running else None
+    )
+    if run_id != active_run_id and run_id in RUN_DETAILS_CACHE:
+        return RUN_DETAILS_CACHE[run_id]
+
     run_path = project_root / "results" / "runs" / run_id
     if not run_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
@@ -105,25 +146,36 @@ async def get_run_details(run_id: str) -> Dict[str, Any]:
         None,
     )
     if eval_file:
-        with open(eval_file, "r") as f:
-            details["evaluation"] = format_evaluation_metrics(json.load(f))
+        try:
+            with open(eval_file, "r") as f:
+                details["evaluation"] = format_evaluation_metrics(json.load(f))
+        except Exception:
+            pass
+
+    # Cache details of completed runs
+    if run_id != active_run_id:
+        RUN_DETAILS_CACHE[run_id] = details
+
     return details
 
 
 @router.delete("/runs/{run_id}")
-async def delete_run(run_id: str) -> Dict[str, str]:
+def delete_run(run_id: str) -> Dict[str, str]:
     run_path = project_root / "results" / "runs" / run_id
     if not run_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
     try:
         shutil.rmtree(run_path)
+        # Invalidate caches
+        RUNS_CACHE.pop(run_id, None)
+        RUN_DETAILS_CACHE.pop(run_id, None)
         return {"message": f"Run {run_id} deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/evaluate")
-async def evaluate_model(
+def evaluate_model(
     split: str = "val",
     checkpoint: Optional[str] = None,
     run_id: Optional[str] = None,
@@ -192,7 +244,7 @@ async def evaluate_model(
 
 
 @router.get("/models")
-async def list_models() -> Dict[str, List[Dict[str, Any]]]:
+def list_models() -> Dict[str, List[Dict[str, Any]]]:
     checkpoint_dir = Path(project_root) / "models" / "checkpoints"
     if not checkpoint_dir.exists():
         return {"models": []}

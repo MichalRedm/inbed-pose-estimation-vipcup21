@@ -118,8 +118,20 @@ class BaseTrainer(ABC):
         if not self.is_main or not self.streamer:
             return
 
+        # Rate-limit batch-level metrics to reduce disk I/O and CPU overhead
+        is_summary = bool(data.get("is_summary", False))
+        progress = float(data.get("progress", 0.0))
+
+        if not is_summary:
+            if not hasattr(self, "_step_stream_counter"):
+                self._step_stream_counter = 0
+            self._step_stream_counter += 1
+
+            # Send on the first batch of the session, every 10 batches, and at epoch end
+            if self._step_stream_counter % 10 != 1 and progress < 1.0:
+                return
+
         # Inject display metadata periodically (start of epoch OR every 10% progress)
-        progress = float(data.get("progress", 0))
         is_start = progress <= 0.01
 
         if not hasattr(self, "_last_metadata_progress"):
