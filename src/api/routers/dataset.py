@@ -5,7 +5,7 @@ import torchvision.transforms.v2 as v2
 from PIL import Image
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List
 
 from src.data.augmentations import (
     DataAugmenter,
@@ -19,18 +19,18 @@ from src.api.state import dataset_container, AugmentationApplyRequest
 router = APIRouter()
 
 
-DATASET_STATS_CACHE = None
-SAMPLES_CACHE = {}
+DATASET_STATS_CACHE: Optional[Dict[str, Any]] = None
+SAMPLES_CACHE: Dict[str, List[Dict[str, Any]]] = {}
 
 
-def get_preformatted_samples(split: str):
+def get_preformatted_samples(split: str) -> List[Dict[str, Any]]:
     if split in SAMPLES_CACHE:
         return SAMPLES_CACHE[split]
-        
+
     ds = dataset_container.get(split)
     if not ds:
         return []
-        
+
     formatted = []
     for i, sample in enumerate(ds.samples):
         mod = (
@@ -91,7 +91,7 @@ def get_samples(
     samples = get_preformatted_samples(split)
     if not samples and not dataset_container.get(split):
         raise HTTPException(status_code=404, detail="Split not found")
-        
+
     filtered = []
     for sample in samples:
         if (cover and sample["cover"] != cover) or (
@@ -99,7 +99,7 @@ def get_samples(
         ):
             continue
         filtered.append(sample)
-        
+
     start, end = (page - 1) * limit, page * limit
     return {
         "total": len(filtered),

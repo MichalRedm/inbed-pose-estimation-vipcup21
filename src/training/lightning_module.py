@@ -323,15 +323,16 @@ class PoseLightningModule(pl.LightningModule):
         # Decode and stash validation predictions for epoch-end PCK computation
         if getattr(model_to_call, "output_type", "heatmap") == "heatmap":
             method = self.config.get("training", {}).get("decode_method", "argmax")
-            temp = float(self.config.get("training", {}).get("decode_temperature", 10.0))
+            temp = float(
+                self.config.get("training", {}).get("decode_temperature", 10.0)
+            )
             preds = decode_heatmaps(outputs, (64, 64), method=method, temperature=temp)
         else:
             preds = outputs
 
-        self.validation_step_outputs.append({
-            "preds": preds.detach().cpu(),
-            "joints": joints.detach().cpu()
-        })
+        self.validation_step_outputs.append(
+            {"preds": preds.detach().cpu(), "joints": joints.detach().cpu()}
+        )
 
         return cast(torch.Tensor, loss)
 

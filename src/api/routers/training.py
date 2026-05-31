@@ -54,22 +54,22 @@ def list_runs() -> Dict[str, List[Dict[str, Any]]]:
     active_run_id = (
         training_manager.current_run_id if training_manager.is_running else None
     )
-    
+
     try:
         run_paths = [x for x in runs_dir.iterdir() if x.is_dir()]
     except Exception:
         return {"runs": []}
-        
+
     for run_path in run_paths:
         run_id = run_path.name
-        
+
         # Check cache for non-active completed runs
         if run_id != active_run_id and run_id in RUNS_CACHE:
             cached_entry = RUNS_CACHE[run_id].copy()
             cached_entry["status"] = "completed"
             runs.append(cached_entry)
             continue
-            
+
         try:
             stat_info = run_path.stat()
             run_info: Dict[str, Any] = {
@@ -81,7 +81,10 @@ def list_runs() -> Dict[str, List[Dict[str, Any]]]:
             eval_file = next(
                 (
                     f
-                    for f in [run_path / "eval_results.json", run_path / "evaluation.json"]
+                    for f in [
+                        run_path / "eval_results.json",
+                        run_path / "evaluation.json",
+                    ]
                     if f.exists()
                 ),
                 None,
@@ -93,22 +96,22 @@ def list_runs() -> Dict[str, List[Dict[str, Any]]]:
                         run_info["eval_pck"] = eval_data.get("pck")
                 except Exception:
                     pass
-            
+
             # Only cache completed runs
             if run_id != active_run_id:
                 RUNS_CACHE[run_id] = run_info
-                
+
             runs.append(run_info)
         except Exception:
             pass
-            
+
     # Sort runs by st_ctime descending
     runs.sort(key=lambda x: x.get("st_ctime", 0), reverse=True)
-    
+
     # Remove st_ctime from output
     for r in runs:
         r.pop("st_ctime", None)
-        
+
     return {"runs": runs}
 
 
@@ -119,7 +122,7 @@ def get_run_details(run_id: str) -> Dict[str, Any]:
     )
     if run_id != active_run_id and run_id in RUN_DETAILS_CACHE:
         return RUN_DETAILS_CACHE[run_id]
-        
+
     run_path = project_root / "results" / "runs" / run_id
     if not run_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
@@ -148,11 +151,11 @@ def get_run_details(run_id: str) -> Dict[str, Any]:
                 details["evaluation"] = format_evaluation_metrics(json.load(f))
         except Exception:
             pass
-            
+
     # Cache details of completed runs
     if run_id != active_run_id:
         RUN_DETAILS_CACHE[run_id] = details
-        
+
     return details
 
 

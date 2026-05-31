@@ -546,7 +546,13 @@ class TrainingManager:
                                 continue
 
                             # Skip interactive progress bar noise to prevent disk writes/spam
-                            if "%|" in line_str or "it/s" in line_str or "s/it" in line_str or "\r" in line_str or "█" in line_str:
+                            if (
+                                "%|" in line_str
+                                or "it/s" in line_str
+                                or "s/it" in line_str
+                                or "\r" in line_str
+                                or "█" in line_str
+                            ):
                                 continue
 
                             # Add to log history with timestamp
