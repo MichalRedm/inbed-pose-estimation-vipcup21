@@ -187,16 +187,47 @@ class DashboardTelemetryCallback(pl.Callback):
                     clean_k = k[4:]
                     val_metrics[clean_k] = float(v.item())
 
-            # Compute PCK@0.2 using the parent trainer's implementation
-            # Set self.parent's current_epoch to match the lightning trainer's epoch
-            self.parent.current_epoch = trainer.current_epoch
-
-            decode_method: str = self.parent.config.get("training", {}).get(
-                "decode_method", "argmax"
-            )
-            val_pck = self.parent.compute_val_pck(
-                val_dataloader, decode_method=decode_method
-            )
+            # Compute PCK@0.2 using the stashed validation predictions
+            if hasattr(pl_module, "validation_step_outputs") and pl_module.validation_step_outputs:
+                import numpy as np
+                all_preds = []
+                all_gts = []
+                all_vis = []
+                for out in pl_module.validation_step_outputs:
+                    preds = out["preds"].numpy()
+                    joints = out["joints"].numpy()
+                    
+                    gt_xy = joints[:, :2, :]  # (B, 2, 14)
+                    gt_xy = np.transpose(gt_xy, (0, 2, 1))  # (B, 14, 2)
+                    vis = joints[:, 2, :] <= 1  # (B, 14) visible + occluded
+                    
+                    all_preds.append(preds)
+                    all_gts.append(gt_xy)
+                    all_vis.append(vis)
+                
+                P = np.concatenate(all_preds, axis=0)  # (N, 14, 2)
+                G = np.concatenate(all_gts, axis=0)    # (N, 14, 2)
+                V = np.concatenate(all_vis, axis=0)    # (N, 14)
+                
+                # Torso diameter: R_Shoulder (8) to L_Hip (3)
+                torso = np.linalg.norm(G[:, 8, :] - G[:, 3, :], axis=-1, keepdims=True)
+                torso = np.maximum(torso, 1e-6)  # (N, 1)
+                
+                dist_val = np.linalg.norm(P - G, axis=-1)  # (N, 14)
+                correct = (dist_val < 0.2 * torso) * V
+                
+                val_pck = float(correct.sum() / np.maximum(V.sum(), 1))
+                
+                # Clear validation step outputs to save memory
+                pl_module.validation_step_outputs = []
+            else:
+                # Fallback to compute_val_pck (original slow method)
+                decode_method: str = self.parent.config.get("training", {}).get(
+                    "decode_method", "argmax"
+                )
+                val_pck = self.parent.compute_val_pck(
+                    val_dataloader, decode_method=decode_method
+                )
 
             # Store on pl_module to be fetched by on_train_epoch_end
             setattr(
