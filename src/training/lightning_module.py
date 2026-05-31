@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional, Tuple, Union, cast
 from src.training.losses import AnatomicalLoss, UncertaintyWeighting
 from src.models.layers import SoftArgmax2D
 from src.training.standard_trainer import generate_pytorch_heatmaps
+from src.utils import decode_heatmaps
 
 
 class PoseLightningModule(pl.LightningModule):
@@ -34,6 +35,7 @@ class PoseLightningModule(pl.LightningModule):
     tasks: List[str]
     uncertainty_loss: UncertaintyWeighting
     last_step_metrics: Dict[str, float]
+    validation_step_outputs: List[Dict[str, torch.Tensor]]
 
     def __init__(
         self,
@@ -90,6 +92,11 @@ class PoseLightningModule(pl.LightningModule):
                 self.tasks.append("ana")
 
             self.uncertainty_loss = UncertaintyWeighting(len(self.tasks))
+
+        self.validation_step_outputs = []
+
+    def on_validation_epoch_start(self) -> None:
+        self.validation_step_outputs = []
 
     def forward(
         self, x: torch.Tensor, **kwargs: Any
@@ -312,6 +319,19 @@ class PoseLightningModule(pl.LightningModule):
             self.log(
                 f"val_{k}", v, on_step=False, on_epoch=True, prog_bar=True, logger=False
             )
+
+        # Decode and stash validation predictions for epoch-end PCK computation
+        if getattr(model_to_call, "output_type", "heatmap") == "heatmap":
+            method = self.config.get("training", {}).get("decode_method", "argmax")
+            temp = float(self.config.get("training", {}).get("decode_temperature", 10.0))
+            preds = decode_heatmaps(outputs, (64, 64), method=method, temperature=temp)
+        else:
+            preds = outputs
+
+        self.validation_step_outputs.append({
+            "preds": preds.detach().cpu(),
+            "joints": joints.detach().cpu()
+        })
 
         return cast(torch.Tensor, loss)
 
