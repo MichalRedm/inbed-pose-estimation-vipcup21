@@ -19,8 +19,47 @@ from src.api.state import dataset_container, AugmentationApplyRequest
 router = APIRouter()
 
 
+DATASET_STATS_CACHE = None
+SAMPLES_CACHE = {}
+
+
+def get_preformatted_samples(split: str):
+    if split in SAMPLES_CACHE:
+        return SAMPLES_CACHE[split]
+        
+    ds = dataset_container.get(split)
+    if not ds:
+        return []
+        
+    formatted = []
+    for i, sample in enumerate(ds.samples):
+        mod = (
+            "IR"
+            if "IR" in sample["image_paths"]
+            else list(sample["image_paths"].keys())[0]
+        )
+        formatted.append(
+            {
+                "index": i,
+                "id": f"{split}_{i}",
+                "subject": sample["subject"],
+                "cover": sample["cover"],
+                "modalities": list(sample["image_paths"].keys()),
+                "has_joints": any(j is not None for j in sample["joints"].values()),
+                "image_path": str(sample["image_paths"][mod]),
+                "modality": mod,
+            }
+        )
+    SAMPLES_CACHE[split] = formatted
+    return formatted
+
+
 @router.get("/dataset/stats")
-async def get_dataset_stats() -> Dict[str, Any]:
+def get_dataset_stats() -> Dict[str, Any]:
+    global DATASET_STATS_CACHE
+    if DATASET_STATS_CACHE is not None:
+        return DATASET_STATS_CACHE
+
     summary: Dict[str, Any] = {
         "total": 0,
         "train": 0,
@@ -37,43 +76,30 @@ async def get_dataset_stats() -> Dict[str, Any]:
         for sample in ds.samples:
             summary["covers"].add(sample["cover"])
     summary["covers"] = sorted(list(summary["covers"]))
+    DATASET_STATS_CACHE = summary
     return summary
 
 
 @router.get("/dataset/samples")
-async def get_samples(
+def get_samples(
     split: str = "train",
     page: int = 1,
     limit: int = 20,
     cover: Optional[str] = None,
     subject: Optional[int] = None,
 ) -> Dict[str, Any]:
-    ds = dataset_container.get(split)
-    if not ds:
+    samples = get_preformatted_samples(split)
+    if not samples and not dataset_container.get(split):
         raise HTTPException(status_code=404, detail="Split not found")
+        
     filtered = []
-    for i, sample in enumerate(ds.samples):
+    for sample in samples:
         if (cover and sample["cover"] != cover) or (
             subject and sample["subject"] != subject
         ):
             continue
-        mod = (
-            "IR"
-            if "IR" in sample["image_paths"]
-            else list(sample["image_paths"].keys())[0]
-        )
-        filtered.append(
-            {
-                "index": i,
-                "id": f"{split}_{i}",
-                "subject": sample["subject"],
-                "cover": sample["cover"],
-                "modalities": list(sample["image_paths"].keys()),
-                "has_joints": any(j is not None for j in sample["joints"].values()),
-                "image_path": str(sample["image_paths"][mod]),
-                "modality": mod,
-            }
-        )
+        filtered.append(sample)
+        
     start, end = (page - 1) * limit, page * limit
     return {
         "total": len(filtered),
@@ -84,7 +110,7 @@ async def get_samples(
 
 
 @router.get("/dataset/sample/{split}/{idx}")
-async def get_sample_detail(split: str, idx: int) -> Dict[str, Any]:
+def get_sample_detail(split: str, idx: int) -> Dict[str, Any]:
     ds = dataset_container.get(split)
     if not ds or idx >= len(ds):
         raise HTTPException(status_code=404, detail="Sample not found")
@@ -113,7 +139,7 @@ async def get_sample_detail(split: str, idx: int) -> Dict[str, Any]:
 
 
 @router.get("/dataset/image/{split}/{idx}", response_model=None)
-async def get_dataset_image(
+def get_dataset_image(
     split: str, idx: int, modality: str = "IR", augment: bool = False
 ) -> Union[FileResponse, StreamingResponse]:
     ds = dataset_container.get(split)
@@ -148,12 +174,12 @@ async def get_dataset_image(
 
 
 @router.get("/augmentations")
-async def list_augmentations() -> Dict[str, Any]:
+def list_augmentations() -> Dict[str, Any]:
     return {"augmentations": get_available_augmentations()}
 
 
 @router.post("/augmentations/apply")
-async def apply_augmentations_endpoint(
+def apply_augmentations_endpoint(
     request: AugmentationApplyRequest,
 ) -> Dict[str, Any]:
     ds = dataset_container.get(request.split)

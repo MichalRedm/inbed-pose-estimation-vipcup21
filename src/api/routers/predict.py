@@ -14,7 +14,7 @@ router = APIRouter()
 
 
 @router.post("/predict")
-async def predict(
+def predict(
     file: UploadFile = File(...),
     model_name: Optional[str] = Form(None),
     run_id: Optional[str] = Form(None),
@@ -42,7 +42,7 @@ async def predict(
         if checkpoint_path and checkpoint_path.exists():
             inference_service.load_model(str(checkpoint_path))
 
-        contents = await file.read()
+        contents = file.file.read()
         image = Image.open(io.BytesIO(contents))
         # Determine channels from loaded model if possible
         in_channels = 1  # Default

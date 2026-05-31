@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.get("/config/gpu")
-async def get_gpu_config() -> Dict[str, Any]:
+def get_gpu_config() -> Dict[str, Any]:
     paths = [
         project_root / "gpu_connection.json",
         Path("gpu_connection.json"),
@@ -29,7 +29,7 @@ async def get_gpu_config() -> Dict[str, Any]:
 
 
 @router.post("/config/gpu")
-async def save_gpu_config(config: GPUConfig) -> Dict[str, str]:
+def save_gpu_config(config: GPUConfig) -> Dict[str, str]:
     json_path = project_root / "gpu_connection.json"
     try:
         with open(json_path, "w") as f:
@@ -40,7 +40,7 @@ async def save_gpu_config(config: GPUConfig) -> Dict[str, str]:
 
 
 @router.get("/config/training")
-async def get_training_settings() -> Dict[str, Any]:
+def get_training_settings() -> Dict[str, Any]:
     try:
         return get_training_config()
     except Exception as e:
@@ -48,7 +48,7 @@ async def get_training_settings() -> Dict[str, Any]:
 
 
 @router.post("/config/training")
-async def save_training_settings(config: Dict[str, Any]) -> Dict[str, str]:
+def save_training_settings(config: Dict[str, Any]) -> Dict[str, str]:
     try:
         save_training_config(config)
         return {"message": "Training configuration saved successfully"}
