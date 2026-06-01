@@ -2,11 +2,8 @@ import copy
 import random
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import pytorch_lightning as pl
-from typing import Dict, Any, List, Optional, Tuple, cast
-
-from src.models.layers import SoftArgmax2D
+from typing import Dict, Any, List, Optional, cast
 from src.training.standard_trainer import generate_pytorch_heatmaps
 from src.utils import decode_heatmaps
 

@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from typing import Dict, Any, Optional
 from src.training.base_trainer import BaseTrainer
-from src.data.dataset import VIPCupDataset, collate_skip_none
+from src.data.dataset import VIPCupDataset
 from src.data.augmentations import DataAugmenter
 
 
