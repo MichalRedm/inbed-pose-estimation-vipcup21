@@ -398,7 +398,7 @@ class UDALightningModule(pl.LightningModule):
         if batch is None:
             return
 
-        if self._trainer is not None:
+        if self._trainer is not None and hasattr(self._trainer, "strategy"):
             opt, opt_d = self.optimizers()
         else:
             opt, opt_d = self.opt_model, self.opt_disc
@@ -412,13 +412,16 @@ class UDALightningModule(pl.LightningModule):
         input_combined = torch.cat([img_source, img_target], dim=0)
 
         # Calculate GRL alpha (warmup)
-        num_batches = self.trainer.num_training_batches
-        if num_batches <= 0 or num_batches == float("inf"):
-            num_batches = (
-                len(self.trainer.train_dataloader)
-                if self.trainer.train_dataloader
-                else 1
-            )
+        if self._trainer is not None:
+            num_batches = self.trainer.num_training_batches
+            if num_batches <= 0 or num_batches == float("inf"):
+                num_batches = (
+                    len(self.trainer.train_dataloader)
+                    if self.trainer.train_dataloader
+                    else 1
+                )
+        else:
+            num_batches = 1
 
         current_epoch = self.total_steps / max(num_batches, 1)
         alpha = (
@@ -578,7 +581,7 @@ class CycleGANLightningModule(pl.LightningModule):
         if batch is None:
             return
 
-        if self._trainer is not None:
+        if self._trainer is not None and hasattr(self._trainer, "strategy"):
             opt_g, opt_da, opt_db = self.optimizers()
         else:
             opt_g, opt_da, opt_db = self.optimizer_G, self.optimizer_D_A, self.optimizer_D_B

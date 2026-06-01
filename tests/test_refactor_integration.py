@@ -122,14 +122,6 @@ def test_uda_lightning_module_compilation() -> None:
         "target": torch.randn(2, 14, 64, 64)
     }
 
-    # Set up mock trainer
-    class MockTrainer:
-        def __init__(self) -> None:
-            self.num_training_batches = 10
-            self.train_dataloader = None
-    
-    pl_module.trainer = MockTrainer()
-
     # Run one step
     pl_module.training_step(batch, 0)
     assert "loss" in pl_module.last_step_metrics
