@@ -267,6 +267,7 @@ class CycleGANTrainer(BaseTrainer):
     def fit(self, train_loader: Any, val_loader: Any = None) -> None:
         from .lightning_module import CycleGANLightningModule
         from .lightning_callbacks import DashboardTelemetryCallback
+        import pytorch_lightning as pl
 
         # 1. Instantiate Lightning Module
         lightning_module = CycleGANLightningModule(
@@ -281,7 +282,7 @@ class CycleGANTrainer(BaseTrainer):
         )
 
         # 2. Instantiate custom callbacks
-        callbacks = [DashboardTelemetryCallback(self)]
+        callbacks: list[pl.Callback] = [DashboardTelemetryCallback(self)]
 
         # 3. Configure Trainer options
         accelerator = (

@@ -399,7 +399,7 @@ class UDALightningModule(pl.LightningModule):
             return
 
         if self._trainer is not None and hasattr(self._trainer, "strategy"):
-            opt, opt_d = self.optimizers()
+            opt, opt_d = cast(Any, self.optimizers())
         else:
             opt, opt_d = self.opt_model, self.opt_disc
 
@@ -431,7 +431,7 @@ class UDALightningModule(pl.LightningModule):
         )
 
         # HRNet forward with feature return
-        model_to_call = (
+        model_to_call: Any = (
             self.model.module if hasattr(self.model, "module") else self.model
         )
         outputs_combined, features_combined = model_to_call(
@@ -502,7 +502,7 @@ class UDALightningModule(pl.LightningModule):
             logger=False,
         )
         self.validation_step_outputs.append({"loss": loss.detach().cpu()})
-        return loss
+        return cast(torch.Tensor, loss)
 
     def on_validation_epoch_start(self) -> None:
         self.validation_step_outputs = []
@@ -585,7 +585,7 @@ class CycleGANLightningModule(pl.LightningModule):
             return
 
         if self._trainer is not None and hasattr(self._trainer, "strategy"):
-            opt_g, opt_da, opt_db = self.optimizers()
+            opt_g, opt_da, opt_db = cast(Any, self.optimizers())
         else:
             opt_g, opt_da, opt_db = (
                 self.optimizer_G,
@@ -637,7 +637,7 @@ class CycleGANLightningModule(pl.LightningModule):
             )
 
         self.scaler_G.scale(loss_G).backward()
-        self.scaler_G.step(opt_g)
+        self.scaler_G.step(cast(Any, opt_g))
         self.scaler_G.update()
 
         # Discriminators Update
@@ -653,7 +653,7 @@ class CycleGANLightningModule(pl.LightningModule):
             loss_D_A = (loss_real_A + loss_fake_A) / 2
 
         self.scaler_D_A.scale(loss_D_A).backward()
-        self.scaler_D_A.step(opt_da)
+        self.scaler_D_A.step(cast(Any, opt_da))
         self.scaler_D_A.update()
 
         with torch.amp.autocast(
@@ -665,7 +665,7 @@ class CycleGANLightningModule(pl.LightningModule):
             loss_D_B = (loss_real_B + loss_fake_B) / 2
 
         self.scaler_D_B.scale(loss_D_B).backward()
-        self.scaler_D_B.step(opt_db)
+        self.scaler_D_B.step(cast(Any, opt_db))
         self.scaler_D_B.update()
 
         metrics = {
@@ -734,7 +734,7 @@ class CycleGANLightningModule(pl.LightningModule):
             )
 
         self.validation_step_outputs.append({"loss": loss_G.detach().cpu()})
-        return loss_G
+        return cast(torch.Tensor, loss_G)
 
     def on_validation_epoch_start(self) -> None:
         self.validation_step_outputs = []
