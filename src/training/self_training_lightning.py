@@ -126,11 +126,12 @@ class SelfTrainingLightningModule(pl.LightningModule):
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int) -> Optional[torch.Tensor]:
         if not isinstance(batch, dict):
-            return None
+            # DDP requires a valid tensor — return zero loss so all ranks stay in sync
+            return torch.tensor(0.0, requires_grad=True, device=self.device)
         batch_labeled = batch.get("labeled")
         batch_unlabeled = batch.get("unlabeled")
         if batch_labeled is None or batch_unlabeled is None:
-            return None
+            return torch.tensor(0.0, requires_grad=True, device=self.device)
 
 
         # -------------------------------------------------------------
