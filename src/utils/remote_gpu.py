@@ -256,7 +256,8 @@ class GPUSession:
     # ── Connection lifecycle ──────────────────────────────────────────────────
 
     def connect(self) -> None:
-        key_path = os.path.expanduser(self.config.ssh_key)
+        ssh_key_path = self.config.ssh_key or "~/.ssh/id_ed25519"
+        key_path = os.path.expanduser(ssh_key_path)
 
         if self.config.type == "cloudflare_tunnel":
             self._proxy = CloudflaredProxy(self.config.tunnel_hostname)
@@ -858,7 +859,7 @@ class GPUManager:
                 "tunnel_hostname": data.get("tunnel_hostname", ""),
                 "host": data.get("host", data.get("tunnel_hostname", "")),
                 "ssh_user": data.get("ssh_user", "root"),
-                "ssh_key": data.get("ssh_key"),  # Extract ssh_key from JSON
+                "ssh_key": data.get("ssh_key") or "~/.ssh/id_ed25519",  # Extract ssh_key from JSON
                 "port": data.get("port", 22),
                 "meta": {"gpu": data.get("gpu", "unknown")},
             },
