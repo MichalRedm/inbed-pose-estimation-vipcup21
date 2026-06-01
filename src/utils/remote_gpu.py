@@ -273,7 +273,11 @@ class GPUSession:
         # Robustly load private key explicitly to prevent "encountered RSA key, expected OPENSSH key" errors
         pkey = None
         if os.path.exists(key_path):
-            for key_cls in [paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey, paramiko.DSSKey]:
+            key_classes = []
+            for name in ["Ed25519Key", "RSAKey", "ECDSAKey", "DSSKey", "DSAKey"]:
+                if hasattr(paramiko, name):
+                    key_classes.append(getattr(paramiko, name))
+            for key_cls in key_classes:
                 try:
                     pkey = key_cls.from_private_key_file(key_path)
                     print(f"  Successfully loaded key using {key_cls.__name__}")
