@@ -16,7 +16,7 @@ training:
   weight_decay: 0.0001
   sigma_start: 3.0                # Wide stable Gaussian for heavy occlusions
   sigma_end: 3.0                  # No curriculum decay to prevent peak collapse
-  init_weights_path: "results/runs/loop53_fda_cover/checkpoints/best_model.pth"
+  init_weights_path: "pretrained_models/loop53_best.pth"
   
   # Self-Training hyperparameters
   ema_alpha: 0.999                # Smoothing factor for temporal ensemble teacher
@@ -46,4 +46,7 @@ dataset:
   subjects_train: [1, 80]
   subjects_val: [81, 90]
   image_size: [256, 256]
-  dataset_root: "data/SLP"
+  modalities: ["IR"]
+  covers: null           # For training: use all available covers (uncover, cover1, cover2)
+  covers_val: ["cover1"] # Validation subjects 81-90 only have cover1 in the dataset
+  dataset_root: "data/raw"

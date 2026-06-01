@@ -10,6 +10,7 @@ dataset:
   modalities: ["IR"]
   subjects_train: [1, 80]         # Full 80-subject training set
   subjects_val: [81, 90]
+  covers_val: ["cover1"]          # Validation subjects 81-90 only have cover1
   image_size: [256, 256]
 
 model:
