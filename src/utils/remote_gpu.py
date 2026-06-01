@@ -269,21 +269,39 @@ class GPUSession:
 
         key_path = os.path.expanduser(os.path.expandvars(key_path))
         print(f"  Using SSH key: {key_path} (exists={os.path.exists(key_path)})")
+        
+        # Robustly load private key explicitly to prevent "encountered RSA key, expected OPENSSH key" errors
+        pkey = None
+        if os.path.exists(key_path):
+            for key_cls in [paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey, paramiko.DSSKey]:
+                try:
+                    pkey = key_cls.from_private_key_file(key_path)
+                    print(f"  Successfully loaded key using {key_cls.__name__}")
+                    break
+                except Exception:
+                    continue
+
         self._ssh = paramiko.SSHClient()
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         print(
             f"  Attempting SSH connection to {connect_host}:{connect_port} as {self.config.ssh_user}..."
         )
-        self._ssh.connect(
-            hostname=connect_host,
-            port=connect_port,
-            username=self.config.ssh_user,
-            key_filename=key_path,
-            allow_agent=True,
-            look_for_keys=False,
-            timeout=30,
-            banner_timeout=60,
-        )
+        
+        connect_kwargs = {
+            "hostname": connect_host,
+            "port": connect_port,
+            "username": self.config.ssh_user,
+            "allow_agent": True,
+            "look_for_keys": False,
+            "timeout": 30,
+            "banner_timeout": 60,
+        }
+        if pkey is not None:
+            connect_kwargs["pkey"] = pkey
+        else:
+            connect_kwargs["key_filename"] = key_path
+
+        self._ssh.connect(**connect_kwargs)
         # Prevent session timeout during long data downloads
         transport = self._ssh.get_transport()
         if transport:
