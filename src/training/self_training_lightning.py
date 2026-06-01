@@ -125,11 +125,13 @@ class SelfTrainingLightningModule(pl.LightningModule):
         return sigma_start + (sigma_end - sigma_start) * progress
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int) -> Optional[torch.Tensor]:
-        if batch is None or "labeled" not in batch or "unlabeled" not in batch:
+        if not isinstance(batch, dict):
+            return None
+        batch_labeled = batch.get("labeled")
+        batch_unlabeled = batch.get("unlabeled")
+        if batch_labeled is None or batch_unlabeled is None:
             return None
 
-        batch_labeled = batch["labeled"]
-        batch_unlabeled = batch["unlabeled"]
 
         # -------------------------------------------------------------
         # Step 1: Labeled Loss (Supervised target)

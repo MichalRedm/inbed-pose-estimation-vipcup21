@@ -32,6 +32,7 @@ class SelfTrainingTrainer(BaseTrainer):
             self.optimizer = optimizer
         self.criterion = criterion
 
+
     def _train_step(self, batch: Any) -> Dict[str, float]:
         # Not used since PyTorch Lightning handles steps under the hood,
         # but required to satisfy abstract method constraints in BaseTrainer.
@@ -95,11 +96,13 @@ class SelfTrainingTrainer(BaseTrainer):
             print(f"[SelfTrainingTrainer] Labeled samples: {len(train_loader.dataset)}")
             print(f"[SelfTrainingTrainer] Unlabeled samples: {len(unlabeled_dataset)}")
 
-        # 2. Package loaders
-        combined_loaders = {
-            "labeled": train_loader,
-            "unlabeled": unlabeled_loader
-        }
+        # 2. Package loaders with min_size mode so neither loader returns None
+        # when the shorter one is exhausted (PL default max_size fills with None).
+        from pytorch_lightning.utilities import CombinedLoader
+        combined_loaders = CombinedLoader(
+            {"labeled": train_loader, "unlabeled": unlabeled_loader},
+            mode="min_size",
+        )
 
         # 3. Instantiate Lightning Module
         lightning_module = SelfTrainingLightningModule(
