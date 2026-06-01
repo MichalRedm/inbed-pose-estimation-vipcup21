@@ -38,8 +38,9 @@ All "Verified" metrics in this repository must meet the following criteria:
 
 | Run | PCK@0.2 | MPJPE | Status |
 |-----|---------|-------|--------|
-| **loop50_vitpose_cut_aug** | **78.4%** | **11.8 px** | **NEW ALL-TIME RECORD (Peak E10)** |
-| **loop44_vitpose_fixed** | **77.8%** | **12.3 px** | PREVIOUS RECORD CHAMPION |
+| **loop53_vitpose_advanced_cover** | **78.7%** | **11.9 px** | **NEW ALL-TIME RECORD (FDA + HistMatch)** |
+| **loop50_vitpose_cut_aug** | **78.4%** | **11.8 px** | Marginal Peak (Overhead Check) |
+| **loop44_vitpose_fixed** | **77.8%** | **12.3 px** | Solid Stable Baseline |
 | loop52_vitpose_balanced | 77.6% | 12.1 px | Balanced Augmentations |
 | loop51_vitpose_cut_boost | 76.6% | 12.5 px | Over-augmented (CUT Noise) |
 | **loop31_improved_cover** | **64.0%** | **17.8 px** | PREVIOUS RECORD CHAMPION (CNN) |
