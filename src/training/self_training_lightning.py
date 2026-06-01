@@ -245,7 +245,10 @@ class SelfTrainingLightningModule(pl.LightningModule):
                 t_param.data.mul_(self.ema_alpha).add_(s_param.data, alpha=1.0 - self.ema_alpha)
             # Update running batch norm buffers
             for s_buffer, t_buffer in zip(self.model.buffers(), self.teacher.buffers()):
-                t_buffer.data.mul_(self.ema_alpha).add_(s_buffer.data, alpha=1.0 - self.ema_alpha)
+                if torch.is_floating_point(t_buffer):
+                    t_buffer.data.mul_(self.ema_alpha).add_(s_buffer.data, alpha=1.0 - self.ema_alpha)
+                else:
+                    t_buffer.data.copy_(s_buffer.data)
 
     def on_validation_epoch_start(self) -> None:
         self.validation_step_outputs = []
