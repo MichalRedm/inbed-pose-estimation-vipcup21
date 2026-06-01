@@ -90,10 +90,16 @@ class SelfTrainingLightningModule(pl.LightningModule):
         """Called at train start to initialize weights from loop53 or identical config, and freeze teacher."""
         self.teacher.eval()
 
-        init_weights_path = self.config.get("training", {}).get("init_weights_path", None)
+        init_weights_path = self.config.get("training", {}).get(
+            "init_weights_path", None
+        )
         if init_weights_path:
-            print(f"[SelfTraining] Initializing student and teacher from checkpoint: {init_weights_path}")
-            state = torch.load(init_weights_path, map_location=self.device, weights_only=False)
+            print(
+                f"[SelfTraining] Initializing student and teacher from checkpoint: {init_weights_path}"
+            )
+            state = torch.load(
+                init_weights_path, map_location=self.device, weights_only=False
+            )
             state_dict = state.get("model_state_dict", state)
 
             # Strip prefixes if saved from DDP or PoseDecodingWrapper
@@ -106,9 +112,13 @@ class SelfTrainingLightningModule(pl.LightningModule):
 
             # Synchronize teacher weights completely with the student
             with torch.no_grad():
-                for s_param, t_param in zip(self.model.parameters(), self.teacher.parameters()):
+                for s_param, t_param in zip(
+                    self.model.parameters(), self.teacher.parameters()
+                ):
                     t_param.copy_(s_param)
-                for s_buffer, t_buffer in zip(self.model.buffers(), self.teacher.buffers()):
+                for s_buffer, t_buffer in zip(
+                    self.model.buffers(), self.teacher.buffers()
+                ):
                     t_buffer.copy_(s_buffer)
 
     def forward(self, x: torch.Tensor, **kwargs: Any) -> torch.Tensor:
@@ -123,21 +133,22 @@ class SelfTrainingLightningModule(pl.LightningModule):
         progress = min(epoch / (num_epochs * 0.7), 1.0)
         return sigma_start + (sigma_end - sigma_start) * progress
 
-    def training_step(self, batch: Dict[str, Any], batch_idx: int) -> Optional[torch.Tensor]:
+    def training_step(
+        self, batch: Dict[str, Any], batch_idx: int
+    ) -> Optional[torch.Tensor]:
         if batch is None:
             return None
 
         # Handle both dict and non-dict batch (DDP fallback)
         if not isinstance(batch, dict):
             return torch.tensor(0.0, requires_grad=True, device=self.device)
-            
+
         batch_labeled = batch.get("labeled")
         batch_unlabeled = batch.get("unlabeled")
-        
+
         if batch_labeled is None or batch_unlabeled is None:
             # If CombinedLoader failed to provide both, we can't do self-training
             return torch.tensor(0.0, requires_grad=True, device=self.device)
-
 
         # -------------------------------------------------------------
         # Step 1: Labeled Loss (Supervised target)
@@ -250,19 +261,27 @@ class SelfTrainingLightningModule(pl.LightningModule):
         """Applies Exponential Moving Average (EMA) update to the Teacher weights."""
         with torch.no_grad():
             # Update learnable parameters
-            for s_param, t_param in zip(self.model.parameters(), self.teacher.parameters()):
-                t_param.data.mul_(self.ema_alpha).add_(s_param.data, alpha=1.0 - self.ema_alpha)
+            for s_param, t_param in zip(
+                self.model.parameters(), self.teacher.parameters()
+            ):
+                t_param.data.mul_(self.ema_alpha).add_(
+                    s_param.data, alpha=1.0 - self.ema_alpha
+                )
             # Update running batch norm buffers
             for s_buffer, t_buffer in zip(self.model.buffers(), self.teacher.buffers()):
                 if torch.is_floating_point(t_buffer):
-                    t_buffer.data.mul_(self.ema_alpha).add_(s_buffer.data, alpha=1.0 - self.ema_alpha)
+                    t_buffer.data.mul_(self.ema_alpha).add_(
+                        s_buffer.data, alpha=1.0 - self.ema_alpha
+                    )
                 else:
                     t_buffer.data.copy_(s_buffer.data)
 
     def on_validation_epoch_start(self) -> None:
         self.validation_step_outputs = []
 
-    def validation_step(self, batch: Dict[str, Any], batch_idx: int) -> Optional[torch.Tensor]:
+    def validation_step(
+        self, batch: Dict[str, Any], batch_idx: int
+    ) -> Optional[torch.Tensor]:
         if batch is None:
             return None
 

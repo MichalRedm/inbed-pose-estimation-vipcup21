@@ -140,6 +140,7 @@ def create_trainer(
         )
     elif training_type == "self_training":
         from src.training.self_training_trainer import SelfTrainingTrainer
+
         trainer = SelfTrainingTrainer(
             model=model,
             optimizer=None,  # Will set below

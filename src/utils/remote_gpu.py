@@ -270,7 +270,7 @@ class GPUSession:
 
         key_path = os.path.expanduser(os.path.expandvars(key_path))
         print(f"  Using SSH key: {key_path} (exists={os.path.exists(key_path)})")
-        
+
         # Robustly load private key explicitly to prevent "encountered RSA key, expected OPENSSH key" errors
         pkey = None
         if os.path.exists(key_path):
@@ -291,7 +291,7 @@ class GPUSession:
         print(
             f"  Attempting SSH connection to {connect_host}:{connect_port} as {self.config.ssh_user}..."
         )
-        
+
         connect_kwargs = {
             "hostname": connect_host,
             "port": connect_port,
@@ -859,7 +859,8 @@ class GPUManager:
                 "tunnel_hostname": data.get("tunnel_hostname", ""),
                 "host": data.get("host", data.get("tunnel_hostname", "")),
                 "ssh_user": data.get("ssh_user", "root"),
-                "ssh_key": data.get("ssh_key") or "~/.ssh/id_ed25519",  # Extract ssh_key from JSON
+                "ssh_key": data.get("ssh_key")
+                or "~/.ssh/id_ed25519",  # Extract ssh_key from JSON
                 "port": data.get("port", 22),
                 "meta": {"gpu": data.get("gpu", "unknown")},
             },

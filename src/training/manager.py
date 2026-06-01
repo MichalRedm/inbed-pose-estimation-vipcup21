@@ -661,35 +661,46 @@ class TrainingManager:
                     traceback_lines: list[str] = []
                     in_tb = False
                     for log_line in attempt_logs:
-                        raw = log_line.split("] ", 1)[-1] if "] " in log_line else log_line
+                        raw = (
+                            log_line.split("] ", 1)[-1]
+                            if "] " in log_line
+                            else log_line
+                        )
                         # torchrun prefixes per-rank output with "[rankN]: "
                         raw_stripped = raw
                         if raw_stripped.startswith("[rank"):
                             colon_idx = raw_stripped.find("]: ")
                             if colon_idx != -1:
-                                raw_stripped = raw_stripped[colon_idx + 3:]
+                                raw_stripped = raw_stripped[colon_idx + 3 :]
                         if raw_stripped.startswith("Traceback (most recent"):
                             in_tb = True
                             traceback_lines = [raw_stripped]
                         elif in_tb:
                             traceback_lines.append(raw_stripped)
                             # A line starting with an exception class name ends the TB
-                            if raw_stripped and not raw_stripped.startswith(" ") and ":" in raw_stripped:
+                            if (
+                                raw_stripped
+                                and not raw_stripped.startswith(" ")
+                                and ":" in raw_stripped
+                            ):
                                 in_tb = False
 
                     # ── 2. Extract the final error line for status_message ─────────────
                     for log_line in reversed(attempt_logs):
                         line_lower = log_line.lower()
-                        raw = log_line.split("] ", 1)[-1] if "] " in log_line else log_line
+                        raw = (
+                            log_line.split("] ", 1)[-1]
+                            if "] " in log_line
+                            else log_line
+                        )
                         raw_stripped = raw
                         if raw_stripped.startswith("[rank"):
                             colon_idx = raw_stripped.find("]: ")
                             if colon_idx != -1:
-                                raw_stripped = raw_stripped[colon_idx + 3:]
+                                raw_stripped = raw_stripped[colon_idx + 3 :]
 
                         if (
-                            "error:" in line_lower
-                            or "exception:" in line_lower
+                            "error:" in line_lower or "exception:" in line_lower
                         ) and error_msg.startswith("Failed (exit"):
                             error_msg = f"Error: {raw_stripped.strip()}"
 
@@ -712,7 +723,10 @@ class TrainingManager:
                         if self.current_run_id:
                             log_path = (
                                 project_root_path
-                                / "results" / "runs" / self.current_run_id / "training.log"
+                                / "results"
+                                / "runs"
+                                / self.current_run_id
+                                / "training.log"
                             )
                             log_path.parent.mkdir(parents=True, exist_ok=True)
                             with open(log_path, "a", encoding="utf-8") as lf:

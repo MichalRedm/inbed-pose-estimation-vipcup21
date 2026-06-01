@@ -32,7 +32,6 @@ class SelfTrainingTrainer(BaseTrainer):
             self.optimizer = optimizer
         self.criterion = criterion
 
-
     def _train_step(self, batch: Any) -> Dict[str, float]:
         # Not used since PyTorch Lightning handles steps under the hood,
         # but required to satisfy abstract method constraints in BaseTrainer.
@@ -69,7 +68,9 @@ class SelfTrainingTrainer(BaseTrainer):
         unlabeled_aug_cfg["cut_prob"] = 0.0
 
         if self.is_main:
-            print("[SelfTrainingTrainer] Creating clean augmenter for unannotated examples...")
+            print(
+                "[SelfTrainingTrainer] Creating clean augmenter for unannotated examples..."
+            )
         unlabeled_augmenter = DataAugmenter(unlabeled_aug_cfg, dataset_root=data_root)
 
         # Subjects 31-80 are unannotated target domain
@@ -81,10 +82,13 @@ class SelfTrainingTrainer(BaseTrainer):
             split="train",
             augmenter=unlabeled_augmenter,
             image_size=image_size,
-            in_channels=self.model.in_channels if hasattr(self.model, "in_channels") else 3,
+            in_channels=self.model.in_channels
+            if hasattr(self.model, "in_channels")
+            else 3,
         )
 
         from src.data.dataset import collate_unlabeled
+
         unlabeled_loader = torch.utils.data.DataLoader(
             unlabeled_dataset,
             batch_size=self.config["training"].get("batch_size", 16),
@@ -100,6 +104,7 @@ class SelfTrainingTrainer(BaseTrainer):
         # 2. Package loaders with min_size mode so neither loader returns None
         # when the shorter one is exhausted (PL default max_size fills with None).
         from pytorch_lightning.utilities import CombinedLoader
+
         combined_loaders = CombinedLoader(
             {"labeled": train_loader, "unlabeled": unlabeled_loader},
             mode="min_size",
@@ -140,7 +145,9 @@ class SelfTrainingTrainer(BaseTrainer):
         )
 
         if self.is_main:
-            print("[SelfTrainingTrainer] Starting PyTorch Lightning self-training loop...")
+            print(
+                "[SelfTrainingTrainer] Starting PyTorch Lightning self-training loop..."
+            )
             print(
                 f"[SelfTrainingTrainer] Accelerator: {accelerator}, Devices: {devices}, Strategy: {strategy}"
             )
