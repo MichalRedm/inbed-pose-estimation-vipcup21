@@ -86,7 +86,10 @@ def test_uda_lightning_module_compilation() -> None:
         def __init__(self) -> None:
             super().__init__()
             self.linear = nn.Linear(10, 10)
-        def forward(self, x: torch.Tensor, return_features: bool = False, **kwargs: Any) -> Any:
+
+        def forward(
+            self, x: torch.Tensor, return_features: bool = False, **kwargs: Any
+        ) -> Any:
             features = torch.randn(x.size(0), 480, 8, 8)
             outputs = torch.randn(x.size(0), 14, 64, 64)
             if return_features:
@@ -100,7 +103,7 @@ def test_uda_lightning_module_compilation() -> None:
     criterion = nn.MSELoss()
     config = {
         "uda": {"enabled": True, "lambda_adv": 0.001, "warmup_epochs": 10},
-        "training": {"lr": 0.001, "weight_decay": 0.0001}
+        "training": {"lr": 0.001, "weight_decay": 0.0001},
     }
 
     pl_module = UDALightningModule(
@@ -109,7 +112,7 @@ def test_uda_lightning_module_compilation() -> None:
         optimizer=optimizer,
         optimizer_d=optimizer_d,
         criterion=criterion,
-        config=config
+        config=config,
     )
 
     assert pl_module is not None
@@ -119,7 +122,7 @@ def test_uda_lightning_module_compilation() -> None:
     batch = {
         "image": torch.randn(2, 1, 256, 256),
         "image_source": torch.randn(2, 1, 256, 256),
-        "target": torch.randn(2, 14, 64, 64)
+        "target": torch.randn(2, 14, 64, 64),
     }
 
     # Run one step
@@ -137,17 +140,13 @@ def test_cyclegan_lightning_module_compilation() -> None:
     D_A = Discriminator((3, 64, 64))
     D_B = Discriminator((3, 64, 64))
 
-    optimizer_G = torch.optim.Adam(list(G_AB.parameters()) + list(G_BA.parameters()), lr=0.0002)
+    optimizer_G = torch.optim.Adam(
+        list(G_AB.parameters()) + list(G_BA.parameters()), lr=0.0002
+    )
     optimizer_D_A = torch.optim.Adam(D_A.parameters(), lr=0.0002)
     optimizer_D_B = torch.optim.Adam(D_B.parameters(), lr=0.0002)
 
-    config = {
-        "training": {
-            "lr": 0.0002,
-            "lambda_cycle": 10.0,
-            "lambda_identity": 5.0
-        }
-    }
+    config = {"training": {"lr": 0.0002, "lambda_cycle": 10.0, "lambda_identity": 5.0}}
 
     pl_module = CycleGANLightningModule(
         G_AB=G_AB,
@@ -157,7 +156,7 @@ def test_cyclegan_lightning_module_compilation() -> None:
         optimizer_G=optimizer_G,
         optimizer_D_A=optimizer_D_A,
         optimizer_D_B=optimizer_D_B,
-        config=config
+        config=config,
     )
 
     assert pl_module is not None

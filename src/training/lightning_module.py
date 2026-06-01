@@ -587,7 +587,11 @@ class CycleGANLightningModule(pl.LightningModule):
         if self._trainer is not None and hasattr(self._trainer, "strategy"):
             opt_g, opt_da, opt_db = self.optimizers()
         else:
-            opt_g, opt_da, opt_db = self.optimizer_G, self.optimizer_D_A, self.optimizer_D_B
+            opt_g, opt_da, opt_db = (
+                self.optimizer_G,
+                self.optimizer_D_A,
+                self.optimizer_D_B,
+            )
         real_A, real_B = batch
 
         device_type = self.device.type

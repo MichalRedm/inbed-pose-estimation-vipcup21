@@ -184,9 +184,7 @@ class UDATrainer(BaseTrainer):
         )
 
         if self.is_main:
-            print(
-                "[UDATrainer] Starting refactored PyTorch Lightning training loop..."
-            )
+            print("[UDATrainer] Starting refactored PyTorch Lightning training loop...")
             print(
                 f"[UDATrainer] Accelerator: {accelerator}, Devices: {devices}, Strategy: {strategy}"
             )
