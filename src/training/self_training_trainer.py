@@ -84,11 +84,12 @@ class SelfTrainingTrainer(BaseTrainer):
             in_channels=self.model.in_channels if hasattr(self.model, "in_channels") else 3,
         )
 
+        from src.data.dataset import collate_unlabeled
         unlabeled_loader = torch.utils.data.DataLoader(
             unlabeled_dataset,
             batch_size=self.config["training"].get("batch_size", 16),
             shuffle=True,
-            collate_fn=collate_skip_none,
+            collate_fn=collate_unlabeled,
             num_workers=4 if os.name != "nt" else 0,
         )
 

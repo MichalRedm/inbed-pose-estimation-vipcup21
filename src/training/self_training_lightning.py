@@ -54,6 +54,7 @@ class SelfTrainingLightningModule(pl.LightningModule):
     lambda_unlabeled: float
     cutout_prob: float
     cutout_size_ratio: float
+    last_step_metrics: Dict[str, float]
     validation_step_outputs: List[Dict[str, torch.Tensor]]
 
     def __init__(
@@ -79,6 +80,7 @@ class SelfTrainingLightningModule(pl.LightningModule):
         for p in self.teacher.parameters():
             p.requires_grad = False
 
+        self.last_step_metrics = {}
         self.validation_step_outputs = []
 
     def train(self, mode: bool = True) -> "SelfTrainingLightningModule":
@@ -125,12 +127,18 @@ class SelfTrainingLightningModule(pl.LightningModule):
         return sigma_start + (sigma_end - sigma_start) * progress
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int) -> Optional[torch.Tensor]:
+        if batch is None:
+            return None
+
+        # Handle both dict and non-dict batch (DDP fallback)
         if not isinstance(batch, dict):
-            # DDP requires a valid tensor — return zero loss so all ranks stay in sync
             return torch.tensor(0.0, requires_grad=True, device=self.device)
+            
         batch_labeled = batch.get("labeled")
         batch_unlabeled = batch.get("unlabeled")
+        
         if batch_labeled is None or batch_unlabeled is None:
+            # If CombinedLoader failed to provide both, we can't do self-training
             return torch.tensor(0.0, requires_grad=True, device=self.device)
 
 
@@ -233,6 +241,7 @@ class SelfTrainingLightningModule(pl.LightningModule):
         for k, v in metrics.items():
             self.log(k, v, on_step=True, on_epoch=True, prog_bar=True, logger=False)
 
+        self.last_step_metrics = metrics
         return loss_total
 
     def on_train_batch_end(

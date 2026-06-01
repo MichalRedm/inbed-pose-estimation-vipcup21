@@ -37,6 +37,26 @@ def collate_skip_none(
     return cast(Dict[str, Any], default_collate(clean_batch))
 
 
+def collate_unlabeled(
+    batch: List[Optional[Dict[str, Any]]],
+) -> Optional[Dict[str, Any]]:
+    """
+    Custom collate_fn for unlabeled data that strips None values (target, joints)
+    so that default_collate doesn't crash.
+    """
+    clean_batch = []
+    for item in batch:
+        if item is None:
+            continue
+        # Remove keys with None values to avoid default_collate failure
+        new_item = {k: v for k, v in item.items() if v is not None}
+        clean_batch.append(new_item)
+
+    if not clean_batch:
+        return None
+    return cast(Dict[str, Any], default_collate(clean_batch))
+
+
 class VIPCupDataset(Dataset):
     """
     Simultaneously-collected Multimodal Lying Pose (SLP) dataset for IEEE VIP Cup 2021.

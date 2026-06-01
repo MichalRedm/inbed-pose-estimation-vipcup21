@@ -39,6 +39,7 @@ While Loop 50 achieved a numeric peak of 78.41% (+0.57pp over Loop 44), this imp
 | 51 | Boosted CUT Augmentation (0.7) | FAILURE | 76.6% | **OVER-AUGMENTATION**: excessive domain noise. |
 | 52 | Balanced Diversity (L44 + L49 CUT seasoning) | STALLED | 77.6% | Regained ground but confirmed diminishing returns of offline CUT augmentation. |
 | 53 | Advanced Cover (FDA + HistMatch + Bank) | SUCCESS | **78.7%** | Refactored augmentations; dynamic reference bank improved realism. **NEW STABLE RECORD**. |
+| 54 | Self-Training (EMA Teacher + CUT Strong Aug) | IN PROGRESS | N/A | **v2 Run**: Fixed empty loop bug and metrics reporting. Utilizing subjects 31-80 as unlabeled data. |
 
 ## Next Planned Steps (Post-Loop 52 Run)
 

@@ -196,7 +196,7 @@ class DashboardTelemetryCallback(pl.Callback):
                 hasattr(pose_module, "validation_step_outputs")
                 and hasattr(self.parent, "compute_val_pck")
                 and not self.parent.config.get("training", {}).get("cyclegan", False)
-                and self.parent.config.get("training_type", "standard") == "standard"
+                and self.parent.config.get("training_type", "standard") != "cyclegan"
             )
 
             if is_pose_task:
