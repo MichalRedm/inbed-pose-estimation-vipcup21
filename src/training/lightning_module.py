@@ -398,7 +398,10 @@ class UDALightningModule(pl.LightningModule):
         if batch is None:
             return
 
-        opt, opt_d = self.optimizers()
+        if self._trainer is not None:
+            opt, opt_d = self.optimizers()
+        else:
+            opt, opt_d = self.opt_model, self.opt_disc
 
         img_target = batch["image"]
         img_source = batch["image_source"]
@@ -575,7 +578,10 @@ class CycleGANLightningModule(pl.LightningModule):
         if batch is None:
             return
 
-        opt_g, opt_da, opt_db = self.optimizers()
+        if self._trainer is not None:
+            opt_g, opt_da, opt_db = self.optimizers()
+        else:
+            opt_g, opt_da, opt_db = self.optimizer_G, self.optimizer_D_A, self.optimizer_D_B
         real_A, real_B = batch
 
         device_type = self.device.type

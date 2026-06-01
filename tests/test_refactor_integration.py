@@ -1,5 +1,6 @@
 import pytest
 import torch
+import torch.nn as nn
 from pathlib import Path
 from typing import cast
 from src.data.dataset import VIPCupDataset
