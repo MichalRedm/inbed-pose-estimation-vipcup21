@@ -402,8 +402,8 @@ class BaseTrainer(ABC):
             # 2. VERIFY the saved file before committing
             try:
                 # We only need to check if the zip archive is valid
-                # map_location='cpu' and weights_only=True for speed
-                torch.load(tmp_path, map_location="cpu", weights_only=True)
+                # map_location='cpu' and weights_only=False to support complex nested configs
+                torch.load(tmp_path, map_location="cpu", weights_only=False)
             except Exception as e:
                 print(
                     f"[Trainer] CRITICAL: Verification of saved checkpoint failed: {e}"

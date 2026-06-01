@@ -265,30 +265,62 @@ class CycleGANTrainer(BaseTrainer):
         return {k: v.item() for k, v in losses.items() if isinstance(v, torch.Tensor)}
 
     def fit(self, train_loader: Any, val_loader: Any = None) -> None:
-        for epoch in range(self.start_epoch, self.epochs):
-            self.current_epoch = epoch
-            train_metrics = self.train_epoch(train_loader, epoch)
+        from .lightning_module import CycleGANLightningModule
+        from .lightning_callbacks import DashboardTelemetryCallback
+        import pytorch_lightning as pl
 
-            val_metrics: Dict[str, float] = {}
-            if val_loader:
-                val_metrics = self.evaluate(val_loader)
-                # Rename keys for history
-                val_metrics = {f"val_{k}": v for k, v in val_metrics.items()}
+        # 1. Instantiate Lightning Module
+        lightning_module = CycleGANLightningModule(
+            G_AB=self.G_AB,
+            G_BA=self.G_BA,
+            D_A=self.D_A,
+            D_B=self.D_B,
+            optimizer_G=self.optimizer_G,
+            optimizer_D_A=self.optimizer_D_A,
+            optimizer_D_B=self.optimizer_D_B,
+            config=self.config,
+        )
 
-            if self.is_main:
-                epoch_data: Dict[str, Any] = {"epoch": epoch + 1}
-                epoch_data.update(train_metrics)
-                epoch_data.update(val_metrics)
-                self.update_history(epoch_data)
+        # 2. Instantiate custom callbacks
+        callbacks: list[pl.Callback] = [DashboardTelemetryCallback(self)]
 
-                # Checkpointing
-                # For CycleGAN, we save based on loss (lower is better)
-                val_loss = val_metrics.get("val_loss", train_metrics["loss"])
-                is_best = val_loss < self.best_val_loss
-                if is_best:
-                    self.best_val_loss = val_loss
+        # 3. Configure Trainer options
+        accelerator = (
+            "gpu" if torch.cuda.is_available() and self.device.type == "cuda" else "cpu"
+        )
+        devices: Any = 1
+        if self.device.type == "cuda" and self.device.index is not None:
+            devices = [self.device.index]
 
-                self.save_checkpoint(f"epoch_{epoch + 1}", is_best=is_best)
+        strategy: Any = "auto"
+        if self.world_size > 1:
+            strategy = "ddp"
+            devices = self.world_size
+
+        # PyTorch Lightning Trainer setup
+        import pytorch_lightning as pl
+
+        trainer = pl.Trainer(
+            max_epochs=self.epochs,
+            accelerator=accelerator,
+            devices=devices,
+            strategy=strategy,
+            callbacks=callbacks,
+            enable_checkpointing=False,  # We handle our own checkpoints atomically
+            logger=False,  # We handle our own database logging
+            enable_progress_bar=self.is_main,  # Standard progress bar for main process
+        )
+
+        if self.is_main:
+            print(
+                "[CycleGANTrainer] Starting refactored PyTorch Lightning training loop..."
+            )
+            print(
+                f"[CycleGANTrainer] Accelerator: {accelerator}, Devices: {devices}, Strategy: {strategy}"
+            )
+
+        # Start training
+        trainer.fit(lightning_module, train_loader, val_loader)
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         return {

@@ -140,48 +140,55 @@ class UDATrainer(BaseTrainer):
         }
 
     def fit(self, train_loader: Any, val_loader: Any = None) -> None:
-        self.num_batches_per_epoch = len(train_loader)
+        from .lightning_module import UDALightningModule
+        from .lightning_callbacks import DashboardTelemetryCallback
+        import pytorch_lightning as pl
 
-        for epoch in range(self.start_epoch, self.epochs):
-            train_metrics = self.train_epoch(train_loader, epoch)
-            val_metrics: Dict[str, float] = {}
+        # 1. Instantiate Lightning Module
+        lightning_module = UDALightningModule(
+            model=self.model,
+            discriminator=self.discriminator,
+            optimizer=self.optimizer,
+            optimizer_d=self.optimizer_d,
+            criterion=self.criterion,
+            config=self.config,
+        )
 
-            if val_loader:
-                val_metrics = self.evaluate(val_loader)
+        # 2. Instantiate custom callbacks
+        callbacks: list[pl.Callback] = [DashboardTelemetryCallback(self)]
 
-            if self.is_main:
-                # Log progress
-                log_str = f"Epoch {epoch + 1}: "
-                log_str += " ".join([f"{k}={v:.4f}" for k, v in train_metrics.items()])
-                if val_metrics:
-                    log_str += " | " + " ".join(
-                        [f"val_{k}={v:.4f}" for k, v in val_metrics.items()]
-                    )
-                # Stream comprehensive JSON summary to sidecar file
-                summary_payload: Dict[str, Any] = {
-                    "epoch": epoch + 1,
-                    "progress": 1.0,
-                    "is_summary": True,
-                }
-                summary_payload.update(train_metrics)
-                if val_metrics:
-                    summary_payload.update(
-                        {f"val_{k}": v for k, v in val_metrics.items()}
-                    )
-                self._stream_metric(summary_payload)
+        # 3. Configure Trainer options
+        accelerator = (
+            "gpu" if torch.cuda.is_available() and self.device.type == "cuda" else "cpu"
+        )
+        devices: Any = 1
+        if self.device.type == "cuda" and self.device.index is not None:
+            devices = [self.device.index]
 
-                # Checkpointing
-                val_loss = val_metrics.get("loss", float("inf"))
-                is_best = val_loss < self.best_val_loss
-                if is_best:
-                    self.best_val_loss = val_loss
+        strategy: Any = "auto"
+        if self.world_size > 1:
+            strategy = "ddp"
+            devices = self.world_size
 
-                self.save_checkpoint(f"epoch_{epoch + 1}", is_best=is_best)
+        # PyTorch Lightning Trainer setup
+        import pytorch_lightning as pl
 
-                # History update
-                epoch_data: Dict[str, Any] = {
-                    "epoch": epoch + 1,
-                    **train_metrics,
-                    **{f"val_{k}": v for k, v in val_metrics.items()},
-                }
-                self.update_history(epoch_data)
+        trainer = pl.Trainer(
+            max_epochs=self.epochs,
+            accelerator=accelerator,
+            devices=devices,
+            strategy=strategy,
+            callbacks=callbacks,
+            enable_checkpointing=False,  # We handle our own checkpoints atomically
+            logger=False,  # We handle our own database logging
+            enable_progress_bar=self.is_main,  # Standard progress bar for main process
+        )
+
+        if self.is_main:
+            print("[UDATrainer] Starting refactored PyTorch Lightning training loop...")
+            print(
+                f"[UDATrainer] Accelerator: {accelerator}, Devices: {devices}, Strategy: {strategy}"
+            )
+
+        # Start training
+        trainer.fit(lightning_module, train_loader, val_loader)
