@@ -465,7 +465,10 @@ class UDALightningModule(pl.LightningModule):
         opt.zero_grad()
         opt_d.zero_grad()
 
-        self.manual_backward(loss_total)
+        if self._trainer is not None and hasattr(self._trainer, "strategy"):
+            self.manual_backward(loss_total)
+        else:
+            loss_total.backward()
 
         opt.step()
         opt_d.step()
