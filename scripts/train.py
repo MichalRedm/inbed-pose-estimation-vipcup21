@@ -161,15 +161,18 @@ def train() -> None:
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     is_distributed = world_size > 1
+    has_cuda = torch.cuda.is_available()
 
-    if is_distributed:
+    if is_distributed and has_cuda:
         if not dist.is_initialized():
             dist.init_process_group(backend="nccl")
         torch.cuda.set_device(local_rank)
         device = torch.device("cuda", local_rank)
     else:
-        check_cuda()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if has_cuda:
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
 
     if rank == 0:
         mode = str(config.get("training_type", "standard")).upper()
@@ -345,7 +348,7 @@ def train() -> None:
     # 8. Start Training
     trainer.fit(train_loader, val_loader)
 
-    if is_distributed:
+    if is_distributed and dist.is_initialized():
         dist.destroy_process_group()
 
 
