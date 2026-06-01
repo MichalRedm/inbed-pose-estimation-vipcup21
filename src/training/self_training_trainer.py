@@ -82,9 +82,7 @@ class SelfTrainingTrainer(BaseTrainer):
             split="train",
             augmenter=unlabeled_augmenter,
             image_size=image_size,
-            in_channels=self.model.in_channels
-            if hasattr(self.model, "in_channels")
-            else 3,
+            in_channels=int(getattr(self.model, "in_channels", 3)),
         )
 
         from src.data.dataset import collate_unlabeled

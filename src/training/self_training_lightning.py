@@ -250,7 +250,7 @@ class SelfTrainingLightningModule(pl.LightningModule):
             self.log(k, v, on_step=True, on_epoch=True, prog_bar=True, logger=False)
 
         self.last_step_metrics = metrics
-        return loss_total
+        return cast(Optional[torch.Tensor], loss_total)
 
     def on_train_batch_end(
         self,

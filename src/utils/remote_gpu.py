@@ -306,7 +306,7 @@ class GPUSession:
         else:
             connect_kwargs["key_filename"] = key_path
 
-        self._ssh.connect(**connect_kwargs)
+        self._ssh.connect(**connect_kwargs)  # type: ignore[arg-type]
         # Prevent session timeout during long data downloads
         transport = self._ssh.get_transport()
         if transport:
