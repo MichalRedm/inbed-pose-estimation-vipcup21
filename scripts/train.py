@@ -326,6 +326,7 @@ def train() -> None:
             start_epoch = max(ckpt_epoch, hist_epoch)
             trainer.start_epoch = start_epoch
             if rank == 0:
+                print(f"[DEBUG] ckpt_epoch: {ckpt_epoch}, hist_epoch: {hist_epoch}")
                 print(f"Resuming from global epoch {start_epoch + 1}")
 
             state = torch.load(latest_ckpt, map_location=device)
