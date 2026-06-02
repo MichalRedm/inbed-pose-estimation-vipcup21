@@ -59,11 +59,13 @@ class SelfTrainingLightningModule(pl.LightningModule):
         model: nn.Module,
         config: Dict[str, Any],
         criterion: Optional[nn.Module] = None,
+        optimizer: Optional[torch.optim.Optimizer] = None,
     ) -> None:
         super().__init__()
         self.model = model
         self.config = config
         self.criterion = criterion or nn.MSELoss()
+        self.external_optimizer = optimizer
 
         train_cfg: Dict[str, Any] = config.get("training", {})
         self.ema_alpha = float(train_cfg.get("ema_alpha", 0.999))
@@ -320,6 +322,9 @@ class SelfTrainingLightningModule(pl.LightningModule):
         return cast(torch.Tensor, loss)
 
     def configure_optimizers(self) -> Any:
+        if self.external_optimizer is not None:
+            return self.external_optimizer
+
         from src.training.factory import build_optimizer
 
         optimizer = build_optimizer(self.model, self, self.config)

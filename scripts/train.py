@@ -339,6 +339,18 @@ def train() -> None:
                 trainer.optimizer.load_state_dict(state["optimizer_state_dict"])
             if "optimizer_d_state_dict" in state and hasattr(trainer, "optimizer_d"):
                 trainer.optimizer_d.load_state_dict(state["optimizer_d_state_dict"])
+            if "teacher_state_dict" in state and hasattr(trainer, "lightning_module"):
+                # Restore EMA teacher for self-training stability
+                print("[Resume] Restoring teacher weights from checkpoint.")
+                # We need to access the teacher through the lightning_module registered in the trainer
+                from src.training.self_training_lightning import (
+                    SelfTrainingLightningModule,
+                )
+
+                if isinstance(trainer.lightning_module, SelfTrainingLightningModule):
+                    trainer.lightning_module.teacher.load_state_dict(
+                        state["teacher_state_dict"]
+                    )
             if "discriminator_state_dict" in state and hasattr(
                 trainer, "discriminator"
             ):

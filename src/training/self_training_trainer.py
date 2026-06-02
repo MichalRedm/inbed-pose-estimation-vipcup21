@@ -43,7 +43,15 @@ class SelfTrainingTrainer(BaseTrainer):
         return {"loss": 0.0}
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
-        return {"optimizer_state_dict": self.optimizer.state_dict()}
+        extra_data = {"optimizer_state_dict": self.optimizer.state_dict()}
+
+        # Save teacher weights if available (found inside the PL lightning module)
+        if hasattr(self, "lightning_module") and hasattr(
+            self.lightning_module, "teacher"
+        ):
+            extra_data["teacher_state_dict"] = self.lightning_module.teacher.state_dict()
+
+        return extra_data
 
     def fit(self, train_loader: Any, val_loader: Any = None) -> None:
         """
@@ -109,10 +117,11 @@ class SelfTrainingTrainer(BaseTrainer):
         )
 
         # 3. Instantiate Lightning Module
-        lightning_module = SelfTrainingLightningModule(
+        self.lightning_module = SelfTrainingLightningModule(
             model=self.model,
             config=self.config,
             criterion=self.criterion,
+            optimizer=self.optimizer,
         )
 
         # 4. Instantiate custom callbacks
@@ -158,4 +167,4 @@ class SelfTrainingTrainer(BaseTrainer):
                 )
             trainer.fit_loop.epoch_progress.current.completed = self.start_epoch
 
-        trainer.fit(lightning_module, combined_loaders, val_loader)
+        trainer.fit(self.lightning_module, combined_loaders, val_loader)
