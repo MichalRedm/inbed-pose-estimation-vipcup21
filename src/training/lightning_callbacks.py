@@ -115,9 +115,7 @@ class DashboardTelemetryCallback(pl.Callback):
             # Only on main process do we log, stream summaries, and save checkpoints
             if self.parent.is_main:
                 # Sync parent trainer's epoch with PL trainer
-                self.parent.current_epoch = (
-                    trainer.current_epoch + 1
-                )
+                self.parent.current_epoch = trainer.current_epoch + 1
 
                 # 1. Stream comprehensive final epoch summary payload (so dashboard updates)
                 summary_payload: Dict[str, Any] = {
