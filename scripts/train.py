@@ -335,28 +335,8 @@ def train() -> None:
             m_state = {k.replace("module.", ""): v for k, v in m_state.items()}
             model.load_state_dict(m_state)
 
-            if "optimizer_state_dict" in state and hasattr(trainer, "optimizer"):
-                trainer.optimizer.load_state_dict(state["optimizer_state_dict"])
-            if "optimizer_d_state_dict" in state and hasattr(trainer, "optimizer_d"):
-                trainer.optimizer_d.load_state_dict(state["optimizer_d_state_dict"])
-            if "teacher_state_dict" in state and hasattr(trainer, "lightning_module"):
-                # Restore EMA teacher for self-training stability
-                print("[Resume] Restoring teacher weights from checkpoint.")
-                # We need to access the teacher through the lightning_module registered in the trainer
-                from src.training.self_training_lightning import (
-                    SelfTrainingLightningModule,
-                )
-
-                if isinstance(trainer.lightning_module, SelfTrainingLightningModule):
-                    trainer.lightning_module.teacher.load_state_dict(
-                        state["teacher_state_dict"]
-                    )
-            if "discriminator_state_dict" in state and hasattr(
-                trainer, "discriminator"
-            ):
-                trainer.discriminator.load_state_dict(state["discriminator_state_dict"])
-            if "total_steps" in state and hasattr(trainer, "total_steps"):
-                trainer.total_steps = state["total_steps"]
+            # Use the new robust state restoration API
+            trainer.load_resume_state(state)
 
     # 8. Start Training
     trainer.fit(train_loader, val_loader)

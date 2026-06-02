@@ -390,4 +390,14 @@ class StandardTrainer(BaseTrainer):
                 f"[StandardTrainer] Accelerator: {trainer.accelerator}, Devices: {trainer.num_devices}, Strategy: {trainer.strategy}"
             )
 
+        # 5. Restore state if resuming
+        if self.resume_state:
+            self._load_extra_checkpoint_data(self.resume_state)
+
         self._run_pl_fit(trainer, self.lightning_module, train_loader, val_loader)
+
+    def _load_extra_checkpoint_data(self, state: Dict[str, Any]) -> None:
+        if "optimizer_state_dict" in state:
+            if self.is_main:
+                print("[StandardTrainer] Restoring optimizer state from checkpoint.")
+            self.optimizer.load_state_dict(state["optimizer_state_dict"])

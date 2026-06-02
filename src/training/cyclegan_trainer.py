@@ -294,7 +294,37 @@ class CycleGANTrainer(BaseTrainer):
                 f"[CycleGANTrainer] Accelerator: {trainer.accelerator}, Devices: {trainer.num_devices}, Strategy: {trainer.strategy}"
             )
 
+        # 4. Restore state if resuming
+        if self.resume_state:
+            self._load_extra_checkpoint_data(self.resume_state)
+
         self._run_pl_fit(trainer, lightning_module, train_loader, val_loader)
+
+    def _load_extra_checkpoint_data(self, state: Dict[str, Any]) -> None:
+        if "G_BA_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring G_BA weights.")
+            self.G_BA.load_state_dict(state["G_BA_state_dict"])
+        if "D_A_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring D_A weights.")
+            self.D_A.load_state_dict(state["D_A_state_dict"])
+        if "D_B_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring D_B weights.")
+            self.D_B.load_state_dict(state["D_B_state_dict"])
+        if "optimizer_G_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring G optimizer state.")
+            self.optimizer_G.load_state_dict(state["optimizer_G_state_dict"])
+        if "optimizer_D_A_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring D_A optimizer state.")
+            self.optimizer_D_A.load_state_dict(state["optimizer_D_A_state_dict"])
+        if "optimizer_D_B_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring D_B optimizer state.")
+            self.optimizer_D_B.load_state_dict(state["optimizer_D_B_state_dict"])
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         return {

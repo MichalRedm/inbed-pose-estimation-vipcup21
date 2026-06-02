@@ -139,5 +139,20 @@ class SelfTrainingTrainer(BaseTrainer):
                 f"[SelfTrainingTrainer] Accelerator: {trainer.accelerator}, Devices: {trainer.num_devices}, Strategy: {trainer.strategy}"
             )
 
+        # 6. Restore state if resuming
+        if self.resume_state:
+            self._load_extra_checkpoint_data(self.resume_state)
+
         # Start training
         self._run_pl_fit(trainer, self.lightning_module, combined_loaders, val_loader)
+
+    def _load_extra_checkpoint_data(self, state: Dict[str, Any]) -> None:
+        if "optimizer_state_dict" in state:
+            if self.is_main:
+                print("[SelfTrainingTrainer] Restoring optimizer state.")
+            self.optimizer.load_state_dict(state["optimizer_state_dict"])
+
+        if "teacher_state_dict" in state and hasattr(self, "lightning_module"):
+            if self.is_main:
+                print("[SelfTrainingTrainer] Restoring EMA teacher weights.")
+            self.lightning_module.teacher.load_state_dict(state["teacher_state_dict"])

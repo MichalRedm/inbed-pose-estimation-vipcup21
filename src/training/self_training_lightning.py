@@ -92,6 +92,11 @@ class SelfTrainingLightningModule(pl.LightningModule):
         """Called at train start to initialize weights from loop53 or identical config, and freeze teacher."""
         self.teacher.eval()
 
+        # Only initialize from loop53 if we are starting a fresh run.
+        # If we are resuming, weights have already been restored from the latest checkpoint.
+        if self.current_epoch > 0:
+            return
+
         init_weights_path = self.config.get("training", {}).get(
             "init_weights_path", None
         )

@@ -165,4 +165,24 @@ class UDATrainer(BaseTrainer):
                 f"[UDATrainer] Accelerator: {trainer.accelerator}, Devices: {trainer.num_devices}, Strategy: {trainer.strategy}"
             )
 
+        # 4. Restore state if resuming
+        if self.resume_state:
+            self._load_extra_checkpoint_data(self.resume_state)
+
         self._run_pl_fit(trainer, lightning_module, train_loader, val_loader)
+
+    def _load_extra_checkpoint_data(self, state: Dict[str, Any]) -> None:
+        if "optimizer_state_dict" in state:
+            if self.is_main:
+                print("[UDATrainer] Restoring optimizer state from checkpoint.")
+            self.optimizer.load_state_dict(state["optimizer_state_dict"])
+        if "optimizer_d_state_dict" in state:
+            if self.is_main:
+                print("[UDATrainer] Restoring discriminator optimizer state.")
+            self.optimizer_d.load_state_dict(state["optimizer_d_state_dict"])
+        if "discriminator_state_dict" in state:
+            if self.is_main:
+                print("[UDATrainer] Restoring discriminator weights.")
+            self.discriminator.load_state_dict(state["discriminator_state_dict"])
+        if "total_steps" in state:
+            self.total_steps = state["total_steps"]

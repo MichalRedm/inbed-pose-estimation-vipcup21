@@ -45,6 +45,7 @@ class BaseTrainer(ABC):
     stream_path: Optional[str]
     streamer: Optional[JSONLStream]
     tracker: LocalTracker
+    resume_state: Optional[Dict[str, Any]]
 
     def __init__(
         self,
@@ -70,6 +71,7 @@ class BaseTrainer(ABC):
         self.rank = rank
         self.world_size = world_size
         self.is_main = rank == 0
+        self.resume_state = None
 
         # Training parameters
         train_cfg: Dict[str, Any] = config.get("training", {})
@@ -500,6 +502,14 @@ class BaseTrainer(ABC):
             trainer.fit_loop.epoch_progress.current.completed = self.start_epoch
 
         trainer.fit(lightning_module, train_loader, val_loader)
+
+    def load_resume_state(self, state: Dict[str, Any]) -> None:
+        """Sets the state to be restored during fit()."""
+        self.resume_state = state
+
+    def _load_extra_checkpoint_data(self, state: Dict[str, Any]) -> None:
+        """Override to restore optimizers, teacher weights, etc."""
+        pass
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         """Override to add optimizers, schedulers, etc."""
