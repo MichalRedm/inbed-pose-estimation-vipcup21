@@ -18,11 +18,10 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
     This propagates gradients directly back to the generator $G$, forcing it to preserve skeletal topology under simulated blankets, making it highly complementary to InfoNCE patchwise contrastive learning.
 *   **ROI Status**: **VERY HIGH (ROI Rank 1)** — Outstanding theoretical grounding with strong literature backing. Directly leverages our SOTA pose estimator as a semantic supervisor, completely resolving pixel-wise steganographic watermarking while keeping poses anchored.
 
-### 2. Teacher-Student Self-Training (Pseudo-Labeling)
-*   **Hypothesis**: The model can learn from the unlabeled target distribution by generating its own labels. A teacher model trained on augmented source data (Subjects 1-30) predicts heatmaps on the unlabeled target data (Subjects 31-80). High-confidence predictions are converted to pseudo-labels to train the student model.
-*   **Implementation**: Modify the `train_loader` to yield unannotated batches. Maintain an Exponential Moving Average (EMA) teacher model. Apply consistency regularization between weakly-augmented and strongly-augmented views of the unannotated images.
-*   **Small-Data Survival Tip**: Early confirmation bias is fatal on small datasets. Combine this with **Cross-Modal Teacher Distillation**: train the Teacher model on the highly-accurate **RGB** SLP images to generate perfect pseudo-labels, then use those to train the IR Student model. Alternatively, ensure the Teacher is initialized with MS COCO weights + Channel Replication to guarantee strong structural priors.
-*   **ROI Status**: **HIGH (ROI Rank 2)** — Standard state-of-the-art technique for Semi-Supervised pose estimation.
+### 2. Adaptive Confidence Curriculum for Self-Training (Loop 55)
+*   **Hypothesis**: The fixed confidence threshold (0.35) in Loop 54 is a "one-size-fits-all" compromise. Early in training, a high threshold (e.g., 0.6) is needed to avoid "noise injection" from an unstable teacher. Later, a lower threshold (e.g., 0.25) allows the student to learn from harder, more occluded samples as the teacher matures. Implementing an **Adaptive Confidence Curriculum** will maximize the data utilization of subjects 31-80.
+*   **Implementation**: Linear or cosine decay of the `confidence_threshold` over 40 epochs.
+*   **ROI Status**: **HIGH (ROI Rank 2)** — Simple implementation with high potential for better tail-end convergence.
 
 ### 3. ViTPose++ Mixture-of-Experts (MoE) for Modality Routing
 *   **Hypothesis**: Our Loop 44 ViTPose model proved that global attention solves the extremity occlusion problem (wrists/ankles reached ~67%, up from 47%). However, mixing clean IR and synthetically blanketed IR forces a single set of FFN weights to model two very different signal-to-noise distributions. Implementing a lightweight ViTPose++ style Mixture-of-Experts (MoE) in the FFN layers (e.g., one "clean" expert and one "occluded" expert) routed by a simple gating network will prevent capacity interference and push PCK past 80%.
