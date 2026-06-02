@@ -62,7 +62,6 @@ class SelfTrainingTrainer(BaseTrainer):
         """
         from .self_training_lightning import SelfTrainingLightningModule
         from .lightning_callbacks import DashboardTelemetryCallback
-        import pytorch_lightning as pl
 
         # 1. Build unannotated target dataset and loader
         dataset_cfg = self.config.get("dataset", {})
@@ -127,46 +126,20 @@ class SelfTrainingTrainer(BaseTrainer):
         )
 
         # 4. Instantiate custom callbacks
-        callbacks: list[pl.Callback] = [DashboardTelemetryCallback(self)]
+        callbacks = [DashboardTelemetryCallback(self)]
 
         # 5. Configure PL Trainer options
-        accelerator = (
-            "gpu" if torch.cuda.is_available() and self.device.type == "cuda" else "cpu"
-        )
-        devices: Any = 1
-        if self.device.type == "cuda" and self.device.index is not None:
-            devices = [self.device.index]
-
-        strategy: Any = "auto"
-        if self.world_size > 1:
-            strategy = "ddp"
-            devices = self.world_size
-
-        trainer = pl.Trainer(
-            max_epochs=self.epochs,
-            accelerator=accelerator,
-            devices=devices,
-            strategy=strategy,
-            callbacks=callbacks,
-            enable_checkpointing=False,  # Checked and saved atomically
-            logger=False,  # Handled via local database logging
-            enable_progress_bar=self.is_main,
-        )
+        trainer = self._setup_pl_trainer(callbacks=callbacks)
 
         if self.is_main:
             print(
                 "[SelfTrainingTrainer] Starting PyTorch Lightning self-training loop..."
             )
             print(
-                f"[SelfTrainingTrainer] Accelerator: {accelerator}, Devices: {devices}, Strategy: {strategy}"
+                f"[SelfTrainingTrainer] Accelerator: {trainer.accelerator}, Devices: {trainer.num_devices}, Strategy: {trainer.strategy}"
             )
 
         # Start training
-        if self.start_epoch > 0:
-            if self.is_main:
-                print(
-                    f"[SelfTrainingTrainer] Resuming PL fit loop from epoch {self.start_epoch}"
-                )
-            trainer.fit_loop.epoch_progress.current.completed = self.start_epoch
-
-        trainer.fit(self.lightning_module, combined_loaders, val_loader)
+        self._run_pl_fit(
+            trainer, self.lightning_module, combined_loaders, val_loader
+        )

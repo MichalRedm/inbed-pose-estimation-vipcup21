@@ -379,33 +379,7 @@ class StandardTrainer(BaseTrainer):
             callbacks.append(ProgressiveUnfreezingCallback())
 
         # 3. Configure Trainer options
-        # We automate device placement, DDP strategy, etc.
-        accelerator = (
-            "gpu" if torch.cuda.is_available() and self.device.type == "cuda" else "cpu"
-        )
-        devices: Any = 1
-        if self.device.type == "cuda" and self.device.index is not None:
-            devices = [self.device.index]
-
-        strategy: Any = "auto"
-        if self.world_size > 1:
-            strategy = "ddp"
-            devices = self.world_size
-
-        # PyTorch Lightning Trainer setup
-        import pytorch_lightning as pl
-
-        # Avoid print banner / progress bar spam if we are running in headless / DDP logs
-        trainer = pl.Trainer(
-            max_epochs=self.epochs,
-            accelerator=accelerator,
-            devices=devices,
-            strategy=strategy,
-            callbacks=callbacks,
-            enable_checkpointing=False,  # We handle our own checkpoints atomically
-            logger=False,  # We handle our own database logging
-            enable_progress_bar=self.is_main,  # Standard progress bar for main process
-        )
+        trainer = self._setup_pl_trainer(callbacks=callbacks)
 
         # 4. Fit using PL Trainer
         if self.is_main:
@@ -413,15 +387,7 @@ class StandardTrainer(BaseTrainer):
                 "[StandardTrainer] Starting refactored PyTorch Lightning training loop..."
             )
             print(
-                f"[StandardTrainer] Accelerator: {accelerator}, Devices: {devices}, Strategy: {strategy}"
+                f"[StandardTrainer] Accelerator: {trainer.accelerator}, Devices: {trainer.num_devices}, Strategy: {trainer.strategy}"
             )
 
-        # Start training
-        if self.start_epoch > 0:
-            if self.is_main:
-                print(
-                    f"[StandardTrainer] Resuming PL fit loop from epoch {self.start_epoch}"
-                )
-            trainer.fit_loop.epoch_progress.current.completed = self.start_epoch
-
-        trainer.fit(self.lightning_module, train_loader, val_loader)
+        self._run_pl_fit(trainer, self.lightning_module, train_loader, val_loader)

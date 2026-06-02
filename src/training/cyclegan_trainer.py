@@ -267,7 +267,6 @@ class CycleGANTrainer(BaseTrainer):
     def fit(self, train_loader: Any, val_loader: Any = None) -> None:
         from .lightning_module import CycleGANLightningModule
         from .lightning_callbacks import DashboardTelemetryCallback
-        import pytorch_lightning as pl
 
         # 1. Instantiate Lightning Module
         lightning_module = CycleGANLightningModule(
@@ -282,52 +281,20 @@ class CycleGANTrainer(BaseTrainer):
         )
 
         # 2. Instantiate custom callbacks
-        callbacks: list[pl.Callback] = [DashboardTelemetryCallback(self)]
+        callbacks = [DashboardTelemetryCallback(self)]
 
-        # 3. Configure Trainer options
-        accelerator = (
-            "gpu" if torch.cuda.is_available() and self.device.type == "cuda" else "cpu"
-        )
-        devices: Any = 1
-        if self.device.type == "cuda" and self.device.index is not None:
-            devices = [self.device.index]
-
-        strategy: Any = "auto"
-        if self.world_size > 1:
-            strategy = "ddp"
-            devices = self.world_size
-
-        # PyTorch Lightning Trainer setup
-        import pytorch_lightning as pl
-
-        trainer = pl.Trainer(
-            max_epochs=self.epochs,
-            accelerator=accelerator,
-            devices=devices,
-            strategy=strategy,
-            callbacks=callbacks,
-            enable_checkpointing=False,  # We handle our own checkpoints atomically
-            logger=False,  # We handle our own database logging
-            enable_progress_bar=self.is_main,  # Standard progress bar for main process
-        )
+        # 3. Configure Trainer options (No DDP for CycleGAN yet)
+        trainer = self._setup_pl_trainer(callbacks=callbacks, use_ddp=False)
 
         if self.is_main:
             print(
                 "[CycleGANTrainer] Starting refactored PyTorch Lightning training loop..."
             )
             print(
-                f"[CycleGANTrainer] Accelerator: {accelerator}, Devices: {devices}, Strategy: {strategy}"
+                f"[CycleGANTrainer] Accelerator: {trainer.accelerator}, Devices: {trainer.num_devices}, Strategy: {trainer.strategy}"
             )
 
-        # Start training
-        if self.start_epoch > 0:
-            if self.is_main:
-                print(
-                    f"[CycleGANTrainer] Resuming PL fit loop from epoch {self.start_epoch}"
-                )
-            trainer.fit_loop.epoch_progress.current.completed = self.start_epoch
-
-        trainer.fit(lightning_module, train_loader, val_loader)
+        self._run_pl_fit(trainer, lightning_module, train_loader, val_loader)
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         return {
