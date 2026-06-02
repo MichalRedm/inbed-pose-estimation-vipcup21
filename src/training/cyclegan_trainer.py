@@ -320,6 +320,13 @@ class CycleGANTrainer(BaseTrainer):
             )
 
         # Start training
+        if self.start_epoch > 0:
+            if self.is_main:
+                print(
+                    f"[CycleGANTrainer] Resuming PL fit loop from epoch {self.start_epoch}"
+                )
+            trainer.fit_loop.epoch_progress.current.completed = self.start_epoch
+
         trainer.fit(lightning_module, train_loader, val_loader)
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:

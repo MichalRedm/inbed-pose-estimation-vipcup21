@@ -191,4 +191,11 @@ class UDATrainer(BaseTrainer):
             )
 
         # Start training
+        if self.start_epoch > 0:
+            if self.is_main:
+                print(
+                    f"[UDATrainer] Resuming PL fit loop from epoch {self.start_epoch}"
+                )
+            trainer.fit_loop.epoch_progress.current.completed = self.start_epoch
+
         trainer.fit(lightning_module, train_loader, val_loader)

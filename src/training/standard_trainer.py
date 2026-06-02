@@ -363,14 +363,15 @@ class StandardTrainer(BaseTrainer):
         )
 
         # 1. Instantiate Lightning Module
-        lightning_module = PoseLightningModule(
+        self.lightning_module = PoseLightningModule(
             model=self.model,
             config=self.config,
             criterion=self.criterion,
+            optimizer=self.optimizer,
         )
 
         # Sync the unfreeze_epoch state if needed
-        lightning_module.unfreeze_epoch = self.unfreeze_epoch
+        self.lightning_module.unfreeze_epoch = self.unfreeze_epoch
 
         # 2. Instantiate custom callbacks
         callbacks: List[Any] = [DashboardTelemetryCallback(self)]
@@ -416,4 +417,11 @@ class StandardTrainer(BaseTrainer):
             )
 
         # Start training
-        trainer.fit(lightning_module, train_loader, val_loader)
+        if self.start_epoch > 0:
+            if self.is_main:
+                print(
+                    f"[StandardTrainer] Resuming PL fit loop from epoch {self.start_epoch}"
+                )
+            trainer.fit_loop.epoch_progress.current.completed = self.start_epoch
+
+        trainer.fit(self.lightning_module, train_loader, val_loader)
