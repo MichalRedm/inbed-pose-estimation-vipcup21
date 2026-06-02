@@ -49,7 +49,9 @@ class SelfTrainingTrainer(BaseTrainer):
         if hasattr(self, "lightning_module") and hasattr(
             self.lightning_module, "teacher"
         ):
-            extra_data["teacher_state_dict"] = self.lightning_module.teacher.state_dict()
+            extra_data["teacher_state_dict"] = (
+                self.lightning_module.teacher.state_dict()
+            )
 
         return extra_data
 
