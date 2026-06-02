@@ -259,7 +259,10 @@ def main() -> None:
                     is_valid = False
                     try:
                         print(f"[resume] Verifying integrity of local {fname}...")
-                        if fname.endswith(".pth") and local_path.stat().st_size < 1000000:
+                        if (
+                            fname.endswith(".pth")
+                            and local_path.stat().st_size < 1000000
+                        ):
                             print(
                                 f"[resume] ERROR: local {fname} is too small ({local_path.stat().st_size} bytes)."
                             )

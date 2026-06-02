@@ -99,7 +99,10 @@ class DashboardTelemetryCallback(pl.Callback):
                 run_name: str = self.parent.config.get("run_id", "unnamed_run")
                 for k, v in avg_train_metrics.items():
                     self.parent.tracker.log_metric(
-                        run_name, self.parent.start_epoch + trainer.current_epoch + 1, k, v
+                        run_name,
+                        self.parent.start_epoch + trainer.current_epoch + 1,
+                        k,
+                        v,
                     )
 
             # Fetch validation metrics compiled in on_validation_epoch_end
@@ -112,7 +115,9 @@ class DashboardTelemetryCallback(pl.Callback):
             # Only on main process do we log, stream summaries, and save checkpoints
             if self.parent.is_main:
                 # Sync parent trainer's epoch with PL trainer
-                self.parent.current_epoch = self.parent.start_epoch + trainer.current_epoch + 1
+                self.parent.current_epoch = (
+                    self.parent.start_epoch + trainer.current_epoch + 1
+                )
 
                 # 1. Stream comprehensive final epoch summary payload (so dashboard updates)
                 summary_payload: Dict[str, Any] = {
@@ -139,7 +144,8 @@ class DashboardTelemetryCallback(pl.Callback):
                 # This uses the raw model and exactly the old dictionary layout
                 try:
                     self.parent.save_checkpoint(
-                        f"epoch_{self.parent.start_epoch + trainer.current_epoch + 1}", is_best=is_best
+                        f"epoch_{self.parent.start_epoch + trainer.current_epoch + 1}",
+                        is_best=is_best,
                     )
                 except Exception as save_err:
                     if self.parent.is_main:

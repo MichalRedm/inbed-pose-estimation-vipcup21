@@ -153,7 +153,9 @@ class SelfTrainingTrainer(BaseTrainer):
         # Start training
         if self.start_epoch > 0:
             if self.is_main:
-                print(f"[SelfTrainingTrainer] Resuming PL fit loop from epoch {self.start_epoch}")
+                print(
+                    f"[SelfTrainingTrainer] Resuming PL fit loop from epoch {self.start_epoch}"
+                )
             trainer.fit_loop.epoch_progress.current.completed = self.start_epoch
 
         trainer.fit(lightning_module, combined_loaders, val_loader)
