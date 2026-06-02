@@ -140,6 +140,4 @@ class SelfTrainingTrainer(BaseTrainer):
             )
 
         # Start training
-        self._run_pl_fit(
-            trainer, self.lightning_module, combined_loaders, val_loader
-        )
+        self._run_pl_fit(trainer, self.lightning_module, combined_loaders, val_loader)
