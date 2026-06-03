@@ -20,6 +20,15 @@ class DashboardTelemetryCallback(pl.Callback):
         self.epoch_train_metrics = {}
         self.step_count = 0
 
+    def on_train_start(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
+        """Ensure PyTorch Lightning resumes its internal epoch counter accurately."""
+        if hasattr(self.parent, "start_epoch") and self.parent.start_epoch > 0:
+            trainer.fit_loop.epoch_progress.current.completed = self.parent.start_epoch
+            if self.parent.is_main:
+                print(f"[Callback] Restored PL epoch to {self.parent.start_epoch}")
+
     def on_train_epoch_start(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule
     ) -> None:
@@ -161,6 +170,15 @@ class DashboardTelemetryCallback(pl.Callback):
                     if self.parent.is_main:
                         print(
                             f"[Callback Error] Error updating history.json: {hist_err}"
+                        )
+
+                # 5. Safety Check: Ensure we don't overrun if resumption logic confused PL
+                max_epochs = trainer.max_epochs
+                if max_epochs is not None and (trainer.current_epoch + 1) >= max_epochs:
+                    trainer.should_stop = True
+                    if self.parent.is_main:
+                        print(
+                            f"[Callback] Reached max epochs ({max_epochs}). Signalling stop."
                         )
         except Exception as e:
             if self.parent.is_main:

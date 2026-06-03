@@ -56,6 +56,10 @@ def train() -> None:
     Parses arguments, initializes DDP (if configured), creates dataloaders,
     and runs the training loop via the designated Trainer.
     """
+    rank = int(os.environ.get("RANK", 0))
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
+
     # 1. Parse Initial Config Path (to load before other overrides)
     parser = argparse.ArgumentParser(
         description="Unified Training Script", add_help=False
@@ -137,9 +141,10 @@ def train() -> None:
     # Handle Run ID and Logging
     run_root: Optional[Path] = None
     if args.run_id:
-        run_root = Path(__file__).parent.parent / "results" / "runs" / args.run_id
+        run_root = Path.cwd() / "results" / "runs" / args.run_id
+
         os.makedirs(run_root / "checkpoints", exist_ok=True)
-        if int(os.environ.get("RANK", 0)) == 0:
+        if rank == 0:
             # Clean up any leftover .tmp files from previous crashed runs to save disk space
             for tmp_file in (run_root / "checkpoints").glob("*.tmp"):
                 try:
@@ -149,7 +154,7 @@ def train() -> None:
         config["training"]["save_dir"] = str(run_root)
 
         # Save config snapshot for reproducibility
-        if int(os.environ.get("RANK", 0)) == 0:
+        if rank == 0:
             with open(run_root / "config.json", "w") as f:
                 json.dump(config, f, indent=4)
     else:
@@ -176,10 +181,12 @@ def train() -> None:
 
     if rank == 0:
         mode = str(config.get("training_type", "standard")).upper()
-        print(f"--- Starting {mode} Training ---")
+        print(f"--- Starting {mode} Training ---", flush=True)
         print(
-            f"Device: {device} (Distributed: {is_distributed}, World Size: {world_size})"
+            f"Device: {device} (Distributed: {is_distributed}, World Size: {world_size})",
+            flush=True,
         )
+        sys.stdout.flush()
 
     # 5. Initialize Data
     s_train: List[int] = dataset_cfg.get("subjects_train", [1, 30])
@@ -298,45 +305,98 @@ def train() -> None:
 
     # 7. Resume Logic (Robustly integrated)
     if args.resume:
-        ckpt_root = Path(config["training"]["save_dir"]) / "checkpoints"
-        ckpt_files = list(ckpt_root.glob("*.pth"))
-        if ckpt_files:
-            latest_model_path = ckpt_root / "latest_model.pth"
-            if latest_model_path.exists():
-                latest_ckpt = latest_model_path
-            else:
-                latest_ckpt = max(ckpt_files, key=os.path.getmtime)
+        save_dir = config["training"].get("save_dir")
+        if rank == 0:
+            print(f"[RESUME] Checking for checkpoints in: {save_dir}", flush=True)
 
+        if not save_dir:
             if rank == 0:
-                print(f"Loading checkpoint: {latest_ckpt}")
+                print(
+                    "[RESUME] ERROR: save_dir not found in config. Cannot resume.",
+                    flush=True,
+                )
+        else:
+            ckpt_root = Path(save_dir) / "checkpoints"
+            if rank == 0:
+                print(f"[RESUME] Checkpoint root: {ckpt_root.absolute()}", flush=True)
+                if not ckpt_root.exists():
+                    print(
+                        f"[RESUME] ERROR: Checkpoint directory does not exist: {ckpt_root}",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[RESUME] Checkpoint directory contents: {os.listdir(ckpt_root)}",
+                        flush=True,
+                    )
 
-            state = torch.load(latest_ckpt, map_location=device)
+            ckpt_files = list(ckpt_root.glob("*.pth"))
+            if rank == 0:
+                print(f"[RESUME] Found {len(ckpt_files)} .pth files", flush=True)
+                sys.stdout.flush()
 
-            # Get start_epoch from checkpoint state OR history (take max)
-            ckpt_epoch = int(state.get("epoch", 0))
-            hist_epoch = 0
-            history_path = Path(config["training"]["save_dir"]) / "history.json"
-            if history_path.exists():
+            if ckpt_files:
+                latest_model_path = ckpt_root / "latest_model.pth"
+                if latest_model_path.exists():
+                    latest_ckpt = latest_model_path
+                else:
+                    latest_ckpt = max(ckpt_files, key=os.path.getmtime)
+
+                if rank == 0:
+                    print(f"[RESUME] Loading checkpoint: {latest_ckpt}", flush=True)
+
                 try:
-                    with open(history_path, "r") as f:
-                        hist_epoch = len(json.load(f))
-                except Exception:
-                    pass
+                    state = torch.load(latest_ckpt, map_location=device)
 
-            start_epoch = max(ckpt_epoch, hist_epoch)
-            trainer.start_epoch = start_epoch
-            if rank == 0:
-                print(f"[DEBUG] ckpt_epoch: {ckpt_epoch}, hist_epoch: {hist_epoch}")
-                print(f"Resuming from global epoch {start_epoch + 1}")
+                    # Get start_epoch from checkpoint state OR history (take max)
+                    ckpt_epoch = int(state.get("epoch", 0))
+                    hist_epoch = 0
+                    history_path = Path(save_dir) / "history.json"
+                    if history_path.exists():
+                        try:
+                            with open(history_path, "r") as f:
+                                history_data = json.load(f)
+                                hist_epoch = len(history_data)
+                        except Exception as e:
+                            if rank == 0:
+                                print(
+                                    f"[RESUME] Warning: could not read history.json: {e}",
+                                    flush=True,
+                                )
 
-            state = torch.load(latest_ckpt, map_location=device)
-            m_state: Dict[str, Any] = state.get("model_state_dict", state)
-            # Remove 'module.' prefix if it exists (saved from DDP)
-            m_state = {k.replace("module.", ""): v for k, v in m_state.items()}
-            model.load_state_dict(m_state)
+                    start_epoch = max(ckpt_epoch, hist_epoch)
+                    trainer.start_epoch = start_epoch
+                    if rank == 0:
+                        print(
+                            f"[RESUME] ckpt_epoch: {ckpt_epoch}, hist_epoch: {hist_epoch}",
+                            flush=True,
+                        )
+                        print(
+                            f"[RESUME] Resuming from global epoch {start_epoch + 1}",
+                            flush=True,
+                        )
+                        sys.stdout.flush()
 
-            # Use the new robust state restoration API
-            trainer.load_resume_state(state)
+                    m_state: Dict[str, Any] = state.get("model_state_dict", state)
+                    # Remove 'module.' prefix if it exists (saved from DDP)
+                    m_state = {k.replace("module.", ""): v for k, v in m_state.items()}
+                    model.load_state_dict(m_state)
+
+                    # Use the new robust state restoration API
+                    trainer.load_resume_state(state)
+                except Exception as e:
+                    if rank == 0:
+                        print(
+                            f"[RESUME] ERROR: Failed to load checkpoint: {e}",
+                            flush=True,
+                        )
+            else:
+                if rank == 0:
+                    print(
+                        "[RESUME] No checkpoint files found. Starting from scratch.",
+                        flush=True,
+                    )
+                    sys.stdout.flush()
 
     # 8. Start Training
     trainer.fit(train_loader, val_loader)

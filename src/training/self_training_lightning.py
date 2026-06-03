@@ -69,7 +69,13 @@ class SelfTrainingLightningModule(pl.LightningModule):
 
         train_cfg: Dict[str, Any] = config.get("training", {})
         self.ema_alpha = float(train_cfg.get("ema_alpha", 0.999))
-        self.confidence_threshold = float(train_cfg.get("confidence_threshold", 0.35))
+        static_thresh = float(train_cfg.get("confidence_threshold", 0.35))
+        self.conf_threshold_start = float(
+            train_cfg.get("conf_threshold_start", static_thresh)
+        )
+        self.conf_threshold_end = float(
+            train_cfg.get("conf_threshold_end", static_thresh)
+        )
         self.lambda_unlabeled = float(train_cfg.get("lambda_unlabeled", 1.0))
         self.cutout_prob = float(train_cfg.get("cutout_prob", 0.5))
         self.cutout_size_ratio = float(train_cfg.get("cutout_size_ratio", 0.35))
@@ -131,6 +137,20 @@ class SelfTrainingLightningModule(pl.LightningModule):
     def forward(self, x: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         return cast(torch.Tensor, self.model(x, **kwargs))
 
+    @property
+    def global_epoch(self) -> int:
+        return getattr(self, "global_start_epoch", 0) + self.current_epoch
+
+    def _get_current_confidence_threshold(self, epoch: int) -> float:
+        num_epochs: int = int(self.config.get("training", {}).get("epochs", 30))
+        if num_epochs <= 1:
+            return self.conf_threshold_start
+        progress = min(epoch / (num_epochs - 1), 1.0)
+        return (
+            self.conf_threshold_start
+            + (self.conf_threshold_end - self.conf_threshold_start) * progress
+        )
+
     def _get_current_sigma(self, epoch: int) -> float:
         num_epochs: int = int(self.config.get("training", {}).get("epochs", 30))
         sigma_start = float(self.config.get("training", {}).get("sigma_start", 2.0))
@@ -162,7 +182,12 @@ class SelfTrainingLightningModule(pl.LightningModule):
         # -------------------------------------------------------------
         img_labeled = batch_labeled["image"]
         joints_labeled = batch_labeled["joints"]  # (B, 3, 14)
-        sigma = self._get_current_sigma(self.current_epoch)
+
+        # Use global_epoch for accurate curriculum progress
+        sigma = self._get_current_sigma(self.global_epoch)
+        current_conf_threshold = self._get_current_confidence_threshold(
+            self.global_epoch
+        )
 
         # Generate target heatmaps on GPU
         targets_labeled = generate_pytorch_heatmaps(
@@ -204,7 +229,7 @@ class SelfTrainingLightningModule(pl.LightningModule):
         # Build visibility mask using teacher confidence threshold.
         # joints with conf >= threshold are labeled visible (1), else masked (2)
         pseudo_vis = torch.where(
-            conf >= self.confidence_threshold,
+            conf >= current_conf_threshold,
             torch.ones_like(conf),
             torch.ones_like(conf) * 2,
         )
@@ -251,6 +276,7 @@ class SelfTrainingLightningModule(pl.LightningModule):
             "mean_teacher_conf": conf.mean().item(),
             "conf_ratio": (pseudo_vis <= 1).float().mean().item(),
             "sigma": sigma,
+            "conf_threshold": current_conf_threshold,
         }
 
         for k, v in metrics.items():
