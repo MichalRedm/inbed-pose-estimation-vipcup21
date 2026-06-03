@@ -173,6 +173,14 @@ class DashboardTelemetryCallback(pl.Callback):
                         print(
                             f"[Callback Error] Error updating history.json: {hist_err}"
                         )
+
+                # 5. Safety Check: Ensure we don't overrun if resumption logic confused PL
+                if (trainer.current_epoch + 1) >= trainer.max_epochs:
+                    trainer.should_stop = True
+                    if self.parent.is_main:
+                        print(
+                            f"[Callback] Reached max epochs ({trainer.max_epochs}). Signalling stop."
+                        )
         except Exception as e:
             if self.parent.is_main:
                 print(f"[Callback Error] Error in on_train_epoch_end: {e}")
