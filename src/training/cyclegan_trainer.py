@@ -267,7 +267,6 @@ class CycleGANTrainer(BaseTrainer):
     def fit(self, train_loader: Any, val_loader: Any = None) -> None:
         from .lightning_module import CycleGANLightningModule
         from .lightning_callbacks import DashboardTelemetryCallback
-        import pytorch_lightning as pl
 
         # 1. Instantiate Lightning Module
         lightning_module = CycleGANLightningModule(
@@ -282,45 +281,50 @@ class CycleGANTrainer(BaseTrainer):
         )
 
         # 2. Instantiate custom callbacks
-        callbacks: list[pl.Callback] = [DashboardTelemetryCallback(self)]
+        callbacks = [DashboardTelemetryCallback(self)]
 
-        # 3. Configure Trainer options
-        accelerator = (
-            "gpu" if torch.cuda.is_available() and self.device.type == "cuda" else "cpu"
-        )
-        devices: Any = 1
-        if self.device.type == "cuda" and self.device.index is not None:
-            devices = [self.device.index]
-
-        strategy: Any = "auto"
-        if self.world_size > 1:
-            strategy = "ddp"
-            devices = self.world_size
-
-        # PyTorch Lightning Trainer setup
-        import pytorch_lightning as pl
-
-        trainer = pl.Trainer(
-            max_epochs=self.epochs,
-            accelerator=accelerator,
-            devices=devices,
-            strategy=strategy,
-            callbacks=callbacks,
-            enable_checkpointing=False,  # We handle our own checkpoints atomically
-            logger=False,  # We handle our own database logging
-            enable_progress_bar=self.is_main,  # Standard progress bar for main process
-        )
+        # 3. Configure Trainer options (No DDP for CycleGAN yet)
+        trainer = self._setup_pl_trainer(callbacks=callbacks, use_ddp=False)
 
         if self.is_main:
             print(
                 "[CycleGANTrainer] Starting refactored PyTorch Lightning training loop..."
             )
             print(
-                f"[CycleGANTrainer] Accelerator: {accelerator}, Devices: {devices}, Strategy: {strategy}"
+                f"[CycleGANTrainer] Accelerator: {trainer.accelerator}, Devices: {trainer.num_devices}, Strategy: {trainer.strategy}"
             )
 
-        # Start training
-        trainer.fit(lightning_module, train_loader, val_loader)
+        # 4. Restore state if resuming
+        if self.resume_state:
+            self._load_extra_checkpoint_data(self.resume_state)
+
+        self._run_pl_fit(trainer, lightning_module, train_loader, val_loader)
+
+    def _load_extra_checkpoint_data(self, state: Dict[str, Any]) -> None:
+        if "G_BA_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring G_BA weights.")
+            self.G_BA.load_state_dict(state["G_BA_state_dict"])
+        if "D_A_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring D_A weights.")
+            self.D_A.load_state_dict(state["D_A_state_dict"])
+        if "D_B_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring D_B weights.")
+            self.D_B.load_state_dict(state["D_B_state_dict"])
+        if "optimizer_G_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring G optimizer state.")
+            self.optimizer_G.load_state_dict(state["optimizer_G_state_dict"])
+        if "optimizer_D_A_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring D_A optimizer state.")
+            self.optimizer_D_A.load_state_dict(state["optimizer_D_A_state_dict"])
+        if "optimizer_D_B_state_dict" in state:
+            if self.is_main:
+                print("[CycleGANTrainer] Restoring D_B optimizer state.")
+            self.optimizer_D_B.load_state_dict(state["optimizer_D_B_state_dict"])
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         return {

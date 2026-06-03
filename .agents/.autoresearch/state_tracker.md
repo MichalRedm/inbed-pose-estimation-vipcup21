@@ -4,9 +4,9 @@
 - **Phase**: Phase 5 — Recursive Continuation & State Logging
 - **Status**: FINISHED. Implemented modular augmentation refactoring and 'AdvancedCoverAugmenter'. The new augmentation pipeline successfully drove the ViTPose model to a new state-of-the-art validation accuracy.
 - **Absolute Priority**:
-  1. **Record**: Loop 53 (**78.7% PCK@0.2**, **11.9 px MPJPE**) is the **new stable verified record**.
-  2. **Next Goal**: We have proven the value of domain adaptation. Next step is either task-consistent structural translation or semi-supervised/MoE extensions.
-- **Baseline**: Loop 53 (78.7% PCK@0.2).
+  1. **Record**: Loop 54 (**82.5% PCK@0.2**, **10.2 px MPJPE**) is the **new stable verified record**.
+  2. **Next Goal**: Proven consistent regularization. Next step is task-consistent structural translation or semi-supervised/MoE extensions.
+- **Baseline**: Loop 54 (82.5% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -16,14 +16,9 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 
 | Run | Decoder | PCK@0.2 (strict) | MPJPE | Status |
 |-----|---------|--------------------|--------------------|--------|
-| **loop44_vitpose_fixed** | argmax | **77.8%** | **12.3 px** | **STABLE RECORD** |
-| loop50_vitpose_cut_aug | argmax | **78.4%** | **11.8 px** | Marginal Peak (Overhead Check) |
-| loop52_vitpose_balanced | argmax | 77.6% | 12.1 px | Finished |
-| loop51_vitpose_cut_boost | argmax | 76.6% | 12.5 px | Over-augmented |
-| **loop35_jssca_attention** | argmax | **64.3%** | **17.63 px** | TOP CNN Baseline |
-| loop31_improved_cover | argmax | **64.0%** | **17.79 px** | CNN Record champion |
-| loop29_channel_replication | argmax | **52.0%** | 29.3 px | Solid Baseline |
-| loop27_clean_sigma_cutout | argmax | **50.3%** | 27.2 px | Robustness champion |
+| **loop54_self_training_v3** | argmax | **82.5%** | **10.2 px** | **STABLE RECORD** |
+| loop53_advanced_cover | argmax | **78.7%** | **11.9 px** | CNN/ViT Champion |
+| **loop44_vitpose_fixed** | argmax | **77.8%** | **12.3 px** | Legacy Record |
 
 ## ⚠️ Scientific Caution: Loop 50 "Record"
 While Loop 50 achieved a numeric peak of 78.41% (+0.57pp over Loop 44), this improvement is within the margin of error and variance. Given that CUT requires a pre-trained generator and adds significant data-pipeline complexity/latency, this approach currently **fails the cost-benefit analysis**. Future iterations must focus on *integrated* pose-consistent translation where the GAN actively improves skeletal localization.
@@ -39,9 +34,10 @@ While Loop 50 achieved a numeric peak of 78.41% (+0.57pp over Loop 44), this imp
 | 51 | Boosted CUT Augmentation (0.7) | FAILURE | 76.6% | **OVER-AUGMENTATION**: excessive domain noise. |
 | 52 | Balanced Diversity (L44 + L49 CUT seasoning) | STALLED | 77.6% | Regained ground but confirmed diminishing returns of offline CUT augmentation. |
 | 53 | Advanced Cover (FDA + HistMatch + Bank) | SUCCESS | **78.7%** | Refactored augmentations; dynamic reference bank improved realism. **NEW STABLE RECORD**. |
+| 54 | Self-Training (EMA Teacher + CUT Strong Aug) | SUCCESS | **82.5%** | **v3 Run (Final Record)**: Achieved 82.5% PCK in a fresh, uninterrupted run. Verified the stability of EMA-based consistency regularization. |
 
-## Next Planned Steps (Post-Loop 52 Run)
+## Next Planned Steps (Post-Loop 54 Breakthrough)
 
-1. **Task-Consistent Domain Translation (Loop 53)**: Move from offline augmentation to integrated co-training. Use a frozen ViTPose (L44) to provide a pose-preservation loss $\|P(x) - P(G(x))\|^2$ to the generator. This anchors the translation to the skeletal structure.
-2. **Semi-Supervised Loop**: Use the CUT generator to synthesize a labeled "covered" dataset from the "uncovered" SLP images, then fine-tune ViTPose on the mixture.
-3. **MoE Modality Routing**: Route tokens in ViTPose between "Clean" and "Covered" experts based on a visibility classifier.
+1. **Adaptive Confidence Curriculum (Loop 55)**: Implement a decaying confidence threshold to maximize learning from difficult target domain samples as the teacher matures.
+2. **MoE Modality Routing**: Route tokens between "Clean" and "Occluded" experts to handle capacity interference between source and target domains.
+3. **Multi-View Consistency**: Leverage side views for cross-view pseudo-label regularization.

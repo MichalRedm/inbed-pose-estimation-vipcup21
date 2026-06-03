@@ -628,55 +628,114 @@ class TrainingManager:
                     # Successfully completed, so exit the retry loop
                     break
                 else:
-                    # Non-zero return code. Check for SSH/Paramiko connection drop keywords.
+                    # Non-zero return code.  Decide if it is an SSH/tunnel drop or a real
+                    # Python crash so we can surface the correct information.
                     is_conn_error = False
                     error_msg = f"Failed (exit {process.returncode})"
 
+                    # Keywords that specifically indicate a *network* failure on the
+                    # SSH/cloudflared layer.  Kept deliberately narrow so that DDP/NCCL
+                    # shutdown messages (e.g. "destroy_process_group") do NOT cause a
+                    # false-positive reconnect that hides the real Python traceback.
                     connection_keywords = [
                         "paramiko",
-                        "ssh",
-                        "connection",
-                        "banner",
-                        "pipe",
+                        "no existing session",
+                        "banner exchange",
+                        "error reading ssh protocol banner",
                         "10053",
                         "10054",
-                        "tunnel",
-                        "eof",
+                        "trycloudflare",
+                        "eof during negotiation",
                         "reset by peer",
                         "handshake",
-                        "timeout",
-                        "disconnected",
-                        "closed by",
-                        "dropped",
+                        "cloudflared",
+                        "no route to host",
+                        "connection refused",
+                        "network is unreachable",
                     ]
 
                     found_keywords = []
                     attempt_logs = self.log_history[start_log_idx:]
+
+                    # ── 1. Collect the full traceback block from the attempt logs ──────
+                    traceback_lines: list[str] = []
+                    in_tb = False
+                    for log_line in attempt_logs:
+                        raw = (
+                            log_line.split("] ", 1)[-1]
+                            if "] " in log_line
+                            else log_line
+                        )
+                        # torchrun prefixes per-rank output with "[rankN]: "
+                        raw_stripped = raw
+                        if raw_stripped.startswith("[rank"):
+                            colon_idx = raw_stripped.find("]: ")
+                            if colon_idx != -1:
+                                raw_stripped = raw_stripped[colon_idx + 3 :]
+                        if raw_stripped.startswith("Traceback (most recent"):
+                            in_tb = True
+                            traceback_lines = [raw_stripped]
+                        elif in_tb:
+                            traceback_lines.append(raw_stripped)
+                            # A line starting with an exception class name ends the TB
+                            if (
+                                raw_stripped
+                                and not raw_stripped.startswith(" ")
+                                and ":" in raw_stripped
+                            ):
+                                in_tb = False
+
+                    # ── 2. Extract the final error line for status_message ─────────────
                     for log_line in reversed(attempt_logs):
                         line_lower = log_line.lower()
-                        # Capture the last traceback or error statement
-                        if (
-                            "error:" in line_lower
-                            or "exception:" in line_lower
-                            or "filenotfounderror:" in line_lower
-                        ):
-                            if "Failed (exit" in error_msg or error_msg.startswith(
-                                "Failed (exit"
-                            ):
-                                clean_err = (
-                                    log_line.split("] ", 1)[-1]
-                                    if "] " in log_line
-                                    else log_line
-                                )
-                                error_msg = f"Error: {clean_err}"
+                        raw = (
+                            log_line.split("] ", 1)[-1]
+                            if "] " in log_line
+                            else log_line
+                        )
+                        raw_stripped = raw
+                        if raw_stripped.startswith("[rank"):
+                            colon_idx = raw_stripped.find("]: ")
+                            if colon_idx != -1:
+                                raw_stripped = raw_stripped[colon_idx + 3 :]
 
-                        # Match connection issues
+                        if (
+                            "error:" in line_lower or "exception:" in line_lower
+                        ) and error_msg.startswith("Failed (exit"):
+                            error_msg = f"Error: {raw_stripped.strip()}"
+
+                        # Match *network* failures only
                         for kw in connection_keywords:
                             if kw in line_lower:
                                 is_conn_error = True
                                 found_keywords.append(kw)
 
-                    # Only attempt recovery if running on remote GPU and connection failed
+                    # ── 3. Surface the traceback prominently in the log ───────────────
+                    if traceback_lines and not is_conn_error:
+                        ts = time.strftime("%H:%M:%S")
+                        crash_header = f"[{ts}] ══════════ TRAINING CRASHED ══════════"
+                        crash_footer = f"[{ts}] ══════════════════════════════════════"
+                        self.log_history.append(crash_header)
+                        for tb_line in traceback_lines:
+                            self.log_history.append(f"[{ts}] {tb_line}")
+                        self.log_history.append(crash_footer)
+                        # Persist crash report to training.log
+                        if self.current_run_id:
+                            log_path = (
+                                project_root_path
+                                / "results"
+                                / "runs"
+                                / self.current_run_id
+                                / "training.log"
+                            )
+                            log_path.parent.mkdir(parents=True, exist_ok=True)
+                            with open(log_path, "a", encoding="utf-8") as lf:
+                                lf.write(crash_header + "\n")
+                                for tb_line in traceback_lines:
+                                    lf.write(f"[{ts}] {tb_line}\n")
+                                lf.write(crash_footer + "\n")
+
+                    # ── 4. Retry on network failures, stop on Python crashes ──────────
                     if is_remote and is_conn_error and retry_count < max_retries:
                         retry_count += 1
                         warn_msg = (
@@ -695,7 +754,8 @@ class TrainingManager:
                                 break
                             time.sleep(1)
                     else:
-                        # Unrecoverable error (code bug, CUDA OOM, config error) or maximum retries exceeded
+                        # Unrecoverable error (Python crash, CUDA OOM, config error)
+                        # or maximum retries exceeded
                         self.status_message = error_msg
                         break
 

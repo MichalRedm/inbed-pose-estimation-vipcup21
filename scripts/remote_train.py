@@ -221,15 +221,10 @@ def main() -> None:
             local_ckpt_dir = local_run_dir / "checkpoints"
             local_history_path = local_run_dir / "history.json"
             local_config_path = local_run_dir / "config.json"
-            remote_ckpt_dir = (
-                f"{remote_project_dir}/results/runs/{args_cli.run_id}/checkpoints"
-            )
-            remote_history_path = (
-                f"{remote_project_dir}/results/runs/{args_cli.run_id}/history.json"
-            )
-            remote_config_path = (
-                f"{remote_project_dir}/results/runs/{args_cli.run_id}/config.json"
-            )
+            remote_run_dir = f"{remote_project_dir}/results/runs/{args_cli.run_id}"
+            remote_ckpt_dir = f"{remote_run_dir}/checkpoints"
+            remote_history_path = f"{remote_run_dir}/history.json"
+            remote_config_path = f"{remote_run_dir}/config.json"
         else:
             local_ckpt_dir = Path("models/checkpoints")
             local_history_path = local_ckpt_dir / "history.json"
@@ -257,21 +252,26 @@ def main() -> None:
             for local_path, fname in [
                 (local_latest, "latest_model.pth"),
                 (local_best, "best_model.pth"),
+                (local_history_path, "history.json"),
             ]:
                 if local_path.exists():
                     # Verify integrity of local checkpoint to prevent uploading/overwriting with a corrupt file
                     is_valid = False
                     try:
                         print(f"[resume] Verifying integrity of local {fname}...")
-                        if local_path.stat().st_size < 1000000:
+                        if (
+                            fname.endswith(".pth")
+                            and local_path.stat().st_size < 1000000
+                        ):
                             print(
                                 f"[resume] ERROR: local {fname} is too small ({local_path.stat().st_size} bytes)."
                             )
                         else:
-                            import torch
+                            if fname.endswith(".pth"):
+                                import torch
 
-                            with open(str(local_path), "rb") as f_ckpt:
-                                torch.load(f_ckpt, map_location="cpu")
+                                with open(str(local_path), "rb") as f_ckpt:
+                                    torch.load(f_ckpt, map_location="cpu")
                             is_valid = True
                             print(
                                 f"[resume] Local {fname} integrity verified successfully."
@@ -292,7 +292,11 @@ def main() -> None:
                         continue
 
                     # Check if remote file exists and has the same size
-                    remote_path = f"{remote_ckpt_dir}/{fname}"
+                    if fname == "history.json":
+                        remote_path = remote_history_path
+                    else:
+                        remote_path = f"{remote_ckpt_dir}/{fname}"
+
                     try:
                         # Use sftp to check size
                         sftp_resume = gpu.open_sftp()
@@ -310,7 +314,7 @@ def main() -> None:
                     try:
                         gpu.upload(
                             str(local_path),
-                            f"{remote_ckpt_dir}/{fname}",
+                            remote_path,
                             recursive=False,
                         )
                     except Exception as e:
@@ -322,7 +326,7 @@ def main() -> None:
                             gpu.connect()
                             gpu.upload(
                                 str(local_path),
-                                f"{remote_ckpt_dir}/{fname}",
+                                remote_path,
                                 recursive=False,
                             )
                             print(

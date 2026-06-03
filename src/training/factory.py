@@ -138,6 +138,18 @@ def create_trainer(
             rank=rank,
             world_size=world_size,
         )
+    elif training_type == "self_training":
+        from src.training.self_training_trainer import SelfTrainingTrainer
+
+        trainer = SelfTrainingTrainer(
+            model=model,
+            optimizer=None,  # Will set below
+            criterion=criterion,
+            config=config,
+            device=device,
+            rank=rank,
+            world_size=world_size,
+        )
     else:
         # Standard Setup
         trainer = StandardTrainer(
@@ -163,6 +175,8 @@ def create_trainer(
         )
     elif use_cyclegan and rank == 0:
         print("[Factory] Created CycleGANTrainer")
+    elif training_type == "self_training" and rank == 0:
+        print("[Factory] Created SelfTrainingTrainer")
     elif not use_uda and rank == 0:
         print("[Factory] Created StandardTrainer")
 

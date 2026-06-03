@@ -99,7 +99,10 @@ class DashboardTelemetryCallback(pl.Callback):
                 run_name: str = self.parent.config.get("run_id", "unnamed_run")
                 for k, v in avg_train_metrics.items():
                     self.parent.tracker.log_metric(
-                        run_name, trainer.current_epoch + 1, k, v
+                        run_name,
+                        trainer.current_epoch + 1,
+                        k,
+                        v,
                     )
 
             # Fetch validation metrics compiled in on_validation_epoch_end
@@ -111,9 +114,12 @@ class DashboardTelemetryCallback(pl.Callback):
 
             # Only on main process do we log, stream summaries, and save checkpoints
             if self.parent.is_main:
+                # Sync parent trainer's epoch with PL trainer
+                self.parent.current_epoch = trainer.current_epoch + 1
+
                 # 1. Stream comprehensive final epoch summary payload (so dashboard updates)
                 summary_payload: Dict[str, Any] = {
-                    "epoch": trainer.current_epoch + 1,
+                    "epoch": self.parent.current_epoch,
                     "progress": 1.0,
                     "is_summary": True,
                 }
@@ -136,7 +142,8 @@ class DashboardTelemetryCallback(pl.Callback):
                 # This uses the raw model and exactly the old dictionary layout
                 try:
                     self.parent.save_checkpoint(
-                        f"epoch_{trainer.current_epoch + 1}", is_best=is_best
+                        f"epoch_{trainer.current_epoch + 1}",
+                        is_best=is_best,
                     )
                 except Exception as save_err:
                     if self.parent.is_main:
@@ -196,7 +203,7 @@ class DashboardTelemetryCallback(pl.Callback):
                 hasattr(pose_module, "validation_step_outputs")
                 and hasattr(self.parent, "compute_val_pck")
                 and not self.parent.config.get("training", {}).get("cyclegan", False)
-                and self.parent.config.get("training_type", "standard") == "standard"
+                and self.parent.config.get("training_type", "standard") != "cyclegan"
             )
 
             if is_pose_task:

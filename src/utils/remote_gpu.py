@@ -256,7 +256,8 @@ class GPUSession:
     # ── Connection lifecycle ──────────────────────────────────────────────────
 
     def connect(self) -> None:
-        key_path = os.path.expanduser(self.config.ssh_key)
+        ssh_key_path = self.config.ssh_key or "~/.ssh/id_ed25519"
+        key_path = os.path.expanduser(ssh_key_path)
 
         if self.config.type == "cloudflare_tunnel":
             self._proxy = CloudflaredProxy(self.config.tunnel_hostname)
@@ -269,21 +270,43 @@ class GPUSession:
 
         key_path = os.path.expanduser(os.path.expandvars(key_path))
         print(f"  Using SSH key: {key_path} (exists={os.path.exists(key_path)})")
+
+        # Robustly load private key explicitly to prevent "encountered RSA key, expected OPENSSH key" errors
+        pkey = None
+        if os.path.exists(key_path):
+            key_classes = []
+            for name in ["Ed25519Key", "RSAKey", "ECDSAKey", "DSSKey", "DSAKey"]:
+                if hasattr(paramiko, name):
+                    key_classes.append(getattr(paramiko, name))
+            for key_cls in key_classes:
+                try:
+                    pkey = key_cls.from_private_key_file(key_path)
+                    print(f"  Successfully loaded key using {key_cls.__name__}")
+                    break
+                except Exception:
+                    continue
+
         self._ssh = paramiko.SSHClient()
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         print(
             f"  Attempting SSH connection to {connect_host}:{connect_port} as {self.config.ssh_user}..."
         )
-        self._ssh.connect(
-            hostname=connect_host,
-            port=connect_port,
-            username=self.config.ssh_user,
-            key_filename=key_path,
-            allow_agent=True,
-            look_for_keys=False,
-            timeout=30,
-            banner_timeout=60,
-        )
+
+        connect_kwargs = {
+            "hostname": connect_host,
+            "port": connect_port,
+            "username": self.config.ssh_user,
+            "allow_agent": True,
+            "look_for_keys": False,
+            "timeout": 30,
+            "banner_timeout": 60,
+        }
+        if pkey is not None:
+            connect_kwargs["pkey"] = pkey
+        else:
+            connect_kwargs["key_filename"] = key_path
+
+        self._ssh.connect(**connect_kwargs)  # type: ignore[arg-type]
         # Prevent session timeout during long data downloads
         transport = self._ssh.get_transport()
         if transport:
@@ -836,7 +859,8 @@ class GPUManager:
                 "tunnel_hostname": data.get("tunnel_hostname", ""),
                 "host": data.get("host", data.get("tunnel_hostname", "")),
                 "ssh_user": data.get("ssh_user", "root"),
-                "ssh_key": data.get("ssh_key"),  # Extract ssh_key from JSON
+                "ssh_key": data.get("ssh_key")
+                or "~/.ssh/id_ed25519",  # Extract ssh_key from JSON
                 "port": data.get("port", 22),
                 "meta": {"gpu": data.get("gpu", "unknown")},
             },

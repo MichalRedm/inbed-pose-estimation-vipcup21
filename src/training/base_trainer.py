@@ -45,6 +45,7 @@ class BaseTrainer(ABC):
     stream_path: Optional[str]
     streamer: Optional[JSONLStream]
     tracker: LocalTracker
+    resume_state: Optional[Dict[str, Any]]
 
     def __init__(
         self,
@@ -70,6 +71,7 @@ class BaseTrainer(ABC):
         self.rank = rank
         self.world_size = world_size
         self.is_main = rank == 0
+        self.resume_state = None
 
         # Training parameters
         train_cfg: Dict[str, Any] = config.get("training", {})
@@ -447,6 +449,67 @@ class BaseTrainer(ABC):
                 except Exception as e:
                     if self.is_main:
                         print(f"[Trainer] Warning: could not copy best model: {e}")
+
+    def _setup_pl_trainer(
+        self, callbacks: Optional[list] = None, use_ddp: bool = True
+    ) -> Any:
+        """
+        Centralized logic to instantiate a PyTorch Lightning Trainer with standard project settings.
+        Handles accelerator detection, device selection, and DDP strategy configuration.
+        """
+        import pytorch_lightning as pl
+
+        # 1. Hardware Configuration
+        accelerator = (
+            "gpu" if torch.cuda.is_available() and self.device.type == "cuda" else "cpu"
+        )
+        devices: Any = 1
+        if self.device.type == "cuda" and self.device.index is not None:
+            devices = [self.device.index]
+
+        strategy: Any = "auto"
+        if use_ddp and self.world_size > 1:
+            strategy = "ddp"
+            devices = self.world_size
+
+        # 2. Instantiate PL Trainer
+        return pl.Trainer(
+            max_epochs=self.epochs,
+            accelerator=accelerator,
+            devices=devices,
+            strategy=strategy,
+            callbacks=callbacks or [],
+            enable_checkpointing=False,  # We handle our own checkpoints atomically
+            logger=False,  # We handle our own database logging
+            enable_progress_bar=self.is_main,
+        )
+
+    def _run_pl_fit(
+        self,
+        trainer: Any,
+        lightning_module: Any,
+        train_loader: Any,
+        val_loader: Any = None,
+    ) -> None:
+        """
+        Synchronizes the global starting epoch and executes the fit loop.
+        """
+        if self.start_epoch > 0:
+            if self.is_main:
+                print(
+                    f"[{self.__class__.__name__}] Resuming PL fit loop from epoch {self.start_epoch}"
+                )
+            trainer.fit_loop.epoch_progress.current.completed = self.start_epoch
+
+        trainer.fit(lightning_module, train_loader, val_loader)
+
+    def load_resume_state(self, state: Dict[str, Any]) -> None:
+        """Sets the state to be restored during fit()."""
+        self.resume_state = state
+
+    def _load_extra_checkpoint_data(self, state: Dict[str, Any]) -> None:
+        """Override to restore optimizers, teacher weights, etc."""
+        pass
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
         """Override to add optimizers, schedulers, etc."""

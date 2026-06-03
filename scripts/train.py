@@ -267,7 +267,7 @@ def train() -> None:
             root=args.data_root,
             subjects=range(s_val[0], s_val[1] + 1),
             modalities=dataset_cfg.get("modalities", ["RGB", "IR"]),
-            covers=dataset_cfg.get("covers", None),
+            covers=dataset_cfg.get("covers_val", dataset_cfg.get("covers", None)),
             split="valid",
             image_size=tuple(dataset_cfg.get("image_size", [256, 256])),
             in_channels=in_channels,
@@ -326,6 +326,7 @@ def train() -> None:
             start_epoch = max(ckpt_epoch, hist_epoch)
             trainer.start_epoch = start_epoch
             if rank == 0:
+                print(f"[DEBUG] ckpt_epoch: {ckpt_epoch}, hist_epoch: {hist_epoch}")
                 print(f"Resuming from global epoch {start_epoch + 1}")
 
             state = torch.load(latest_ckpt, map_location=device)
@@ -334,16 +335,8 @@ def train() -> None:
             m_state = {k.replace("module.", ""): v for k, v in m_state.items()}
             model.load_state_dict(m_state)
 
-            if "optimizer_state_dict" in state and hasattr(trainer, "optimizer"):
-                trainer.optimizer.load_state_dict(state["optimizer_state_dict"])
-            if "optimizer_d_state_dict" in state and hasattr(trainer, "optimizer_d"):
-                trainer.optimizer_d.load_state_dict(state["optimizer_d_state_dict"])
-            if "discriminator_state_dict" in state and hasattr(
-                trainer, "discriminator"
-            ):
-                trainer.discriminator.load_state_dict(state["discriminator_state_dict"])
-            if "total_steps" in state and hasattr(trainer, "total_steps"):
-                trainer.total_steps = state["total_steps"]
+            # Use the new robust state restoration API
+            trainer.load_resume_state(state)
 
     # 8. Start Training
     trainer.fit(train_loader, val_loader)
