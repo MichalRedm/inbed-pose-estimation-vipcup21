@@ -173,11 +173,12 @@ class DashboardTelemetryCallback(pl.Callback):
                         )
 
                 # 5. Safety Check: Ensure we don't overrun if resumption logic confused PL
-                if (trainer.current_epoch + 1) >= trainer.max_epochs:
+                max_epochs = trainer.max_epochs
+                if max_epochs is not None and (trainer.current_epoch + 1) >= max_epochs:
                     trainer.should_stop = True
                     if self.parent.is_main:
                         print(
-                            f"[Callback] Reached max epochs ({trainer.max_epochs}). Signalling stop."
+                            f"[Callback] Reached max epochs ({max_epochs}). Signalling stop."
                         )
         except Exception as e:
             if self.parent.is_main:
