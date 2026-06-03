@@ -1,8 +1,8 @@
 # State Tracker
 
-- **Current Loop**: 53 (Advanced Cover Augmentation - FDA + Histogram Matching)
-- **Phase**: Phase 5 — Recursive Continuation & State Logging
-- **Status**: FINISHED. Implemented modular augmentation refactoring and 'AdvancedCoverAugmenter'. The new augmentation pipeline successfully drove the ViTPose model to a new state-of-the-art validation accuracy.
+- **Current Loop**: 55 (Adaptive Confidence Curriculum)
+- **Phase**: Phase 4 — Evolving Evaluation Framework
+- **Status**: RUNNING. Implemented `_get_current_confidence_threshold` in `SelfTrainingLightningModule` with linear decay (0.6 -> 0.25). Discovered and fixed a critical resumption bug in `BaseTrainer` and `scripts/train.py` where PyTorch Lightning was resetting the epoch counter to 0 upon restart, causing curriculum regression. The training has now correctly resumed from Epoch 32.
 - **Absolute Priority**:
   1. **Record**: Loop 54 (**82.5% PCK@0.2**, **10.2 px MPJPE**) is the **new stable verified record**.
   2. **Next Goal**: Proven consistent regularization. Next step is task-consistent structural translation or semi-supervised/MoE extensions.
@@ -35,6 +35,7 @@ While Loop 50 achieved a numeric peak of 78.41% (+0.57pp over Loop 44), this imp
 | 52 | Balanced Diversity (L44 + L49 CUT seasoning) | STALLED | 77.6% | Regained ground but confirmed diminishing returns of offline CUT augmentation. |
 | 53 | Advanced Cover (FDA + HistMatch + Bank) | SUCCESS | **78.7%** | Refactored augmentations; dynamic reference bank improved realism. **NEW STABLE RECORD**. |
 | 54 | Self-Training (EMA Teacher + CUT Strong Aug) | SUCCESS | **82.5%** | **v3 Run (Final Record)**: Achieved 82.5% PCK in a fresh, uninterrupted run. Verified the stability of EMA-based consistency regularization. |
+| 55 | Adaptive Confidence Curriculum (0.6 -> 0.25) | RUNNING | TBD | Testing if decaying threshold increases target domain utilization without noise injection. |
 
 ## Next Planned Steps (Post-Loop 54 Breakthrough)
 
