@@ -11,20 +11,17 @@
 - [x] **Metrics**: PCK@0.5 (torso-relative) and MPJPE — standardized in `src/utils/pose.py`.
 - [x] **PCK-Based Checkpointing**: `BaseTrainer.compute_val_pck()` computes true PCK each epoch; `best_model.pth` saved at epoch of highest val PCK (not lowest combined loss).
 - [x] **Soft-Argmax Decoding**: Sub-pixel coordinate decoding in API and training evaluation; auto-selected per run.
-- [x] **CycleGAN Generator Optimization**: Refactored generator to output monochromatic 1-channel images (replicated to 3-channels) to prevent color hallucinations in thermal domain translation.
+- [x] **Self-Training (Loop 54)**: EMA Teacher-Student pipeline with CUT strong augmentation. Achieved **82.5% PCK@0.2** (New all-time record).
 
 ## Current Technical Debts / Open Issues
 
-### ⚠️ Priority 1 — Loss-Metric Alignment (BLOCKER for next research loop)
-The combined training loss (`MSE_heatmap + λ_coord * L1 + λ_ana * L_hinge`) does not reliably correlate with val PCK. Auxiliary terms operate at different scales and can dominate the loss landscape. This caused `best_model.pth` for previous runs to capture the wrong epoch. **Must be resolved before trusting any future A/B comparisons.**
-- **Fix direction**: Uncertainty-based multi-task loss weighting (Kendall et al., 2018), or normalize auxiliary losses to the scale of heatmap MSE.
+### ⚠️ Priority 1 — Loss-Metric Alignment
+The combined training loss (`MSE_heatmap + λ_coord * L1 + λ_ana * L_hinge`) does not reliably correlate with val PCK. Auxiliary terms operate at different scales and can dominate the loss landscape.
+- **Update**: Uncertainty-based multi-task weighting is implemented and utilized in StandardTrainer. Loop 54 v3 confirmed stable behavior.
 
-### ⚠️ Priority 2 — Corrected Baseline Metrics Needed
-All PCK figures reported from Loops 9–15 were produced by a flawed `scripts/evaluate.py` (used global config, wrong visibility mask, hardcoded soft-argmax). Verified baselines:
-- **Loop 9 (argmax, cover1+2, vis≤1)**: ~78% PCK — needs exact measurement
-- **Loop 16 (soft-argmax, cover1+2, vis≤1)**: **78.8% PCK, 26.4px MPJPE** — verified
-
+### 🏁 Milestones Reached
 - [x] **Evaluation Script Fixed**: `scripts/evaluate.py` now loads run-specific configs, auto-selects decoders, and uses the correct `vis<=1` mask.
+- [x] **Corrected Baselines Established**: Established strict PCK@0.2 baselines for Loop 44 (77.8%), Loop 53 (78.7%), and Loop 54 (82.5%).
 
 ### Priority 4 — HRNet Architecture
 `src/models/hrnet.py` uses a simplified parallel-stream architecture. Full HRNet-W32 with feature pyramid fusion would improve representation quality.

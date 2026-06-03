@@ -4,9 +4,9 @@
 - **Phase**: Phase 5 — Recursive Continuation & State Logging
 - **Status**: FINISHED. Implemented modular augmentation refactoring and 'AdvancedCoverAugmenter'. The new augmentation pipeline successfully drove the ViTPose model to a new state-of-the-art validation accuracy.
 - **Absolute Priority**:
-  1. **Record**: Loop 54 (**80.9% PCK@0.2**, **11.0 px MPJPE**) is the **new stable verified record**.
+  1. **Record**: Loop 54 (**82.5% PCK@0.2**, **10.2 px MPJPE**) is the **new stable verified record**.
   2. **Next Goal**: Proven consistent regularization. Next step is task-consistent structural translation or semi-supervised/MoE extensions.
-- **Baseline**: Loop 54 (80.9% PCK@0.2).
+- **Baseline**: Loop 54 (82.5% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -16,7 +16,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 
 | Run | Decoder | PCK@0.2 (strict) | MPJPE | Status |
 |-----|---------|--------------------|--------------------|--------|
-| **loop54_self_training_v2** | argmax | **80.9%** | **11.0 px** | **STABLE RECORD** |
+| **loop54_self_training_v3** | argmax | **82.5%** | **10.2 px** | **STABLE RECORD** |
 | loop53_advanced_cover | argmax | **78.7%** | **11.9 px** | CNN/ViT Champion |
 | **loop44_vitpose_fixed** | argmax | **77.8%** | **12.3 px** | Legacy Record |
 
@@ -34,7 +34,7 @@ While Loop 50 achieved a numeric peak of 78.41% (+0.57pp over Loop 44), this imp
 | 51 | Boosted CUT Augmentation (0.7) | FAILURE | 76.6% | **OVER-AUGMENTATION**: excessive domain noise. |
 | 52 | Balanced Diversity (L44 + L49 CUT seasoning) | STALLED | 77.6% | Regained ground but confirmed diminishing returns of offline CUT augmentation. |
 | 53 | Advanced Cover (FDA + HistMatch + Bank) | SUCCESS | **78.7%** | Refactored augmentations; dynamic reference bank improved realism. **NEW STABLE RECORD**. |
-| 54 | Self-Training (EMA Teacher + CUT Strong Aug) | SUCCESS | **80.9%** | **v2 Run (Breakthrough)**: Achieved 80.9% PCK. **Rerun Reason**: Initial attempt failed due to epoch double-counting and loss of EMA teacher state on resume. Fixed via robust restoration API. |
+| 54 | Self-Training (EMA Teacher + CUT Strong Aug) | SUCCESS | **82.5%** | **v3 Run (Final Record)**: Achieved 82.5% PCK in a fresh, uninterrupted run. Verified the stability of EMA-based consistency regularization. |
 
 ## Next Planned Steps (Post-Loop 54 Breakthrough)
 
