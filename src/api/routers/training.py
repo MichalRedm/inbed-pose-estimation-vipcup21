@@ -108,11 +108,8 @@ def list_runs() -> Dict[str, List[Dict[str, Any]]]:
     # Sort runs by st_ctime descending
     runs.sort(key=lambda x: x.get("st_ctime", 0), reverse=True)
 
-    # Remove st_ctime from output
-    for r in runs:
-        r.pop("st_ctime", None)
-
-    return {"runs": runs}
+    # Return runs without st_ctime in the response
+    return {"runs": [{k: v for k, v in r.items() if k != "st_ctime"} for r in runs]}
 
 
 @router.get("/runs/{run_id}")
