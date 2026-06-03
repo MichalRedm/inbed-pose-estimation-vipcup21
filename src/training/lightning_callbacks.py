@@ -1,3 +1,5 @@
+# Lightning Callbacks
+# Version: 1.0.1-RESUME-FIX-V4
 import pytorch_lightning as pl
 from typing import Dict, Any, Optional, cast
 from src.training.factory import build_optimizer
@@ -19,6 +21,15 @@ class DashboardTelemetryCallback(pl.Callback):
         self.parent = parent_trainer
         self.epoch_train_metrics = {}
         self.step_count = 0
+
+    def on_train_start(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
+        """Ensure PyTorch Lightning resumes its internal epoch counter accurately."""
+        if hasattr(self.parent, "start_epoch") and self.parent.start_epoch > 0:
+            trainer.fit_loop.epoch_progress.current.completed = self.parent.start_epoch
+            if self.parent.is_main:
+                print(f"[Callback] Restored PL epoch to {self.parent.start_epoch}")
 
     def on_train_epoch_start(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule
