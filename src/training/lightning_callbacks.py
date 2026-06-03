@@ -1,5 +1,3 @@
-# Lightning Callbacks
-# Version: 1.0.1-RESUME-FIX-V4
 import pytorch_lightning as pl
 from typing import Dict, Any, Optional, cast
 from src.training.factory import build_optimizer

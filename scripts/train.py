@@ -1,6 +1,7 @@
-# Unified Training Script
-# Version: 1.0.1-RESUME-FIX-V4
-# Forced update to ensure remote synchronization picks up the latest changes to resumption logic.
+"""
+Unified training script for the SLP dataset.
+Handles local/distributed execution, data loading, and trainer orchestration.
+"""
 
 import os
 import torch
@@ -141,12 +142,9 @@ def train() -> None:
     run_root: Optional[Path] = None
     if args.run_id:
         run_root = Path.cwd() / "results" / "runs" / args.run_id
-        if rank == 0:
-            print(f"[DEBUG] CWD: {Path.cwd()}")
-            print(f"[DEBUG] Run root resolved to: {run_root}")
 
         os.makedirs(run_root / "checkpoints", exist_ok=True)
-        if int(os.environ.get("RANK", 0)) == 0:
+        if rank == 0:
             # Clean up any leftover .tmp files from previous crashed runs to save disk space
             for tmp_file in (run_root / "checkpoints").glob("*.tmp"):
                 try:
@@ -156,7 +154,7 @@ def train() -> None:
         config["training"]["save_dir"] = str(run_root)
 
         # Save config snapshot for reproducibility
-        if int(os.environ.get("RANK", 0)) == 0:
+        if rank == 0:
             with open(run_root / "config.json", "w") as f:
                 json.dump(config, f, indent=4)
     else:
