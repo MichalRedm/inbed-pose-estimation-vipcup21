@@ -1,4 +1,5 @@
 import copy
+import math
 import random
 import torch
 import torch.nn as nn
@@ -47,7 +48,10 @@ class SelfTrainingLightningModule(pl.LightningModule):
     config: Dict[str, Any]
     criterion: nn.Module
     ema_alpha: float
-    confidence_threshold: float
+    ema_alpha_start: float
+    ema_alpha_end: float
+    conf_threshold_start: float
+    conf_threshold_end: float
     lambda_unlabeled: float
     cutout_prob: float
     cutout_size_ratio: float
@@ -69,6 +73,8 @@ class SelfTrainingLightningModule(pl.LightningModule):
 
         train_cfg: Dict[str, Any] = config.get("training", {})
         self.ema_alpha = float(train_cfg.get("ema_alpha", 0.999))
+        self.ema_alpha_start = float(train_cfg.get("ema_alpha_start", 0.99))
+        self.ema_alpha_end = float(train_cfg.get("ema_alpha_end", self.ema_alpha))
         static_thresh = float(train_cfg.get("confidence_threshold", 0.35))
         self.conf_threshold_start = float(
             train_cfg.get("conf_threshold_start", static_thresh)
@@ -146,10 +152,62 @@ class SelfTrainingLightningModule(pl.LightningModule):
         if num_epochs <= 1:
             return self.conf_threshold_start
         progress = min(epoch / (num_epochs - 1), 1.0)
+        # Cosine decay from conf_threshold_start to conf_threshold_end
+        cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
         return (
-            self.conf_threshold_start
-            + (self.conf_threshold_end - self.conf_threshold_start) * progress
+            self.conf_threshold_end
+            + (self.conf_threshold_start - self.conf_threshold_end) * cosine_decay
         )
+
+    def _get_current_ema_alpha(self, epoch: int) -> float:
+        num_epochs: int = int(self.config.get("training", {}).get("epochs", 30))
+        if num_epochs <= 1:
+            return self.ema_alpha_end
+        progress = min(epoch / (num_epochs - 1), 1.0)
+        # Cosine scheduling from ema_alpha_start to ema_alpha_end
+        cosine_val = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return (
+            self.ema_alpha_end
+            + (self.ema_alpha_start - self.ema_alpha_end) * cosine_val
+        )
+
+    def _get_joint_specific_thresholds(self, base_threshold: float) -> torch.Tensor:
+        # 14 joints mapping:
+        # 0: R_Ankle (Extremity, 0.70)
+        # 1: R_Knee (Limb, 0.85)
+        # 2: R_Hip (Core, 1.00)
+        # 3: L_Hip (Core, 1.00)
+        # 4: L_Knee (Limb, 0.85)
+        # 5: L_Ankle (Extremity, 0.70)
+        # 6: R_Wrist (Extremity, 0.70)
+        # 7: R_Elbow (Limb, 0.85)
+        # 8: R_Shoulder (Core, 1.00)
+        # 9: L_Shoulder (Core, 1.00)
+        # 10: L_Elbow (Limb, 0.85)
+        # 11: L_Wrist (Extremity, 0.70)
+        # 12: Thorax (Core, 1.00)
+        # 13: Head (Core, 1.00)
+        discounts = torch.tensor(
+            [
+                0.70,
+                0.85,
+                1.00,
+                1.00,
+                0.85,
+                0.70,
+                0.70,
+                0.85,
+                1.00,
+                1.00,
+                0.85,
+                0.70,
+                1.00,
+                1.00,
+            ],
+            device=self.device,
+            dtype=torch.float32,
+        )
+        return base_threshold * discounts
 
     def _get_current_sigma(self, epoch: int) -> float:
         num_epochs: int = int(self.config.get("training", {}).get("epochs", 30))
@@ -188,6 +246,8 @@ class SelfTrainingLightningModule(pl.LightningModule):
         current_conf_threshold = self._get_current_confidence_threshold(
             self.global_epoch
         )
+        joint_thresholds = self._get_joint_specific_thresholds(current_conf_threshold)
+        current_ema_alpha = self._get_current_ema_alpha(self.global_epoch)
 
         # Generate target heatmaps on GPU
         targets_labeled = generate_pytorch_heatmaps(
@@ -226,10 +286,10 @@ class SelfTrainingLightningModule(pl.LightningModule):
         pred_x = pred_x * scale_x
         pred_y = pred_y * scale_y
 
-        # Build visibility mask using teacher confidence threshold.
+        # Build visibility mask using joint-specific thresholds.
         # joints with conf >= threshold are labeled visible (1), else masked (2)
         pseudo_vis = torch.where(
-            conf >= current_conf_threshold,
+            conf >= joint_thresholds.unsqueeze(0),
             torch.ones_like(conf),
             torch.ones_like(conf) * 2,
         )
@@ -256,10 +316,12 @@ class SelfTrainingLightningModule(pl.LightningModule):
         outputs_student = self.model(img_unlabeled_strong)
 
         # 2.5 Dynamic Masked Loss: Only compute regression for confident keypoints
-        # mask shape: (B, 14, 1, 1)
+        # mask shape: (B, 14, 1, 1), conf shape: (B, 14) -> (B, 14, 1, 1)
         valid_mask = (pseudo_vis <= 1).view(B, 14, 1, 1).float()
+        soft_weight = conf.view(B, 14, 1, 1)
+
         squared_errors = (outputs_student - pseudo_targets) ** 2
-        loss_unlabeled = torch.sum(squared_errors * valid_mask) / (
+        loss_unlabeled = torch.sum(squared_errors * valid_mask * soft_weight) / (
             torch.sum(valid_mask) * H_out * W_out + 1e-8
         )
 
@@ -277,6 +339,7 @@ class SelfTrainingLightningModule(pl.LightningModule):
             "conf_ratio": (pseudo_vis <= 1).float().mean().item(),
             "sigma": sigma,
             "conf_threshold": current_conf_threshold,
+            "ema_alpha": current_ema_alpha,
         }
 
         for k, v in metrics.items():
@@ -292,19 +355,20 @@ class SelfTrainingLightningModule(pl.LightningModule):
         batch_idx: int,
     ) -> None:
         """Applies Exponential Moving Average (EMA) update to the Teacher weights."""
+        current_ema_alpha = self._get_current_ema_alpha(self.global_epoch)
         with torch.no_grad():
             # Update learnable parameters
             for s_param, t_param in zip(
                 self.model.parameters(), self.teacher.parameters()
             ):
-                t_param.data.mul_(self.ema_alpha).add_(
-                    s_param.data, alpha=1.0 - self.ema_alpha
+                t_param.data.mul_(current_ema_alpha).add_(
+                    s_param.data, alpha=1.0 - current_ema_alpha
                 )
             # Update running batch norm buffers
             for s_buffer, t_buffer in zip(self.model.buffers(), self.teacher.buffers()):
                 if torch.is_floating_point(t_buffer):
-                    t_buffer.data.mul_(self.ema_alpha).add_(
-                        s_buffer.data, alpha=1.0 - self.ema_alpha
+                    t_buffer.data.mul_(current_ema_alpha).add_(
+                        s_buffer.data, alpha=1.0 - current_ema_alpha
                     )
                 else:
                     t_buffer.data.copy_(s_buffer.data)

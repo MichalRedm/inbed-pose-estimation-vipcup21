@@ -9,7 +9,7 @@ model:
 training_type: "self_training"
 
 training:
-  epochs: 40
+  epochs: 60
   batch_size: 16
   lr: 0.0001
   backbone_lr_ratio: 0.05         # 1e-4 * 0.05 = 5e-6 (Stable fine-tuning)
