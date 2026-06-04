@@ -594,7 +594,20 @@ class TrainingManager:
                 if self._stop_event.is_set():
                     break
 
-                if process.returncode == 0:
+                # Check if training completed all epochs despite any non-zero exit code (e.g., NCCL/barrier cleanup timeout)
+                checkpoints_exist = False
+                if self.current_run_id:
+                    run_dir = (
+                        project_root_path / "results" / "runs" / self.current_run_id
+                    )
+                    best_model_path = run_dir / "checkpoints" / "best_model.pth"
+                    checkpoints_exist = best_model_path.exists()
+
+                training_finished_successfully = process.returncode == 0 or (
+                    self.current_epoch >= self.total_epochs and checkpoints_exist
+                )
+
+                if training_finished_successfully:
                     self.status_message = "Training complete. Starting evaluation..."
                     self.progress = 0.95  # Almost done
 

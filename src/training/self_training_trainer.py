@@ -43,7 +43,9 @@ class SelfTrainingTrainer(BaseTrainer):
         return {"loss": 0.0}
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
-        extra_data = {"optimizer_state_dict": self.optimizer.state_dict()}
+        extra_data: Dict[str, Any] = {
+            "optimizer_state_dict": self.optimizer.state_dict()
+        }
 
         # Save teacher weights if available (found inside the PL lightning module)
         if hasattr(self, "lightning_module") and hasattr(
@@ -51,6 +53,14 @@ class SelfTrainingTrainer(BaseTrainer):
         ):
             extra_data["teacher_state_dict"] = (
                 self.lightning_module.teacher.state_dict()
+            )
+
+        # Save running teacher confidence buffer for curriculum resumption stability
+        if hasattr(self, "lightning_module") and hasattr(
+            self.lightning_module, "running_teacher_conf"
+        ):
+            extra_data["running_teacher_conf"] = (
+                self.lightning_module.running_teacher_conf.item()
             )
 
         return extra_data
@@ -70,7 +80,7 @@ class SelfTrainingTrainer(BaseTrainer):
 
         # Clean DataAugmenter for unlabeled target data:
         # NO cover/occlusion simulations (as target subjects already have physical blankets)
-        unlabeled_aug_cfg = self.config["training"].get("augmentation", {}).copy()
+        unlabeled_aug_cfg = self.config["training"].get("augmentation", {}).copy()  # type: ignore[assignment]
         unlabeled_aug_cfg["occlusion_prob"] = 0.0
         unlabeled_aug_cfg["advanced_cover_prob"] = 0.0
         unlabeled_aug_cfg["cyclegan_prob"] = 0.0
@@ -156,3 +166,12 @@ class SelfTrainingTrainer(BaseTrainer):
             if self.is_main:
                 print("[SelfTrainingTrainer] Restoring EMA teacher weights.")
             self.lightning_module.teacher.load_state_dict(state["teacher_state_dict"])
+
+        if "running_teacher_conf" in state and hasattr(self, "lightning_module"):
+            if self.is_main:
+                print(
+                    f"[SelfTrainingTrainer] Restoring running_teacher_conf: {state['running_teacher_conf']:.4f}"
+                )
+            self.lightning_module.running_teacher_conf.copy_(
+                torch.tensor(state["running_teacher_conf"], dtype=torch.float32)
+            )
