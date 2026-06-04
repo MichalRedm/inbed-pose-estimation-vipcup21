@@ -38,7 +38,8 @@ All "Verified" metrics in this repository must meet the following criteria:
 
 | Run | PCK@0.2 | MPJPE | Status |
 |-----|---------|-------|--------|
-| **loop54_self_training_v3** | **82.5%** | **10.2 px** | **NEW ALL-TIME RECORD (Self-Training)** |
+| **loop56_tuned_self_training** | **86.2%** | **8.9 px** | **NEW ALL-TIME RECORD** |
+| **loop54_self_training_v3** | **82.5%** | **10.2 px** | Stable Baseline |
 | **loop53_vitpose_advanced_cover** | **78.7%** | **11.9 px** | CNN/ViT Hybrid Champion |
 | **loop50_vitpose_cut_aug** | **78.4%** | **11.8 px** | Marginal Peak (Overhead Check) |
 | **loop44_vitpose_fixed** | **77.8%** | **12.3 px** | Solid Stable Baseline |
