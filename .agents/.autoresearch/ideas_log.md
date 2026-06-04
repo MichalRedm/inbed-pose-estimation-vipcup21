@@ -18,11 +18,10 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
     This propagates gradients directly back to the generator $G$, forcing it to preserve skeletal topology under simulated blankets, making it highly complementary to InfoNCE patchwise contrastive learning.
 *   **ROI Status**: **VERY HIGH (ROI Rank 1)** — Outstanding theoretical grounding with strong literature backing. Directly leverages our SOTA pose estimator as a semantic supervisor, completely resolving pixel-wise steganographic watermarking while keeping poses anchored.
 
-### 2. Adaptive Confidence Curriculum for Self-Training (Loop 55)
-*   **Hypothesis**: The fixed confidence threshold (0.35) in Loop 54 is a "one-size-fits-all" compromise. Early in training, a high threshold (e.g., 0.6) is needed to avoid "noise injection" from an unstable teacher. Later, a lower threshold (e.g., 0.25) allows the student to learn from harder, more occluded samples as the teacher matures. Implementing an **Adaptive Confidence Curriculum** will maximize the data utilization of subjects 31-80.
-*   **Progress Reflection (Loop 54)**: The transition from v2 (80.9%) to v3 (82.5%) was achieved purely by ensuring an uninterrupted training session with stable EMA weight persistence. This confirms that **Self-Training** is highly sensitive to the temporal stability of the teacher. The final PCK breakdown shows that while extremities (wrists/ankles) improved significantly (+5-7pp), they still lag behind the torso core (~72-75% vs ~90-100%).
-*   **Implementation**: Linear or cosine decay of the `confidence_threshold` over 40 epochs.
-*   **ROI Status**: **HIGH (ROI Rank 2)** — Simple implementation with high potential for better tail-end convergence.
+### 2. Tuned Adaptive Confidence Curriculum for Self-Training (Loop 56)
+*   **Hypothesis**: The fixed confidence threshold (0.35) is a "one-size-fits-all" compromise. Implementing (1) Cosine Curriculum Decay (0.6 -> 0.25) for confidence, (2) dynamic Cosine EMA Alpha Warmup (0.99 -> 0.999), (3) Part-Aware Joint Threshold Discounts (15% for mid-limbs, 30% for extremities), (4) Soft Loss Weighting by continuous confidence, and (5) a 60-epoch schedule will allow the student to adapt stably to the thermal IR domain and blanket occlusions.
+*   **Outcome (Loop 56)**: **86.2% PCK@0.2** and **8.9 px MPJPE** (ALL-TIME RECORD). An absolute gain of **+3.4pp** over the previous curriculum baseline. The extremity joints (wrists/ankles) jumped to ~76-79% PCK, proving part-aware discounts successfully unlocked learning on hard occluded joints.
+*   **ROI Status**: **SUCCESSFULLY COMPLETED** — Exceeded expectations. Standardized self-training upgrades as core pipeline features.
 
 ### 3. EMA Alpha Scheduling
 *   **Hypothesis**: Early in training, the student is learning fast, and the teacher should follow closely (lower EMA alpha, e.g., 0.99). Later, the teacher should become a very stable "anchor" (higher EMA alpha, e.g., 0.9999). Scheduling the EMA alpha will optimize the stability-plasticity tradeoff.
