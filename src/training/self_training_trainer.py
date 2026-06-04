@@ -43,7 +43,9 @@ class SelfTrainingTrainer(BaseTrainer):
         return {"loss": 0.0}
 
     def _get_extra_checkpoint_data(self) -> Dict[str, Any]:
-        extra_data: Dict[str, Any] = {"optimizer_state_dict": self.optimizer.state_dict()}
+        extra_data: Dict[str, Any] = {
+            "optimizer_state_dict": self.optimizer.state_dict()
+        }
 
         # Save teacher weights if available (found inside the PL lightning module)
         if hasattr(self, "lightning_module") and hasattr(
