@@ -18,42 +18,32 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
     This propagates gradients directly back to the generator $G$, forcing it to preserve skeletal topology under simulated blankets, making it highly complementary to InfoNCE patchwise contrastive learning.
 *   **ROI Status**: **VERY HIGH (ROI Rank 1)** — Outstanding theoretical grounding with strong literature backing. Directly leverages our SOTA pose estimator as a semantic supervisor, completely resolving pixel-wise steganographic watermarking while keeping poses anchored.
 
-### 2. Adaptive Relative Thresholding based on Teacher Confidence
-*   **Hypothesis**: The dynamic cosine curriculum decay (0.6 -> 0.25) decay rate is pre-programmed and independent of model performance. Since the teacher's actual confidence (`mean_teacher_conf`) rises to 0.854 by epoch 40, lowering the threshold to 0.25 blindly can ingest noisy/incorrect pseudo-labels when the teacher is highly confident overall but produces high-uncertainty outputs for some joints. Tying the joint confidence thresholds dynamically to the teacher's average confidence (e.g., threshold = $k \cdot \text{mean\_teacher\_conf}$ or relative margin) will prevent the ingestion of noisy labels in later epochs.
-*   **Implementation**: Modify confidence threshold logic in `self_training_lightning.py` to scale with the EMA of `mean_teacher_conf`.
-*   **ROI Status**: **HIGH (ROI Rank 2)** — Mathematically sound, directly leverages teacher state feedback, and is very simple to implement within the current Lightning module.
-
-### 3. Dynamic Unlabeled Loss Weighting ($\lambda_u$)
-*   **Hypothesis**: At the beginning of self-training, the teacher model is less reliable, and pseudo-labels are noisy. Later in training, the teacher model's predictions become highly confident (`mean_teacher_conf` > 0.8). Keeping a static loss weighting under-utilizes the unlabeled data when the pseudo-labels are highly reliable. Scaling the global unlabeled loss weight $\lambda_u$ dynamically (e.g., warming it up from 0.5 to 2.0 based on epoch or `mean_teacher_conf`) will let the student learn more aggressively from unlabeled data as training progresses.
-*   **Implementation**: Scale `unlabeled_loss_weight` dynamically in the lightning module.
-*   **ROI Status**: **HIGH (ROI Rank 3)** — Standard practice in semi-supervised learning (e.g., FixMatch schedules) to safely scale up student learning as confidence grows.
-
-### 4. ViTPose++ Mixture-of-Experts (MoE) for Modality Routing
+### 2. ViTPose++ Mixture-of-Experts (MoE) for Modality Routing
 *   **Hypothesis**: Our Loop 44 ViTPose model proved that global attention solves the extremity occlusion problem (wrists/ankles reached ~67%, up from 47%). However, mixing clean IR and synthetically blanketed IR forces a single set of FFN weights to model two very different signal-to-noise distributions. Implementing a lightweight ViTPose++ style Mixture-of-Experts (MoE) in the FFN layers (e.g., one "clean" expert and one "occluded" expert) routed by a simple gating network will prevent capacity interference and push PCK past 80%.
 *   **Implementation**: Modify the `vitpose.py` encoder blocks to replace the standard MLP with a 2-expert MoE. Use the visibility/occlusion augmentation flag (or a simple linear probe on the patch tokens) to route tokens.
 *   **Small-Data Survival Tip**: MoE divides the already small dataset across multiple experts. Restrict the architecture to exactly 2 experts and share/freeze the early ViT stem layers to ensure stable feature extraction before routing.
-*   **ROI Status**: **HIGH (ROI Rank 4)** — Builds directly on our new state-of-the-art architecture.
+*   **ROI Status**: **HIGH (ROI Rank 2)** — Builds directly on our new state-of-the-art architecture.
 
-### 5. Dense Spatial Neck Attention (JSSCA-v7)
+### 3. Dense Spatial Neck Attention (JSSCA-v7)
 *   **Hypothesis**: If plain ViT architectures remain data-hungry or computationally heavy, return to the highly efficient HRNet framework but implement a dense Transformer Neck. Instead of pooling spatial features of heatmaps to $1\times 1$ tokens (which causes spatial information loss) or downsampling to 8x8 grids, operate a stabilized dense Transformer Neck (Pre-LN + FFN) directly on multi-resolution Stage 4 feature maps of HRNet without spatial downsampling, bypassing the coordinate bottleneck while preserving key spatial priors.
 *   **Implementation**: Create JSSCA-v7 module. Apply 2D spatial attention directly on Stage 4 features, and fuse them with skip-connections.
-*   **ROI Status**: **HIGH (ROI Rank 5)** — Best fallback if ViTPose MoE overfits.
+*   **ROI Status**: **HIGH (ROI Rank 3)** — Best fallback if ViTPose MoE overfits.
 
-### 6. Fourier Domain Feature Alignment
+### 4. Fourier Domain Feature Alignment
 *   **Hypothesis**: While blankets distort spatial features significantly, certain frequency-domain signatures remain invariant between uncovered and covered thermal images. The winning VIP Cup team (Samaritan) used dual spatial and Fourier domain branches to achieve cross-domain robustness.
 *   **Implementation**: Add an auxiliary branch to the HRNet/ViTPose backbone that applies a 2D Fast Fourier Transform (FFT) to the input or early feature maps, enforcing feature alignment between Subjects 1-30 and 31-80 via a contrastive loss in the frequency domain.
 *   **Small-Data Survival Tip**: Frequency-domain alignment acts as a powerful mathematical prior that doesn't require learning new feature extractors from scratch, making it exceptionally well-suited for small datasets to prevent overfitting on spatial textures.
-*   **ROI Status**: **MEDIUM (ROI Rank 6)** — Highly effective but requires architectural refactoring and custom loss formulation.
+*   **ROI Status**: **MEDIUM (ROI Rank 4)** — Highly effective but requires architectural refactoring and custom loss formulation.
 
-### 7. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
+### 5. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
 *   **Hypothesis**: Instead of training top-down networks from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` research initiative. Fine-tune them directly on the SLP dataset.
 *   **Implementation**: Load `yolo11n-pose.pt` using the `ultralytics` API, map keypoint labels, and fine-tune on the SLP training split.
-*   **ROI Status**: **MEDIUM (ROI Rank 7)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
+*   **ROI Status**: **MEDIUM (ROI Rank 5)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
 
-### 8. Grayscale COCO Pre-training
+### 6. Grayscale COCO Pre-training
 *   **Hypothesis**: RGB-pretrained networks suffer from feature washout because the first-layer filters are optimized for color edges. Pre-training the backbone on grayscale-converted MS COCO before pose fine-tuning aligns weight statistics, creating robust monochromatic priors.
 *   **Implementation**: Convert COCO images to grayscale and pre-train the ViT or HRNet backbone on COCO keypoints before SLP fine-tuning.
-*   **ROI Status**: **MEDIUM (ROI Rank 8)** — High theoretical value, but requires large-scale dataset pipeline engineering.
+*   **ROI Status**: **MEDIUM (ROI Rank 6)** — High theoretical value, but requires large-scale dataset pipeline engineering.
 
 ---
 
@@ -61,17 +51,22 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 
 Below is the archive of successful experiments that have been integrated into our core training pipeline.
 
-### 1. Tuned Adaptive Confidence Curriculum and EMA Alpha Scheduling for Self-Training (Loop 56)
+### 1. Refined Self-Training with Adaptive Thresholding and Dynamic Loss Scaling (Loop 57)
+*   **Hypothesis**: Instead of pre-programmed schedules, tie thresholds and loss weights to the actual learning progression:
+    1. **Adaptive Relative Thresholding**: Tied joint confidence thresholds dynamically to the teacher's average confidence. The baseline threshold interpolates dynamically based on the teacher's running confidence EMA (`running_teacher_conf`), protecting against label pollution early on.
+    2. **Dynamic Unlabeled Loss Weighting ($\lambda_u$)**: scaled the unlabeled loss weight dynamically based on normalized teacher confidence, starting at a minimum (`lambda_unlabeled_min: 0.2`) and scaling up to a maximum (`lambda_unlabeled_max: 1.5`) as the teacher gains confidence.
+*   **Outcome (Loop 57)**: **86.7% PCK@0.2** and **8.6 px MPJPE** (ALL-TIME RECORD). Improved mean PCK by **+0.5pp** and decreased localization error by **0.3 px** over Loop 56 baseline, showing the value of curriculum adaptation.
+*   **Status**: Successfully completed and integrated.
+
+### 2. Tuned Adaptive Confidence Curriculum and EMA Alpha Scheduling for Self-Training (Loop 56)
 *   **Hypothesis**: The fixed confidence threshold (0.35) and static EMA alpha are "one-size-fits-all" compromises. Implementing:
     1. Cosine Curriculum Decay (0.6 -> 0.25) for confidence threshold.
     2. Dynamic Cosine EMA Alpha Warmup (0.99 -> 0.999) to optimize the teacher's stability-plasticity trade-off.
     3. Part-Aware Joint Threshold Discounts (15% for mid-limbs, 30% for extremities).
     4. Soft Loss Weighting by continuous confidence.
     5. A 60-epoch training schedule.
-*   **Outcome (Loop 56)**: **86.2% PCK@0.2** and **8.9 px MPJPE** (ALL-TIME RECORD). An absolute gain of **+3.4pp** over the previous curriculum baseline. The extremity joints (wrists/ankles) jumped to ~76-79% PCK, proving part-aware discounts successfully unlocked learning on hard occluded joints.
-*   **Status**: Successfully completed and integrated.
-
----
+*   **Outcome (Loop 56)**: **86.2% PCK@0.2** and **8.9 px MPJPE** (Legacy Record). An absolute gain of **+3.4pp** over the previous curriculum baseline. The extremity joints (wrists/ankles) jumped to ~76-79% PCK, proving part-aware discounts successfully unlocked learning on hard occluded joints.
+*   **Status**: Legacy Record. Integrated.
 
 ## 📝 Web Research Syntheses
 
