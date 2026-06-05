@@ -141,6 +141,7 @@ class CUTLightningModule(pl.LightningModule):
             "pose_loss": loss_pose.item() if self.P is not None else 0.0,
             "d_loss": loss_D.item(),
         }
+        self.last_step_metrics = metrics
         for k, v in metrics.items():
             self.log(k, v, on_step=True, on_epoch=True, prog_bar=True, logger=False)
 
