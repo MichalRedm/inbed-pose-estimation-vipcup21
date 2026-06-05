@@ -24,6 +24,12 @@ def main() -> None:
         "--num_samples", type=int, default=5, help="Number of samples to visualize"
     )
     parser.add_argument(
+        "--num_residual_blocks",
+        type=int,
+        default=6,
+        help="Number of residual blocks in generator",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default="cyclegan_visual_audit.png",
@@ -45,7 +51,7 @@ def main() -> None:
         return
 
     print(f"Loading checkpoint from {checkpoint_path}")
-    state = torch.load(checkpoint_path, map_location=device)
+    state = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     # We want G_AB (Uncovered -> Covered)
     # StandardTrainer saves model_state_dict which is G_AB
@@ -54,7 +60,9 @@ def main() -> None:
     gen_state = {k.replace("module.", ""): v for k, v in gen_state.items()}
 
     input_shape = (3, 256, 256)
-    generator = GeneratorResNet(input_shape, num_residual_blocks=6).to(device)
+    generator = GeneratorResNet(
+        input_shape, num_residual_blocks=args.num_residual_blocks
+    ).to(device)
     generator.load_state_dict(gen_state)
     generator.eval()
 
