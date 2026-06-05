@@ -1,3 +1,7 @@
+"""
+Provides loss functions and modules for Contrastive Unpaired Translation (CUT).
+Includes the patch sampling MLP and the InfoNCE contrastive loss.
+"""
 import torch
 import torch.nn as nn
 
@@ -23,11 +27,15 @@ class PatchSampleF(nn.Module):
 
     def forward(self, features, patch_ids=None, num_patches=256):
         """
-        features: list of feature maps from the encoder
-        patch_ids: list of patch indices to sample. If None, we sample randomly.
+        Samples patches from features and projects them to the embedding space.
+
+        Args:
+            features: List of feature maps from the encoder.
+            patch_ids: List of patch indices to sample. If None, samples randomly.
+            num_patches: Number of patches to sample per feature map.
+
         Returns:
-            return_feats: list of projected patch features
-            return_ids: list of sampled patch ids
+            A tuple containing a list of projected patch features and a list of sampled patch ids.
         """
         return_ids = []
         return_feats = []
@@ -73,8 +81,14 @@ class PatchNCELoss(nn.Module):
 
     def forward(self, feat_q, feat_k):
         """
-        feat_q: list of features from generated image G(x)
-        feat_k: list of features from source image x
+        Calculates the InfoNCE loss between generated features and source features.
+
+        Args:
+            feat_q: List of projected features from the generated image.
+            feat_k: List of projected features from the source image.
+
+        Returns:
+            The computed InfoNCE loss averaged across all feature layers.
         """
         loss = 0.0
         for q, k in zip(feat_q, feat_k):

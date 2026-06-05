@@ -1,3 +1,7 @@
+"""
+Implements the training logic for Contrastive Unpaired Translation (CUT).
+Provides both the PyTorch Lightning module and the Trainer wrapper.
+"""
 import torch
 import torch.nn as nn
 import itertools
@@ -11,6 +15,12 @@ from src.models.cyclegan.loss import GANLoss
 from src.models.cyclegan.cut_loss import PatchSampleF, PatchNCELoss
 
 class CUTLightningModule(pl.LightningModule):
+    """
+    PyTorch Lightning module for Contrastive Unpaired Translation (CUT).
+
+    Handles the generator and discriminator updates, including the PatchNCE
+    contrastive loss and optional pose-preservation loss.
+    """
     def __init__(
         self,
         G: nn.Module,
@@ -49,6 +59,16 @@ class CUTLightningModule(pl.LightningModule):
         self.automatic_optimization = False
 
     def forward(self, x: torch.Tensor, **kwargs: Any) -> Any:
+        """
+        Passes the input through the generator.
+
+        Args:
+            x: The input image tensor.
+            **kwargs: Additional arguments for the generator.
+
+        Returns:
+            The generated image tensor.
+        """
         return self.G(x, **kwargs)
 
     def training_step(self, batch: Any, batch_idx: int) -> None:
@@ -180,6 +200,9 @@ class CUTLightningModule(pl.LightningModule):
 class CUTTrainer(BaseTrainer):
     """
     Trainer wrapper for CUT using PyTorch Lightning.
+    
+    Orchestrates the setup of the models, optimizers, and the Lightning trainer
+    for Contrastive Unpaired Translation.
     """
     def __init__(
         self,
