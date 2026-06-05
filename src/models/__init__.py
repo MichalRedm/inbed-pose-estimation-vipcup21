@@ -34,6 +34,7 @@ def build_model(config: Dict[str, Any]) -> nn.Module:
         from . import hrnet  # noqa: F401
         from . import refined_hrnet  # noqa: F401
         from . import vitpose  # noqa: F401
+        from .cyclegan import generator  # noqa: F401
 
         if name not in MODEL_REGISTRY:
             raise ValueError(

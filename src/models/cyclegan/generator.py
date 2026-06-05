@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from typing import Dict, Any
+from src.models.registry import register_model
 
 
 class ResidualBlock(nn.Module):
@@ -157,3 +159,33 @@ class GeneratorResNet(nn.Module):
         if out.shape[1] == 1:
             out = out.repeat(1, 3, 1, 1)
         return out
+
+
+@register_model("resnet_gan")
+class RegisteredGeneratorResNet(GeneratorResNet):
+    """
+    Registered ResNet-based Generator wrapper for registry-based instantiation.
+    """
+
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """
+        Initializes RegisteredGeneratorResNet with a configuration dictionary.
+
+        Args:
+            config: Full project configuration.
+        """
+        dataset_cfg = config.get("dataset", {})
+        image_size = dataset_cfg.get("image_size", [256, 256])
+        in_channels = dataset_cfg.get("in_channels", 3)
+        input_shape = (in_channels, image_size[0], image_size[1])
+
+        model_cfg = config.get("model", {}).get("resnet_gan", {})
+        num_residual_blocks = model_cfg.get("num_residual_blocks", 9)
+        pretrained = model_cfg.get("pretrained", False)
+
+        super().__init__(
+            input_shape=input_shape,
+            num_residual_blocks=num_residual_blocks,
+            pretrained=pretrained,
+        )
+
