@@ -98,6 +98,9 @@ def train() -> None:
         "--cyclegan", action="store_true", help="Enable CycleGAN Domain Translation"
     )
     parser.add_argument(
+        "--cut", action="store_true", help="Enable CUT Domain Translation"
+    )
+    parser.add_argument(
         "--lambda_adv", type=float, default=None, help="Adversarial weight"
     )
     parser.add_argument("--resume", action="store_true")
@@ -137,6 +140,12 @@ def train() -> None:
         if "training" not in config:
             config["training"] = {}
         config["training"]["cyclegan"] = True
+
+    if args.cut:
+        config["training_type"] = "cut"
+        if "training" not in config:
+            config["training"] = {}
+        config["training"]["cut"] = True
 
     # Handle Run ID and Logging
     run_root: Optional[Path] = None
@@ -260,6 +269,56 @@ def train() -> None:
         collate_fn: Optional[Any] = (
             None  # Standard collate is fine for PairedDataset returning tensors
         )
+    elif config.get("training_type") == "cut" or config.get("training", {}).get("cut"):
+        from src.data.dataset import PairedDataset
+
+        gan_aug_cfg = config["training"].get("augmentation", {}).copy()
+        gan_aug_cfg["occlusion_prob"] = 0.0
+        gan_aug_cfg["enabled"] = True
+        gan_augmenter = DataAugmenter(gan_aug_cfg)
+
+        ds_A = VIPCupDataset(
+            args.data_root,
+            subjects=range(1, 31),
+            covers=["uncover"],
+            modalities=["IR"],
+            split="train",
+            augmenter=gan_augmenter,
+            in_channels=3,
+            return_joints=False,
+        )
+        ds_B = VIPCupDataset(
+            args.data_root,
+            subjects=range(31, 81),
+            covers=["cover1", "cover2"],
+            modalities=["IR"],
+            split="train",
+            augmenter=gan_augmenter,
+            in_channels=3,
+            return_joints=False,
+        )
+        train_dataset: Union[VIPCupDataset, PairedDataset] = PairedDataset(ds_A, ds_B)
+
+        ds_A_val = VIPCupDataset(
+            args.data_root,
+            subjects=range(1, 6),
+            covers=["uncover"],
+            modalities=["IR"],
+            split="train",
+            in_channels=3,
+            return_joints=False,
+        )
+        ds_B_val = VIPCupDataset(
+            args.data_root,
+            subjects=range(31, 36),
+            covers=["cover1", "cover2"],
+            modalities=["IR"],
+            split="train",
+            in_channels=3,
+            return_joints=False,
+        )
+        val_dataset: Union[VIPCupDataset, PairedDataset] = PairedDataset(ds_A_val, ds_B_val)
+        collate_fn = None
     else:
         train_dataset = VIPCupDataset(
             root=args.data_root,
@@ -402,7 +461,14 @@ def train() -> None:
     trainer.fit(train_loader, val_loader)
 
     if is_distributed and dist.is_initialized():
-        dist.destroy_process_group()
+        try:
+            dist.destroy_process_group()
+        except Exception:
+            pass
+
+    # Force exit to prevent DDP process hang on exit (especially on multi-GPU)
+    import os
+    os._exit(0)
 
 
 if __name__ == "__main__":

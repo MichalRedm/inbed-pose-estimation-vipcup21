@@ -8,42 +8,32 @@ This log tracks our prioritized queue of future improvement hypotheses, synthesi
 
 Below is our prioritized queue of strictly **future** improvement hypotheses, ranked by Return on Investment (ROI)—defined as the combined probability of accuracy gains versus simplicity of implementation.
 
-### 1. Semantic & Pose-Consistent Domain Translation (Task-Consistent GAN)
-*   **Hypothesis**: The standard CycleGAN pixel-level cycle consistency loss ($L_{cycle} = \|x - \hat{x}\|_1$) is mathematically over-constrained and counterproductive. Because the uncover-to-cover translation is inherently lossy (mapping clear skin/clothing to flat, thick blanket drapes), forcing the generator to perfectly reconstruct every fine-grained background and skin pixel forces it to hide these details in steganographic noise. Since our ultimate downstream task is **pose estimation**, we only care that **pose geometry** is preserved. Under SOTA literature for task-consistent domain translation (e.g., **Sem-GAN** / Task-Consistent GANs), replacing or augmenting pixel cycle loss with a **Semantic/Pose-Consistent Loss** using a frozen SOTA pose estimator $P$ eliminates the pixel-wise bijection bottleneck. This allows the generator to synthesize highly realistic, lossy fabric structures while strictly anchoring pose geometry.
-*   **Implementation**: Freeze our pre-trained SOTA ViTPose (Loop 44) model as the semantic evaluator $P$.
-    1. **For CycleGAN**: Pass the original uncovered image $x$ and the reconstructed image $x' = G_{BA}(G_{AB}(x))$ through $P$ to get heatmaps $P(x)$ and $P(x')$. Compute the pose cycle loss as:
-       $$L_{pose\_cycle} = \|P(x) - P(x')\|_2^2$$
-    2. **For CUT (Contrastive Unpaired Translation)**: Since CUT is a one-way translation and has no backward generator $G_{BA}$, we can apply a **Direct Pose-Preservation Loss** between the source uncovered image $x$ and the generated covered image $G(x)$:
-       $$L_{pose\_preservation} = \|P(x) - P(G(x))\|_2^2$$
-    This propagates gradients directly back to the generator $G$, forcing it to preserve skeletal topology under simulated blankets, making it highly complementary to InfoNCE patchwise contrastive learning.
-*   **ROI Status**: **VERY HIGH (ROI Rank 1)** — Outstanding theoretical grounding with strong literature backing. Directly leverages our SOTA pose estimator as a semantic supervisor, completely resolving pixel-wise steganographic watermarking while keeping poses anchored.
-
-### 2. ViTPose++ Mixture-of-Experts (MoE) for Modality Routing
+### 1. ViTPose++ Mixture-of-Experts (MoE) for Modality Routing
 *   **Hypothesis**: Our Loop 44 ViTPose model proved that global attention solves the extremity occlusion problem (wrists/ankles reached ~67%, up from 47%). However, mixing clean IR and synthetically blanketed IR forces a single set of FFN weights to model two very different signal-to-noise distributions. Implementing a lightweight ViTPose++ style Mixture-of-Experts (MoE) in the FFN layers (e.g., one "clean" expert and one "occluded" expert) routed by a simple gating network will prevent capacity interference and push PCK past 80%.
 *   **Implementation**: Modify the `vitpose.py` encoder blocks to replace the standard MLP with a 2-expert MoE. Use the visibility/occlusion augmentation flag (or a simple linear probe on the patch tokens) to route tokens.
 *   **Small-Data Survival Tip**: MoE divides the already small dataset across multiple experts. Restrict the architecture to exactly 2 experts and share/freeze the early ViT stem layers to ensure stable feature extraction before routing.
-*   **ROI Status**: **HIGH (ROI Rank 2)** — Builds directly on our new state-of-the-art architecture.
+*   **ROI Status**: **HIGH (ROI Rank 1)** — Builds directly on our new state-of-the-art architecture.
 
-### 3. Dense Spatial Neck Attention (JSSCA-v7)
+### 2. Dense Spatial Neck Attention (JSSCA-v7)
 *   **Hypothesis**: If plain ViT architectures remain data-hungry or computationally heavy, return to the highly efficient HRNet framework but implement a dense Transformer Neck. Instead of pooling spatial features of heatmaps to $1\times 1$ tokens (which causes spatial information loss) or downsampling to 8x8 grids, operate a stabilized dense Transformer Neck (Pre-LN + FFN) directly on multi-resolution Stage 4 feature maps of HRNet without spatial downsampling, bypassing the coordinate bottleneck while preserving key spatial priors.
 *   **Implementation**: Create JSSCA-v7 module. Apply 2D spatial attention directly on Stage 4 features, and fuse them with skip-connections.
-*   **ROI Status**: **HIGH (ROI Rank 3)** — Best fallback if ViTPose MoE overfits.
+*   **ROI Status**: **HIGH (ROI Rank 2)** — Best fallback if ViTPose MoE overfits.
 
-### 4. Fourier Domain Feature Alignment
+### 3. Fourier Domain Feature Alignment
 *   **Hypothesis**: While blankets distort spatial features significantly, certain frequency-domain signatures remain invariant between uncovered and covered thermal images. The winning VIP Cup team (Samaritan) used dual spatial and Fourier domain branches to achieve cross-domain robustness.
 *   **Implementation**: Add an auxiliary branch to the HRNet/ViTPose backbone that applies a 2D Fast Fourier Transform (FFT) to the input or early feature maps, enforcing feature alignment between Subjects 1-30 and 31-80 via a contrastive loss in the frequency domain.
 *   **Small-Data Survival Tip**: Frequency-domain alignment acts as a powerful mathematical prior that doesn't require learning new feature extractors from scratch, making it exceptionally well-suited for small datasets to prevent overfitting on spatial textures.
-*   **ROI Status**: **MEDIUM (ROI Rank 4)** — Highly effective but requires architectural refactoring and custom loss formulation.
+*   **ROI Status**: **MEDIUM (ROI Rank 3)** — Highly effective but requires architectural refactoring and custom loss formulation.
 
-### 5. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
+### 4. Thermal-Pretrained YOLO-Pose Baseline via OpenThermalPose
 *   **Hypothesis**: Instead of training top-down networks from scratch, leverage the thermal-specific YOLOv8/v11-pose checkpoints released by the `IS2AI/OpenThermalPose` research initiative. Fine-tune them directly on the SLP dataset.
 *   **Implementation**: Load `yolo11n-pose.pt` using the `ultralytics` API, map keypoint labels, and fine-tune on the SLP training split.
-*   **ROI Status**: **MEDIUM (ROI Rank 5)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
+*   **ROI Status**: **MEDIUM (ROI Rank 4)** — High chance of working due to modality-aligned pre-training, but requires integrating the heavy external `ultralytics` package structure.
 
-### 6. Grayscale COCO Pre-training
+### 5. Grayscale COCO Pre-training
 *   **Hypothesis**: RGB-pretrained networks suffer from feature washout because the first-layer filters are optimized for color edges. Pre-training the backbone on grayscale-converted MS COCO before pose fine-tuning aligns weight statistics, creating robust monochromatic priors.
 *   **Implementation**: Convert COCO images to grayscale and pre-train the ViT or HRNet backbone on COCO keypoints before SLP fine-tuning.
-*   **ROI Status**: **MEDIUM (ROI Rank 6)** — High theoretical value, but requires large-scale dataset pipeline engineering.
+*   **ROI Status**: **MEDIUM (ROI Rank 5)** — High theoretical value, but requires large-scale dataset pipeline engineering.
 
 ---
 
@@ -67,6 +57,14 @@ Below is the archive of successful experiments that have been integrated into ou
     5. A 60-epoch training schedule.
 *   **Outcome (Loop 56)**: **86.2% PCK@0.2** and **8.9 px MPJPE** (Legacy Record). An absolute gain of **+3.4pp** over the previous curriculum baseline. The extremity joints (wrists/ankles) jumped to ~76-79% PCK, proving part-aware discounts successfully unlocked learning on hard occluded joints.
 *   **Status**: Legacy Record. Integrated.
+
+
+### 1. Refined Self-Training with Adaptive Thresholding and Dynamic Loss Scaling (Loop 57)
+*   **Hypothesis**: Instead of pre-programmed schedules, tie thresholds and loss weights to the actual learning progression:
+    1. **Adaptive Relative Thresholding**: Tied joint confidence thresholds dynamically to the teacher's average confidence. The baseline threshold interpolates dynamically based on the teacher's running confidence EMA (`running_teacher_conf`), protecting against label pollution early on.
+    2. **Dynamic Unlabeled Loss Weighting ($\lambda_u$)**: scaled the unlabeled loss weight dynamically based on normalized teacher confidence, starting at a minimum (`lambda_unlabeled_min: 0.2`) and scaling up to a maximum (`lambda_unlabeled_max: 1.5`) as the teacher gains confidence.
+*   **Outcome (Loop 57)**: **86.7% PCK@0.2** and **8.6 px MPJPE** (ALL-TIME RECORD). Improved mean PCK by **+0.5pp** and decreased localization error by **0.3 px** over Loop 56 baseline, showing the value of curriculum adaptation.
+*   **Status**: Successfully completed and integrated.
 
 ## 📝 Web Research Syntheses
 
@@ -94,6 +92,13 @@ Below is the archive of successful experiments that have been integrated into ou
 
 This archive logs all completed experiments that failed to outperform our baseline or introduced regressions, detailing the exact root cause of their failure.
 
+### 22. Task-Consistent CUT Augmentation in Self-Training (Loop 58/59)
+*   **Result**: Peak **86.1% PCK@0.2**. Failed to outperform the purely programmatic "Advanced Cover" SOTA (86.7% from Loop 57).
+*   **Root Cause**:
+    - **Diminishing Returns on Semantic NCE**: Even with deep semantic NCE layers ensuring better pose-consistency in CUT generation, the synthetic texture distribution mapped by CUT did not provide meaningful generalization beyond what the aggressive programmatic baseline (Advanced Cover) already achieved.
+    - **Over-regularization / Task Conflict**: The network might have been forced to reconcile two very different types of occlusion noise (programmatic cutouts vs CUT-generated thermal textures). The self-training pseudo-labels derived from the CUT images could have introduced noise rather than constructive structural hints.
+*   **Lesson**: Generative augmentation (CUT), even when rigorously constrained for task-consistency, struggles to beat strong, dynamically scheduled programmatic augmentations (like Advanced Cover) on small datasets, especially deep in the optimization curve (PCK > 86%). Focus should shift to architectural and curriculum-level innovations rather than more pixel-level generation.
+
 ### 1. COCO Pre-trained ViTPose Fine-tuning (Loop 43)
 *   **Result**: **42.30% PCK@0.2**, **28.13 px MPJPE** (Heavily underperformed the 64.3% JSSCA baseline).
 *   **Root Cause**:
@@ -105,31 +110,31 @@ This archive logs all completed experiments that failed to outperform our baseli
     - A discriminative learning rate (backbone LR $\leq 10^{-5}$) or initial backbone freezing is required to protect pre-trained features.
     - Heatmap targets under heavy occlusions must maintain a wide, stable prior (e.g. `sigma = 3.0`) to avoid localization collapse.
 
-### 2. ViTPose from scratch / ImageNet-Pretrained (Loop 42)
+### 1. ViTPose from scratch / ImageNet-Pretrained (Loop 42)
 *   **Root Cause**: **THE SPATIAL RESOLUTION BOTTLENECK**: Standard ViT-B-16 immediately downsamples the 256x256 image into a 16x16 grid of patches. For human pose estimation (a dense prediction task), a 16x16 feature map is extremely coarse, losing crucial high-frequency spatial details required for precise limb localization.
 *   **Root Cause**: **LACK OF INDUCTIVE BIAS & DATA HUNGER**: Unlike CNNs, plain Transformers lack local translation invariance and must learn spatial relationships from scratch. While SOTA ViTPose performs extremely well on massive datasets (COCO/AIC), our 80-subject dataset is too small to teach a plain ViT-B how to route spatial coordinate information globally. The model achieved a peak of only 41.75% PCK, well below our 64.3% baseline.
 *   **Lesson**: To use Vision Transformers successfully on small datasets, we must load weights pre-trained on a massive pose estimation dataset (like MS COCO) where the model has already learned correct global spatial routing rules.
 
-### 3. JSSCA-v6 Confidence-Gated Spatially-Anchored Attention (Loop 41)
+### 2. JSSCA-v6 Confidence-Gated Spatially-Anchored Attention (Loop 41)
 *   **Root Cause**: **GRID SHIFTING OCCLUSION CEILING**: Under extreme blanket occlusions (duvets), the backbone's heatmaps are flat ($conf \approx 0$). Differentiably shifting flat heatmaps using `F.grid_sample` is a no-op, forcing the network to reconstruct the peak from scratch via a small MLP residual decoder.
 *   **Root Cause**: **FALLBACK TO TRAINING CENTROIDS**: Because the coordinate anchor was zeroed out by confidence gating (to isolate noise), the MHA layer had no spatial reference for occluded extremities. The MLP was forced to fallback to predicting a static peak at the global training average (inside the torso core), causing wrists and elbows to collapse inside the body midline.
 *   **Lesson**: Post-processing coordinate regression on lossy 1D tokens is physically limited under zero visibility. We must perform global attention in a dense spatial representation space (such as a plain ViT backbone or dense spatial feature neck) to preserve spatial skip-connections and location-aware receptive fields.
 
-### 4. JSSCA-v5 Spatially-Anchored Attention Post-Processor (Loop 40)
+### 3. JSSCA-v5 Spatially-Anchored Attention Post-Processor (Loop 40)
 *   **Root Cause**: **COORDINATE ANCHOR POLLUTION UNDER EXTREME OCCLUSION**: For heavily occluded extremity joints (ankles/wrists) under blankets, the HRNet backbone outputs flat, blurred, or noisy heatmaps. Performing `soft_argmax_2d` on these uncertain/flat heatmaps generates highly chaotic coordinate anchors (pulled to the center `(0, 0)`). Gating these noisy coordinates with a simple dense coordinate encoder projected this chaos into the 256-dimensional joint tokens, **polluting** the self-attention layer and confusing the physical geometric reasoning of other limb joints (causing a 15–20% regressive drop on ankles/wrists down to ~34%, and elbows/knees down to ~40-45%).
 *   **Root Cause**: **SOFT-ARGMAX DECODING COLLAPSE**: Standard `soft-argmax` decoding on heatmaps produced by JSSCA-v5 collapsed PCK to 3.3%. Because the model was trained with standard heatmap MSE, the output activations have arbitrary ranges (including negative values) representing a Gaussian shape but are not constrained probability distributions. Softmax-temperature scaling on these unnormalized ranges created severe edge-noise sensitivity, driving expected values to boundary centroids.
 *   **Lesson**: To prevent noisy coordinate anchors from polluting joint tokens, the coordinate encoder must be gated by the backbone's peak confidence score (e.g. `conf = heatmaps.view(B, J, -1).max(dim=-1)[0]`). When confidence is extremely low, the coordinate anchor must be completely suppressed/ignored.
 *   **Lesson**: Models trained with heatmap MSE must be decoded using pure `argmax` peak detection unless explicitly trained with a differentiable soft-argmax coordinate loss.
 
-### 5. JSSCA-v4 with intermediate U-Net Skips (Loop 39 - collapsed run)
+### 4. JSSCA-v4 with intermediate U-Net Skips (Loop 39 - collapsed run)
 *   **Root Cause**: **DEGENERATE GRADIENT SHORTCUT / BYPASS OF ATTENTION BOTTLENECK**: Adding intermediate skip connections (`d1 = d1 + h3`, `d2 = d2 + h2`) directly from the joint-wise encoder to the progressive deconvolutional decoder created a shallow CNN shortcut. Gradients flowed completely through this shortcut, bypassing the 14-joint self-attention bottleneck. Since the shortcut was joint-wise (lacking geometric context), the network learned a degenerate noisy identity mapping. This flooded the output heatmaps with high-frequency noise, washing out the pre-trained backbone features in the first epochs and collapsing PCK to 2.1%.
 *   **Lesson**: Avoid intermediate skip connections in post-processing attention blocks. To preserve sub-pixel peaks without creating degenerate shortcuts, project the coordinated tokens directly to 8x8 space and upsample progressively using a pure convolutional decoder without skips.
 
-### 6. JSSCA-v3 Spatial Tokenization Post-Processor (Loop 38)
+### 5. JSSCA-v3 Spatial Tokenization Post-Processor (Loop 38)
 *   **Root Cause**: **VISUAL/SPATIAL TOKEN DILUTION & SPARSE BACKGROUND FLOODDING**: Partitioning each joint's heatmap into an $8\times 8$ spatial token grid yielded a sequence length of `14 * 64 = 896` tokens. Because keypoint heatmaps are extremely sparse (almost entirely zero except for a tiny Gaussian peak), 99% of these tokens represent empty background space. The Self-Attention layer was completely flooded with background noise, diluting the joint semantic identity and washing out the local peak features. Furthermore, downsampling sparse heatmaps through three consecutive strided convolutions with `stride=2` caused local activations to vanish before reaching the attention bottleneck, causing a catastrophic coordinate collapse down to **26.8% PCK@0.2**.
 *   **Lesson**: Joint self-attention must operate on a highly compact representation (sequence length equal to the 14 joint identities) to prevent token dilution. Precise coordinates should be preserved via multi-scale skip connections rather than spatial token sequences.
 
-### 7. JSSCA-v2 Stabilized Neck Attention (Loop 37)
+### 6. JSSCA-v2 Stabilized Neck Attention (Loop 37)
 *   **Root Cause**: **LATENT REPRESENTATION DRIFT & SPATIAL BLUR**: Inserting the attention block in the high-dimensional backbone representation space `(B, 480, 64, 64)` *before* the output head forces the model to learn joint detection and joint coordination simultaneously in a dense latent space. Lacking explicit joint semantic identity anchors (which JSSCA-v1 had by operating directly on 14-channel keypoint heatmaps), the transformer learned non-anatomical visual correlations (matching joints to blanket texture folds). Furthermore, bottleneck downsampling to $8\times 8$ followed by deconvolutional reconstruction introduced spatial blur and coordinate drift, capping accuracy at **63.6% PCK@0.2**, failing to match our post-processing baseline of **66.56%**.
 *   **Lesson**: Post-processing attention is structurally superior for joint coordination because operating directly in keypoint heatmap space preserves explicit joint semantic identity anchors, allowing the transformer to focus 100% of its capacity on anatomical priors and geometric corrections.
 

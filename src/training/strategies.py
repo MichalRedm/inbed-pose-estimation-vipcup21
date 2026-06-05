@@ -45,9 +45,23 @@ class CycleGANStrategy(TrainingStrategy):
         return args
 
 
+class CUTStrategy(TrainingStrategy):
+    def get_script_path(self, project_root: Path) -> Path:
+        return project_root / "scripts" / "train.py"
+
+    def get_args(
+        self, config: Dict[str, Any], run_id: Optional[str], is_resume: bool
+    ) -> List[str]:
+        args = super().get_args(config, run_id, is_resume)
+        args.append("--cut")
+        return args
+
+
 def get_training_strategy(config: Dict[str, Any]) -> TrainingStrategy:
     """Factory to get the correct strategy based on config."""
     train_cfg: Dict[str, Any] = config.get("training", {})
-    if train_cfg.get("cyclegan", False):
+    if train_cfg.get("cyclegan", False) or config.get("training_type") == "cyclegan":
         return CycleGANStrategy()
+    if config.get("training_type") == "cut" or train_cfg.get("cut", False):
+        return CUTStrategy()
     return StandardStrategy()

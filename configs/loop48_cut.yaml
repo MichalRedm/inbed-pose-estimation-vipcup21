@@ -1,0 +1,22 @@
+training_type: "cut"
+training:
+  epochs: 100
+  batch_size: 8
+  lr: 0.0002
+  lambda_gan: 2.0
+  lambda_nce: 0.5
+  num_patches: 256
+  pretrained_gan: true
+  augmentation:
+    enabled: true
+    flip_prob: 0.5
+    rotation_range: [-30, 30]
+    scaling_range: [0.8, 1.2]
+    intensity_jitter_prob: 0.5
+    sensor_noise_prob: 0.4
+    occlusion_prob: 0.0 # Disabled for Domain Translation
+dataset:
+  root: "data/raw"
+  subjects_train: [1, 30]
+  subjects_val: [81, 90]
+  image_size: [256, 256]

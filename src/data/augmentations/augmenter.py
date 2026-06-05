@@ -105,11 +105,15 @@ class DataAugmenter:
             checkpoint_path=str(
                 self.config.get("cyclegan_path", "models/cyclegan_gen_A2B.pth")
             ),
+            alpha_blend=bool(self.config.get("cyclegan_alpha_blend", False)),
+            alpha_range=tuple(self.config.get("cyclegan_alpha_range", (0.6, 1.0))),
         )
 
         self.cut = CUTAugmentation(
             probability=float(self.config.get("cut_prob", 0.0)),
             checkpoint_path=str(self.config.get("cut_path", "models/cut_gen.pth")),
+            alpha_blend=bool(self.config.get("cut_alpha_blend", False)),
+            alpha_range=tuple(self.config.get("cut_alpha_range", (0.6, 1.0))),
         )
 
         self.cutout = CutoutAugmentation(
@@ -125,6 +129,7 @@ class DataAugmenter:
         joints: Optional[np.ndarray],
         is_ir: bool = False,
         return_pair: bool = False,
+        cover: Optional[str] = None,
     ) -> Any:
         """
         Applies the augmentation pipeline to an image and its joints.
@@ -134,6 +139,7 @@ class DataAugmenter:
             joints: Input joint coordinates.
             is_ir: If True, indicates the image is in the IR modality.
             return_pair: If True, returns both the augmented and the pre-occlusion image.
+            cover: The cover type of the input image (e.g. 'uncover', 'cover1').
 
         Returns:
             Augmented image, (optionally) source image, and augmented joints.
@@ -190,14 +196,17 @@ class DataAugmenter:
             )
 
         # Occlusion block
+        is_already_covered = (cover is not None and cover != "uncover")
+
         if self.exclusive_occlusion:
             candidates = []
-            if random.random() < self.cyclegan.probability:
-                candidates.append("cyclegan")
-            if random.random() < self.cut.probability:
-                candidates.append("cut")
-            if random.random() < self.advanced_cover.probability:
-                candidates.append("advanced_cover")
+            if not is_already_covered:
+                if random.random() < self.cyclegan.probability:
+                    candidates.append("cyclegan")
+                if random.random() < self.cut.probability:
+                    candidates.append("cut")
+                if random.random() < self.advanced_cover.probability:
+                    candidates.append("advanced_cover")
             if random.random() < self.thermal_augmenter.probability:
                 candidates.append("thermal")
 
@@ -222,16 +231,17 @@ class DataAugmenter:
                         image, joints=kpts, is_ir=is_ir, force_apply=True
                     )
         else:
-            image = self.cyclegan(image)
-            image = self.cut(image)
-            image = self.advanced_cover(
-                image,
-                joints=kpts,
-                is_ir=is_ir,
-                fda_prob=float(self.config.get("fda_prob", 0.5)),
-                hist_match_prob=float(self.config.get("hist_match_prob", 0.5)),
-                fda_beta=float(self.config.get("fda_beta", 0.01)),
-            )
+            if not is_already_covered:
+                image = self.cyclegan(image)
+                image = self.cut(image)
+                image = self.advanced_cover(
+                    image,
+                    joints=kpts,
+                    is_ir=is_ir,
+                    fda_prob=float(self.config.get("fda_prob", 0.5)),
+                    hist_match_prob=float(self.config.get("hist_match_prob", 0.5)),
+                    fda_beta=float(self.config.get("fda_beta", 0.01)),
+                )
             image = self.thermal_augmenter(image, joints=kpts, is_ir=is_ir)
 
         image = self.cutout(image)

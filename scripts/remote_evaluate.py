@@ -114,9 +114,9 @@ def main() -> None:
         )
 
         cmd = (
-            f"cd {remote_project_dir} && {env_setup} && export CHECKPOINT_NAME={args_cli.checkpoint_name} && "
+            f"cd {remote_project_dir} && {env_setup} && "
             f"torchrun --nproc_per_node={num_gpus} --master_port={master_port} "
-            f"scripts/evaluate.py --run_id {args_cli.run_id} --save_json {remote_results_path} "
+            f"scripts/evaluate.py --run_id {args_cli.run_id} --checkpoint {args_cli.checkpoint_name} --save_json {remote_results_path} "
             f"{' '.join(other_args)}"
         )
 

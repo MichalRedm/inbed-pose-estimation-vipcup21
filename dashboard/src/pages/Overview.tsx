@@ -25,15 +25,20 @@ export interface RunDetails {
   eval_pck?: number;
   config?: Record<string, unknown>;
   evaluation?: {
-    pck: number;
-    mpjpe: number;
+    pck?: number;
+    mpjpe?: number;
     loss?: number;
     per_joint_metrics?: Array<{
       name: string;
       pck: number;
       error: number;
     }>;
+    model_type?: string;
+    run_id?: string;
+    status?: string;
+    visual_audit?: string;
   };
+
   history?: Array<Record<string, number>>;
   display_metadata?: {
     charts?: Array<{

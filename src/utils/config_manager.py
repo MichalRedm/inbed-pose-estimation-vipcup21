@@ -39,9 +39,26 @@ def get_display_metadata_for_config(config: Dict[str, Any]) -> Dict[str, Any]:
     training_type = config.get("training_type", "standard")
 
     use_cyclegan = training_type == "cyclegan" or train_cfg.get("cyclegan", False)
+    use_cut = training_type == "cut" or train_cfg.get("cut", False)
     use_uda = training_type == "uda" or uda_cfg.get("enabled", False)
 
-    if use_cyclegan:
+    if use_cut:
+        return {
+            "charts": [
+                {"key": "loss", "label": "Generator Loss", "color": "primary"},
+                {"key": "val_loss", "label": "Val G Loss", "color": "lime", "dash": "5 3"},
+                {"key": "nce_loss", "label": "NCE Loss", "color": "purple"},
+                {"key": "pose_loss", "label": "Pose Consistency Loss", "color": "pink"},
+            ],
+            "highlights": [
+                {"key": "loss", "label": "GENERATOR LOSS", "color": "primary"},
+                {"key": "nce_loss", "label": "NCE LOSS", "color": "purple"},
+                {"key": "pose_loss", "label": "POSE CONS LOSS", "color": "pink"},
+                {"key": "d_loss", "label": "DISC LOSS", "color": "coral"},
+            ],
+            "primary_metric": "loss",
+        }
+    elif use_cyclegan:
         return {
             "charts": [
                 {"key": "loss", "label": "Generator Loss", "color": "primary"},
