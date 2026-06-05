@@ -207,9 +207,11 @@ def evaluate(
     # Load config from checkpoint (run-specific, authoritative)
     config, state = load_run_config(checkpoint_path)
 
-    is_cyclegan = config.get("training_type") == "cyclegan" or config.get(
+    is_cyclegan = config.get("training_type") in ["cyclegan", "cut"] or config.get(
         "training", {}
-    ).get("cyclegan", False)
+    ).get("cyclegan", False) or config.get(
+        "training", {}
+    ).get("cut", False)
     if is_cyclegan:
         rank = int(os.environ.get("RANK", -1))
         if rank <= 0:
@@ -221,9 +223,13 @@ def evaluate(
         from src.models.cyclegan.generator import GeneratorResNet
 
         input_shape = (3, 256, 256)
-        model: torch.nn.Module = GeneratorResNet(input_shape, num_residual_blocks=6).to(
-            device
-        )
+        is_cut = config.get("training_type") == "cut" or config.get("training", {}).get("cut", False)
+        default_blocks = 9 if is_cut else 6
+        num_residual_blocks = config.get("model", {}).get("resnet_gan", {}).get("num_residual_blocks", default_blocks)
+        model: torch.nn.Module = GeneratorResNet(
+            input_shape, num_residual_blocks=num_residual_blocks
+        ).to(device)
+
 
         if state is None:
             state = torch.load(checkpoint_path, map_location=device, weights_only=False)
@@ -347,10 +353,12 @@ def evaluate(
     if rank <= 0:
         print(f"Loading: {checkpoint_path}")
 
-    # Determine in_channels from model config
+    # Determine in_channels from model/dataset config
     model_cfg: Dict[str, Any] = config.get("model", {})
     model_name = str(model_cfg.get("name", "hrnet"))
-    in_channels = int(model_cfg.get(model_name, {}).get("in_channels", 1))
+    is_gan = model_name in ["resnet_gan", "cyclegan"]
+    default_channels = 3 if is_gan else 1
+    in_channels = int(config.get("dataset", {}).get("in_channels") or model_cfg.get(model_name, {}).get("in_channels") or default_channels)
 
     if state is None:
         state = torch.load(checkpoint_path, map_location=device, weights_only=False)
