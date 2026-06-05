@@ -461,7 +461,14 @@ def train() -> None:
     trainer.fit(train_loader, val_loader)
 
     if is_distributed and dist.is_initialized():
-        dist.destroy_process_group()
+        try:
+            dist.destroy_process_group()
+        except Exception:
+            pass
+
+    # Force exit to prevent DDP process hang on exit (especially on multi-GPU)
+    import os
+    os._exit(0)
 
 
 if __name__ == "__main__":

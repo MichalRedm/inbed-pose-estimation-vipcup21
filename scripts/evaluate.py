@@ -675,4 +675,11 @@ if __name__ == "__main__":
     )
 
     if dist.is_initialized():
-        dist.destroy_process_group()
+        try:
+            dist.destroy_process_group()
+        except Exception:
+            pass
+
+    # Force exit to prevent DDP process hang on exit
+    import os
+    os._exit(0)
