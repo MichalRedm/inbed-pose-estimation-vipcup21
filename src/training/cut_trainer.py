@@ -264,6 +264,32 @@ class CUTTrainer(BaseTrainer):
                 param.requires_grad = False
             self.pose_estimator = pose_model
 
+    def _train_step(self, batch: Any) -> Dict[str, float]:
+        """
+        Placeholder to satisfy BaseTrainer abstract methods.
+        The actual training step is defined in CUTLightningModule.
+
+        Args:
+            batch: Batch data.
+
+        Returns:
+            An empty dictionary.
+        """
+        return {}
+
+    def _val_step(self, batch: Any) -> Dict[str, float]:
+        """
+        Placeholder to satisfy BaseTrainer abstract methods.
+        The actual validation step is defined in CUTLightningModule.
+
+        Args:
+            batch: Batch data.
+
+        Returns:
+            An empty dictionary.
+        """
+        return {}
+
     def fit(self, train_loader: Any, val_loader: Any = None) -> None:
         from .lightning_callbacks import DashboardTelemetryCallback
 
