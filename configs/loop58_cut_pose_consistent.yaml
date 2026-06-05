@@ -1,0 +1,28 @@
+training_type: "cut"
+model:
+  name: "resnet_gan"
+training:
+  epochs: 100
+  batch_size: 2
+  lr: 0.0002
+  b1: 0.5
+  b2: 0.999
+  lambda_gan: 1.0
+  lambda_nce: 1.0
+  lambda_pose: 10.0
+  use_nce_idt: true
+  pretrained_gan: true
+  cut: true
+  pretrained_pose_estimator_path: "pretrained_models/loop53_best.pth"
+  augmentation:
+    horizontal_flip_prob: 0.5
+    scale_prob: 0.5
+    scale_factor: 0.2
+    rotation_prob: 0.5
+    rotation_factor: 30
+dataset:
+  image_size: [256, 256]
+  modalities: ["IR"]
+  in_channels: 3
+remote:
+  use_remote: true
