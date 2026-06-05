@@ -21,7 +21,7 @@ import {
   ResponsiveContainer,
   Cell
 } from 'recharts';
-import { evaluateModel } from '../services/api';
+import { evaluateModel, API_BASE_URL } from '../services/api';
 import type { RunDetails } from '../pages/Overview';
 
 interface ChartConfig {
@@ -143,6 +143,8 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
       setIsEvaluating(false);
     }
   };
+
+  const hasPoseMetrics = typeof evalResults?.pck === 'number' && typeof evalResults?.mpjpe === 'number';
 
   const pckData = (evalResults?.per_joint_metrics || []).map((m: { name: string; pck: number }) => ({
     name: m.name.replace('_', ' '),
@@ -326,85 +328,131 @@ const RunAnalysis: React.FC<RunAnalysisProps> = ({ details, isActive, trainingSt
 
         {evalResults ? (
           <div className="flex-column" style={{ gap: '24px', marginTop: '20px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
-               <div className="glass" style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span className="micro-label text-secondary">Mean PCK@0.2</span>
-                  <div className="tooltip-container">
-                    <HelpCircle size={12} className="info-icon" />
-                    <div className="tooltip-content">
-                      Percentage of Correct Keypoints: A prediction is correct if it falls within 0.2 * Torso Diameter of the ground truth.
+            {hasPoseMetrics ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                  <div className="glass" style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="micro-label text-secondary">Mean PCK@0.2</span>
+                      <div className="tooltip-container">
+                        <HelpCircle size={12} className="info-icon" />
+                        <div className="tooltip-content">
+                          Percentage of Correct Keypoints: A prediction is correct if it falls within 0.2 * Torso Diameter of the ground truth.
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--accent-lime)' }}>
+                      {evalResults.pck !== undefined ? (evalResults.pck * 100).toFixed(1) : 'N/A'}%
+                    </div>
+                  </div>
+                  <div className="glass" style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="micro-label text-secondary">Mean MPJPE</span>
+                      <div className="tooltip-container">
+                        <HelpCircle size={12} className="info-icon" />
+                        <div className="tooltip-content">
+                          Mean Per Joint Position Error: The average Euclidean distance (in pixels) between predicted and ground truth joint coordinates.
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--accent-pink)' }}>
+                      {evalResults.mpjpe !== undefined ? evalResults.mpjpe.toFixed(1) : 'N/A'}px
+                    </div>
+                  </div>
+                  <div className="glass" style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="micro-label text-secondary">Avg Val Loss</span>
+                      <div className="tooltip-container">
+                        <HelpCircle size={12} className="info-icon" />
+                        <div className="tooltip-content">
+                          The average Mean Squared Error (MSE) loss calculated over the validation set.
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 600, marginTop: '8px' }}>
+                      {evalResults.loss?.toFixed(6) || 'N/A'}
                     </div>
                   </div>
                 </div>
-                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--accent-lime)' }}>{(evalResults.pck * 100).toFixed(1)}%</div>
-              </div>
-              <div className="glass" style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span className="micro-label text-secondary">Mean MPJPE</span>
-                  <div className="tooltip-container">
-                    <HelpCircle size={12} className="info-icon" />
-                    <div className="tooltip-content">
-                      Mean Per Joint Position Error: The average Euclidean distance (in pixels) between predicted and ground truth joint coordinates.
-                    </div>
-                  </div>
-                </div>
-                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--accent-pink)' }}>{evalResults.mpjpe.toFixed(1)}px</div>
-              </div>
-              <div className="glass" style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span className="micro-label text-secondary">Avg Val Loss</span>
-                  <div className="tooltip-container">
-                    <HelpCircle size={12} className="info-icon" />
-                    <div className="tooltip-content">
-                      The average Mean Squared Error (MSE) loss calculated over the validation set.
-                    </div>
-                  </div>
-                </div>
-                <div style={{ fontSize: '1.2rem', fontWeight: 600, marginTop: '8px' }}>{evalResults.loss?.toFixed(6) || 'N/A'}</div>
-              </div>
-            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', height: '300px' }}>
-              <div className="flex-column">
-                <span className="micro-label" style={{ marginBottom: '10px', opacity: 0.7 }}>PCK per Joint (%)</span>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={pckData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" horizontal={true} vertical={false} />
-                    <XAxis type="number" domain={[0, 100]} hide />
-                    <YAxis type="category" dataKey="name" stroke="var(--text-secondary)" fontSize={10} width={80} />
-                    <Tooltip 
-                      cursor={{ fill: 'rgba(255,255,255,0.05)' }} 
-                      contentStyle={{ background: 'var(--bg-secondary)', border: 'none', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff' }}
-                      labelStyle={{ color: '#fff' }}
-                    />
-                    <Bar dataKey="pck" radius={[0, 4, 4, 0]}>
-                      {pckData.map((entry: { name: string; pck: number }, index: number) => (
-                        <Cell key={`cell-${index}`} fill={entry.pck > 80 ? 'var(--accent-lime)' : 'var(--accent-primary)'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', height: '300px' }}>
+                  <div className="flex-column">
+                    <span className="micro-label" style={{ marginBottom: '10px', opacity: 0.7 }}>PCK per Joint (%)</span>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={pckData} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" horizontal={true} vertical={false} />
+                        <XAxis type="number" domain={[0, 100]} hide />
+                        <YAxis type="category" dataKey="name" stroke="var(--text-secondary)" fontSize={10} width={80} />
+                        <Tooltip 
+                          cursor={{ fill: 'rgba(255,255,255,0.05)' }} 
+                          contentStyle={{ background: 'var(--bg-secondary)', border: 'none', borderRadius: '8px' }}
+                          itemStyle={{ color: '#fff' }}
+                          labelStyle={{ color: '#fff' }}
+                        />
+                        <Bar dataKey="pck" radius={[0, 4, 4, 0]}>
+                          {pckData.map((entry: { name: string; pck: number }, index: number) => (
+                            <Cell key={`cell-${index}`} fill={entry.pck > 80 ? 'var(--accent-lime)' : 'var(--accent-primary)'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex-column">
+                    <span className="micro-label" style={{ marginBottom: '10px', opacity: 0.7 }}>MPJPE per Joint (px)</span>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={errorData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" vertical={false} />
+                        <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={9} tick={{ angle: -45, textAnchor: 'end' }} height={60} interval={0} />
+                        <YAxis stroke="var(--text-secondary)" fontSize={10} domain={['auto', 'auto']} />
+                        <Tooltip 
+                          cursor={{ fill: 'rgba(255,255,255,0.05)' }} 
+                          contentStyle={{ background: 'var(--bg-secondary)', border: 'none', borderRadius: '8px' }}
+                          itemStyle={{ color: '#fff' }}
+                          labelStyle={{ color: '#fff' }}
+                        />
+                        <Bar dataKey="error" fill="var(--accent-pink)" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="glass" style={{ padding: '20px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.01)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent-lime)' }} />
+                    <span className="micro-label" style={{ opacity: 0.8, textTransform: 'uppercase' }}>Evaluation Successful</span>
+                  </div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 600, color: '#fff' }}>
+                    Domain Translation Model Details
+                  </div>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                    This model (type: <span style={{ color: 'var(--accent-lime)' }}>{evalResults.model_type || 'domain translation'}</span>) has run evaluation successfully. Since it translates images between domains rather than predicting pose keypoints directly, no pose coordinate metrics (PCK/MPJPE) are produced.
+                  </p>
+                </div>
               </div>
-              <div className="flex-column">
-                <span className="micro-label" style={{ marginBottom: '10px', opacity: 0.7 }}>MPJPE per Joint (px)</span>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={errorData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-purple)" vertical={false} />
-                    <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={9} tick={{ angle: -45, textAnchor: 'end' }} height={60} interval={0} />
-                    <YAxis stroke="var(--text-secondary)" fontSize={10} domain={['auto', 'auto']} />
-                    <Tooltip 
-                      cursor={{ fill: 'rgba(255,255,255,0.05)' }} 
-                      contentStyle={{ background: 'var(--bg-secondary)', border: 'none', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff' }}
-                      labelStyle={{ color: '#fff' }}
-                    />
-                    <Bar dataKey="error" fill="var(--accent-pink)" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+            )}
+
+            {evalResults.visual_audit && (
+              <div className="flex-column" style={{ gap: '12px', marginTop: '12px' }}>
+                <span className="micro-label text-secondary" style={{ textTransform: 'uppercase' }}>Visual Audit Output</span>
+                <div className="glass" style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(0,0,0,0.2)' }}>
+                  <img 
+                    src={
+                      evalResults.visual_audit.startsWith('results/runs/')
+                        ? `${API_BASE_URL}/static/runs/${evalResults.visual_audit.substring('results/runs/'.length)}`
+                        : evalResults.visual_audit.startsWith('/static/runs/')
+                        ? `${API_BASE_URL}${evalResults.visual_audit}`
+                        : evalResults.visual_audit.startsWith('http')
+                        ? evalResults.visual_audit
+                        : `${API_BASE_URL}/${evalResults.visual_audit}`
+                    } 
+                    alt="Visual Audit"
+                    style={{ width: '100%', height: 'auto', borderRadius: '8px', display: 'block', border: '1px solid rgba(255,255,255,0.05)' }} 
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         ) : (
           <div className="empty-state" style={{ padding: '40px' }}>
