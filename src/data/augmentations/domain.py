@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torchvision.transforms.v2 as v2
 from PIL import Image
-from typing import Union, Dict, Any, Optional, cast
+from typing import Union, Dict, Any, Optional, cast, Tuple
 
 
 class CycleGANAugmentation:
@@ -31,11 +31,15 @@ class CycleGANAugmentation:
     device: torch.device
     generator: Optional[nn.Module]
     checkpoint_path: str
+    alpha_blend: bool
+    alpha_range: Tuple[float, float]
 
     def __init__(
         self,
         probability: float = 0.5,
         checkpoint_path: str = "models/cyclegan_gen_A2B.pth",
+        alpha_blend: bool = False,
+        alpha_range: Tuple[float, float] = (0.6, 1.0),
     ) -> None:
         """
         Initializes the CycleGAN augmentation.
@@ -43,12 +47,16 @@ class CycleGANAugmentation:
         Args:
             probability: Probability of applying the translation.
             checkpoint_path: Path to the generator checkpoint.
+            alpha_blend: Whether to blend the translated image with the original.
+            alpha_range: Range (min, max) for blending weights.
         """
         self.probability = probability
         self.enabled = probability > 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.generator = None
         self.checkpoint_path = checkpoint_path
+        self.alpha_blend = alpha_blend
+        self.alpha_range = alpha_range
 
         if self.enabled:
             # Try to load cyclegan generator late to avoid cyclic imports
@@ -121,18 +129,19 @@ class CycleGANAugmentation:
 
         original_channels = img_t.shape[0]
 
+        # Keep original [0, 1] tensor on target device for blending
+        img_t_orig = img_t.to(self.device)
+
         # Generator expects batch dimension and normalized [-1, 1]
-        img_t = (img_t * 2) - 1.0
-        img_t = img_t.unsqueeze(0)
+        img_t_norm = (img_t_orig * 2) - 1.0
+        img_t_norm = img_t_norm.unsqueeze(0)
 
         # Ensure 3 channels for the generator
-        if img_t.shape[1] == 1:
-            img_t = img_t.repeat(1, 3, 1, 1)
-
-        img_t = img_t.to(self.device)
+        if img_t_norm.shape[1] == 1:
+            img_t_norm = img_t_norm.repeat(1, 3, 1, 1)
 
         with torch.no_grad():
-            fake_target = self.generator(img_t)
+            fake_target = self.generator(img_t_norm)
 
         # Denormalize [0, 1]
         fake_target = (fake_target.squeeze(0) + 1.0) / 2.0
@@ -143,6 +152,10 @@ class CycleGANAugmentation:
             fake_target = fake_target[0:1, :, :]
 
         fake_target = torch.clamp(fake_target, 0, 1)
+
+        if self.alpha_blend:
+            alpha = float(torch.empty(1).uniform_(self.alpha_range[0], self.alpha_range[1]).item())
+            fake_target = alpha * fake_target + (1.0 - alpha) * img_t_orig
 
         if not is_tensor:
             return v2.functional.to_pil_image(fake_target.cpu())  # type: ignore[no-any-return]
@@ -175,11 +188,15 @@ class CUTAugmentation:
     device: torch.device
     generator: Optional[nn.Module]
     checkpoint_path: str
+    alpha_blend: bool
+    alpha_range: Tuple[float, float]
 
     def __init__(
         self,
         probability: float = 0.5,
         checkpoint_path: str = "models/cut_gen.pth",
+        alpha_blend: bool = False,
+        alpha_range: Tuple[float, float] = (0.6, 1.0),
     ) -> None:
         """
         Initializes the CUT augmentation.
@@ -187,12 +204,16 @@ class CUTAugmentation:
         Args:
             probability: Probability of applying the translation.
             checkpoint_path: Path to the generator checkpoint.
+            alpha_blend: Whether to blend the translated image with the original.
+            alpha_range: Range (min, max) for blending weights.
         """
         self.probability = probability
         self.enabled = probability > 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.generator = None
         self.checkpoint_path = checkpoint_path
+        self.alpha_blend = alpha_blend
+        self.alpha_range = alpha_range
 
         if self.enabled:
             try:
@@ -262,18 +283,19 @@ class CUTAugmentation:
 
         original_channels = img_t.shape[0]
 
+        # Keep original [0, 1] tensor on target device for blending
+        img_t_orig = img_t.to(self.device)
+
         # Generator expects batch dimension and normalized [-1, 1]
-        img_t = (img_t * 2) - 1.0
-        img_t = img_t.unsqueeze(0)
+        img_t_norm = (img_t_orig * 2) - 1.0
+        img_t_norm = img_t_norm.unsqueeze(0)
 
         # Ensure 3 channels for the generator
-        if img_t.shape[1] == 1:
-            img_t = img_t.repeat(1, 3, 1, 1)
-
-        img_t = img_t.to(self.device)
+        if img_t_norm.shape[1] == 1:
+            img_t_norm = img_t_norm.repeat(1, 3, 1, 1)
 
         with torch.no_grad():
-            fake_target = self.generator(img_t)
+            fake_target = self.generator(img_t_norm)
 
         # Denormalize [0, 1]
         fake_target = (fake_target.squeeze(0) + 1.0) / 2.0
@@ -284,6 +306,10 @@ class CUTAugmentation:
             fake_target = fake_target[0:1, :, :]
 
         fake_target = torch.clamp(fake_target, 0, 1)
+
+        if self.alpha_blend:
+            alpha = float(torch.empty(1).uniform_(self.alpha_range[0], self.alpha_range[1]).item())
+            fake_target = alpha * fake_target + (1.0 - alpha) * img_t_orig
 
         if not is_tensor:
             return v2.functional.to_pil_image(fake_target.cpu())  # type: ignore[no-any-return]

@@ -284,10 +284,16 @@ class VIPCupDataset(Dataset):
         if self.augmenter and self.split == "train":
             # For UDA, we want both the occluded (target) and clean (source) versions
             image, image_source, joints = self.augmenter(
-                image, joints, is_ir=(target_mod == "IR"), return_pair=True
+                image,
+                joints,
+                is_ir=(target_mod == "IR"),
+                return_pair=True,
+                cover=sample["cover"],
             )
         elif self.augmenter:
-            image, joints = self.augmenter(image, joints, is_ir=(target_mod == "IR"))
+            image, joints = self.augmenter(
+                image, joints, is_ir=(target_mod == "IR"), cover=sample["cover"]
+            )
 
         # Resize to standard size if not already handled by augmentation
         if hasattr(image, "size") and getattr(image, "size") != self.image_size:
