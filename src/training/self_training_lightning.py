@@ -55,6 +55,7 @@ class SelfTrainingLightningModule(pl.LightningModule):
     lambda_unlabeled: float
     cutout_prob: float
     cutout_size_ratio: float
+    running_teacher_conf: torch.Tensor
     last_step_metrics: Dict[str, float]
     validation_step_outputs: List[Dict[str, torch.Tensor]]
 
@@ -85,6 +86,11 @@ class SelfTrainingLightningModule(pl.LightningModule):
         self.lambda_unlabeled = float(train_cfg.get("lambda_unlabeled", 1.0))
         self.cutout_prob = float(train_cfg.get("cutout_prob", 0.5))
         self.cutout_size_ratio = float(train_cfg.get("cutout_size_ratio", 0.35))
+
+        # Register running teacher confidence buffer for adaptive thresholding
+        self.register_buffer(
+            "running_teacher_conf", torch.tensor(0.65, dtype=torch.float32)
+        )
 
         # 1. Create EMA Teacher as a deepcopy of the student
         self.teacher = copy.deepcopy(model)
@@ -148,7 +154,21 @@ class SelfTrainingLightningModule(pl.LightningModule):
         return getattr(self, "global_start_epoch", 0) + self.current_epoch
 
     def _get_current_confidence_threshold(self, epoch: int) -> float:
-        num_epochs: int = int(self.config.get("training", {}).get("epochs", 30))
+        train_cfg = self.config.get("training", {})
+        if "teacher_conf_min" in train_cfg or train_cfg.get(
+            "dynamic_confidence_threshold", False
+        ):
+            t_min = float(train_cfg.get("teacher_conf_min", 0.65))
+            t_max = float(train_cfg.get("teacher_conf_max", 0.85))
+            norm_conf = (self.running_teacher_conf.item() - t_min) / (t_max - t_min)
+            norm_conf = max(0.0, min(1.0, norm_conf))
+
+            # Linearly interpolate between start and end thresholds based on teacher confidence
+            return self.conf_threshold_start + norm_conf * (
+                self.conf_threshold_end - self.conf_threshold_start
+            )
+
+        num_epochs: int = int(train_cfg.get("epochs", 30))
         if num_epochs <= 1:
             return self.conf_threshold_start
         progress = min(epoch / (num_epochs - 1), 1.0)
@@ -275,6 +295,12 @@ class SelfTrainingLightningModule(pl.LightningModule):
         flat_heatmaps = pred_heatmaps_teacher.view(B, 14, -1)
         conf, max_idx = flat_heatmaps.max(dim=-1)  # conf: (B, 14), max_idx: (B, 14)
 
+        # Update running teacher confidence EMA
+        batch_mean_conf = conf.mean()
+        self.running_teacher_conf = (
+            0.99 * self.running_teacher_conf + 0.01 * batch_mean_conf.detach()
+        )
+
         # Convert peak indices to coords in 64x64 heatmap space
         H_out, W_out = 64, 64
         pred_x = (max_idx % W_out).float()
@@ -328,7 +354,20 @@ class SelfTrainingLightningModule(pl.LightningModule):
         # -------------------------------------------------------------
         # Step 3: Combine and Balance Losses
         # -------------------------------------------------------------
-        loss_total = loss_labeled + self.lambda_unlabeled * loss_unlabeled
+        train_cfg = self.config.get("training", {})
+        t_min = float(train_cfg.get("teacher_conf_min", 0.65))
+        t_max = float(train_cfg.get("teacher_conf_max", 0.85))
+        norm_conf = (self.running_teacher_conf.item() - t_min) / (t_max - t_min)
+        norm_conf = max(0.0, min(1.0, norm_conf))
+
+        if train_cfg.get("dynamic_lambda_unlabeled", False):
+            lambda_min = float(train_cfg.get("lambda_unlabeled_min", 0.2))
+            lambda_max = float(train_cfg.get("lambda_unlabeled_max", 1.5))
+            current_lambda = lambda_min + norm_conf * (lambda_max - lambda_min)
+        else:
+            current_lambda = self.lambda_unlabeled
+
+        loss_total = loss_labeled + current_lambda * loss_unlabeled
 
         # Logging metrics
         metrics = {
@@ -336,6 +375,9 @@ class SelfTrainingLightningModule(pl.LightningModule):
             "loss_labeled": loss_labeled.item(),
             "loss_unlabeled": loss_unlabeled.item(),
             "mean_teacher_conf": conf.mean().item(),
+            "running_teacher_conf": self.running_teacher_conf.item(),
+            "norm_teacher_conf": norm_conf,
+            "lambda_unlabeled": current_lambda,
             "conf_ratio": (pseudo_vis <= 1).float().mean().item(),
             "sigma": sigma,
             "conf_threshold": current_conf_threshold,

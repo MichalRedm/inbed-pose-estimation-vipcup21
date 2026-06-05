@@ -1,12 +1,12 @@
 # State Tracker
 
-- **Current Loop**: 56 (Tuned Adaptive Self-Training)
+- **Current Loop**: 57 (Refined Self-Training)
 - **Phase**: Phase 5 — Recursive Continuation & State Logging
-- **Status**: FINISHED. Implemented Cosine Threshold Decay, Cosine EMA Warmup, Part-Aware Joint Discounts, Soft Loss Weighting, and 60-epoch schedule. This iteration successfully beat the previous record, achieving **86.2% PCK@0.2** and **8.9 px MPJPE**.
+- **Status**: FINISHED. Implemented Adaptive Relative Confidence Thresholding and Dynamic Unlabeled Loss Weighting. This iteration successfully beat the previous record, achieving **86.7% PCK@0.2** and **8.6 px MPJPE**.
 - **Absolute Priority**:
-  - **Record**: Loop 56 (**86.2% PCK@0.2**, **8.9 px MPJPE**) is the **new stable verified record**.
+  - **Record**: Loop 57 (**86.7% PCK@0.2**, **8.6 px MPJPE**) is the **new stable verified record**.
   - **Next Goal**: Implement Task-Consistent Domain Translation (Sem-GAN/CUT with Pose Loss) or MoE Modality Routing.
-- **Baseline**: Loop 56 (86.2% PCK@0.2).
+- **Baseline**: Loop 57 (86.7% PCK@0.2).
 
 ## ⚠️ CRITICAL: Metric Audit Results
 
@@ -16,7 +16,8 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 
 | Run | Decoder | PCK@0.2 (strict) | MPJPE | Status |
 |-----|---------|--------------------|--------------------|--------|
-| **loop56_tuned_self_training** | argmax | **86.2%** | **8.9 px** | **ALL-TIME RECORD** |
+| **loop57_refined_self_training** | argmax | **86.7%** | **8.6 px** | **ALL-TIME RECORD** |
+| loop56_tuned_self_training | argmax | **86.2%** | **8.9 px** | Legacy Record |
 | loop55_adaptive_curriculum | argmax | **82.8%** | **10.2 px** | Legacy Record |
 | loop54_self_training_v3 | argmax | **82.5%** | **10.2 px** | Stable Baseline |
 | loop53_advanced_cover | argmax | **78.7%** | **11.9 px** | CNN/ViT Champion |
@@ -31,6 +32,7 @@ Fresh local re-evaluation established the following **corrected baselines** (cov
 | 54 | Self-Training (EMA Teacher + CUT Strong Aug) | SUCCESS | **82.5%** | **v3 Run (Final Record)**: Achieved 82.5% PCK in a fresh, uninterrupted run. Verified the stability of EMA-based consistency regularization. |
 | 55 | Adaptive Confidence Curriculum (0.6 -> 0.25) | SUCCESS | **82.8%** | Decaying threshold increased target utilization. Resumption bug fix ensured curriculum stability. **NEW STABLE RECORD**. |
 | 56 | Tuned Self-Training (60 Epochs + Cosine Decay + Cosine EMA + Joint Discounts + Soft Weighting) | SUCCESS | **86.2%** | Cosine schedules, part-aware thresholds (extremities discounted), soft weighting, and 60-epoch budget stabilized training and accelerated adaptation. **NEW STABLE RECORD**. |
+| 57 | Refined Self-Training (Adaptive relative thresholds + dynamic unlabeled loss weight λu) | SUCCESS | **86.7%** | Relative threshold ties joint thresholds to teacher conf EMA. Dynamic λu scales unlabeled loss based on teacher confidence. **NEW STABLE RECORD**. |
 
 ## Next Planned Steps
 
