@@ -196,7 +196,7 @@ class DataAugmenter:
             )
 
         # Occlusion block
-        is_already_covered = (cover is not None and cover != "uncover")
+        is_already_covered = cover is not None and cover != "uncover"
 
         if self.exclusive_occlusion:
             candidates = []

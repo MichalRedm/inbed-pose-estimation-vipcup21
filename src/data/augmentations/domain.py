@@ -154,7 +154,9 @@ class CycleGANAugmentation:
         fake_target = torch.clamp(fake_target, 0, 1)
 
         if self.alpha_blend:
-            alpha = float(torch.empty(1).uniform_(self.alpha_range[0], self.alpha_range[1]).item())
+            alpha = float(
+                torch.empty(1).uniform_(self.alpha_range[0], self.alpha_range[1]).item()
+            )
             fake_target = alpha * fake_target + (1.0 - alpha) * img_t_orig
 
         if not is_tensor:
@@ -308,7 +310,9 @@ class CUTAugmentation:
         fake_target = torch.clamp(fake_target, 0, 1)
 
         if self.alpha_blend:
-            alpha = float(torch.empty(1).uniform_(self.alpha_range[0], self.alpha_range[1]).item())
+            alpha = float(
+                torch.empty(1).uniform_(self.alpha_range[0], self.alpha_range[1]).item()
+            )
             fake_target = alpha * fake_target + (1.0 - alpha) * img_t_orig
 
         if not is_tensor:

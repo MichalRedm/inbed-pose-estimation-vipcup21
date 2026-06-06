@@ -46,7 +46,12 @@ def get_display_metadata_for_config(config: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "charts": [
                 {"key": "loss", "label": "Generator Loss", "color": "primary"},
-                {"key": "val_loss", "label": "Val G Loss", "color": "lime", "dash": "5 3"},
+                {
+                    "key": "val_loss",
+                    "label": "Val G Loss",
+                    "color": "lime",
+                    "dash": "5 3",
+                },
                 {"key": "nce_loss", "label": "NCE Loss", "color": "purple"},
                 {"key": "pose_loss", "label": "Pose Consistency Loss", "color": "pink"},
             ],
