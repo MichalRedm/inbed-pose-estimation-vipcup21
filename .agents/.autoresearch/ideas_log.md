@@ -35,6 +35,16 @@ Below is our prioritized queue of strictly **future** improvement hypotheses, ra
 *   **Implementation**: Convert COCO images to grayscale and pre-train the ViT or HRNet backbone on COCO keypoints before SLP fine-tuning.
 *   **ROI Status**: **MEDIUM (ROI Rank 5)** — High theoretical value, but requires large-scale dataset pipeline engineering.
 
+### 6. Stochastic CUT (BicycleCUT / Mode-Seeking CUT)
+*   **Hypothesis**: The standard CUT (Contrastive Unpaired Translation) model is fully deterministic, mapping one uncovered image to exactly one covered image. Injecting a random noise vector `z` during the forward pass of the generator allows generating multiple randomized variations (covers) for the same underlying pose, multiplying our effective dataset size.
+*   **Implementation**: Borrow concepts from BicycleGAN and Mode-Seeking GANs. Spatially expand and concatenate `z` with the input, or use AdaIN in ResNet blocks mapping `z` to scale/shift parameters. To prevent mode collapse, add a Mode Seeking Loss (`L_ms = ||G(x, z1) - G(x, z2)|| / ||z1 - z2||`) or Latent Regression loss (`L_z = ||E(G(x, z)) - z||_1`). Compute PatchNCE loss on deep semantic layers to maintain pose consistency while `z` controls the blanket style.
+*   **ROI Status**: **MEDIUM (ROI Rank 6)**
+
+### 7. Probabilistic Alpha Blending for CUT Augmentation
+*   **Hypothesis**: Infrared radiation diffusion through blankets is approximately linear in pixel space (temperatures). Blending CUT-generated covers with original uncovered images using random weights (`Augmented = alpha * CUT_Image + (1 - alpha) * Original_Image`, with `alpha` sampled from e.g. `Uniform(0.5, 1.0)`) simulates blankets of different thicknesses and thermal transmittances, acting as a simple, zero-parameter method to introduce stochasticity.
+*   **Implementation**: In the data augmentation loader, apply random alpha blending between the source uncovered image and the CUT-translated image. Restrain `alpha` to $\geq 0.5$ to ensure the cover remains the dominant visual feature and prevents the network from simply exploiting uncovered body features.
+*   **ROI Status**: **HIGH (ROI Rank 7)** — Extremely simple to implement, zero overhead.
+
 ---
 
 ## 🚀 Completed & Integrated Improvements
