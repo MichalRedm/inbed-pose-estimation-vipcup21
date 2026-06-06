@@ -2,17 +2,19 @@
 Implements the training logic for Contrastive Unpaired Translation (CUT).
 Provides both the PyTorch Lightning module and the Trainer wrapper.
 """
+
 import torch
 import torch.nn as nn
 import itertools
 import pytorch_lightning as pl
-from typing import Dict, Any, cast
+from typing import Dict, Any, cast, Optional
 
 from .base_trainer import BaseTrainer
 from src.models.cyclegan.generator import GeneratorResNet
 from src.models.cyclegan.discriminator import Discriminator
 from src.models.cyclegan.loss import GANLoss
 from src.models.cyclegan.cut_loss import PatchSampleF, PatchNCELoss
+
 
 class CUTLightningModule(pl.LightningModule):
     """
@@ -21,6 +23,7 @@ class CUTLightningModule(pl.LightningModule):
     Handles the generator and discriminator updates, including the PatchNCE
     contrastive loss and optional pose-preservation loss.
     """
+
     def __init__(
         self,
         G: nn.Module,
@@ -29,7 +32,7 @@ class CUTLightningModule(pl.LightningModule):
         optimizer_G: torch.optim.Optimizer,
         optimizer_D: torch.optim.Optimizer,
         config: Dict[str, Any],
-        pose_estimator: nn.Module = None,
+        pose_estimator: Optional[nn.Module] = None,
     ):
         super().__init__()
         self.G = G
@@ -79,15 +82,19 @@ class CUTLightningModule(pl.LightningModule):
             opt_g, opt_d = cast(Any, self.optimizers())
         else:
             opt_g, opt_d = self.optimizer_G, self.optimizer_D
-            
+
         real_A, real_B = batch
         device_type = self.device.type
         use_amp = device_type == "cuda"
 
         # Generator Update
         opt_g.zero_grad(set_to_none=True)
-        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
-            fake_B, feat_k = self.G(real_A, return_features=True, nce_layers=self.nce_layers)
+        with torch.amp.autocast(
+            device_type=device_type, dtype=torch.float16, enabled=use_amp
+        ):
+            fake_B, feat_k = self.G(
+                real_A, return_features=True, nce_layers=self.nce_layers
+            )
             feat_k = [f.detach() for f in feat_k]
             feat_q = self.G(fake_B, encode_only=True, nce_layers=self.nce_layers)
 
@@ -98,12 +105,18 @@ class CUTLightningModule(pl.LightningModule):
             loss_NCE = self.criterion_NCE(pool_q, pool_k) * self.lambda_nce
 
             if self.use_nce_idt:
-                idt_B, feat_k_idt = self.G(real_B, return_features=True, nce_layers=self.nce_layers)
+                idt_B, feat_k_idt = self.G(
+                    real_B, return_features=True, nce_layers=self.nce_layers
+                )
                 feat_k_idt = [f.detach() for f in feat_k_idt]
                 feat_q_idt = self.G(idt_B, encode_only=True, nce_layers=self.nce_layers)
-                pool_q_idt, patch_ids_idt = self.F_net(feat_q_idt, num_patches=self.num_patches)
+                pool_q_idt, patch_ids_idt = self.F_net(
+                    feat_q_idt, num_patches=self.num_patches
+                )
                 pool_k_idt, _ = self.F_net(feat_k_idt, patch_ids=patch_ids_idt)
-                loss_NCE_idt = self.criterion_NCE(pool_q_idt, pool_k_idt) * self.lambda_nce
+                loss_NCE_idt = (
+                    self.criterion_NCE(pool_q_idt, pool_k_idt) * self.lambda_nce
+                )
             else:
                 loss_NCE_idt = torch.tensor(0.0, device=self.device)
 
@@ -124,7 +137,9 @@ class CUTLightningModule(pl.LightningModule):
 
         # Discriminator Update
         opt_d.zero_grad(set_to_none=True)
-        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
+        with torch.amp.autocast(
+            device_type=device_type, dtype=torch.float16, enabled=use_amp
+        ):
             loss_D_real = self.criterion_GAN(self.D(real_B), True)
             loss_D_fake = self.criterion_GAN(self.D(fake_B.detach()), False)
             loss_D = (loss_D_real + loss_D_fake) * 0.5
@@ -149,9 +164,13 @@ class CUTLightningModule(pl.LightningModule):
         real_A, real_B = batch
         device_type = self.device.type
         use_amp = device_type == "cuda"
-        
-        with torch.amp.autocast(device_type=device_type, dtype=torch.float16, enabled=use_amp):
-            fake_B, feat_k = self.G(real_A, return_features=True, nce_layers=self.nce_layers)
+
+        with torch.amp.autocast(
+            device_type=device_type, dtype=torch.float16, enabled=use_amp
+        ):
+            fake_B, feat_k = self.G(
+                real_A, return_features=True, nce_layers=self.nce_layers
+            )
             feat_k = [f.detach() for f in feat_k]
             feat_q = self.G(fake_B, encode_only=True, nce_layers=self.nce_layers)
 
@@ -162,12 +181,18 @@ class CUTLightningModule(pl.LightningModule):
             loss_NCE = self.criterion_NCE(pool_q, pool_k) * self.lambda_nce
 
             if self.use_nce_idt:
-                idt_B, feat_k_idt = self.G(real_B, return_features=True, nce_layers=self.nce_layers)
+                idt_B, feat_k_idt = self.G(
+                    real_B, return_features=True, nce_layers=self.nce_layers
+                )
                 feat_k_idt = [f.detach() for f in feat_k_idt]
                 feat_q_idt = self.G(idt_B, encode_only=True, nce_layers=self.nce_layers)
-                pool_q_idt, patch_ids_idt = self.F_net(feat_q_idt, num_patches=self.num_patches)
+                pool_q_idt, patch_ids_idt = self.F_net(
+                    feat_q_idt, num_patches=self.num_patches
+                )
                 pool_k_idt, _ = self.F_net(feat_k_idt, patch_ids=patch_ids_idt)
-                loss_NCE_idt = self.criterion_NCE(pool_q_idt, pool_k_idt) * self.lambda_nce
+                loss_NCE_idt = (
+                    self.criterion_NCE(pool_q_idt, pool_k_idt) * self.lambda_nce
+                )
             else:
                 loss_NCE_idt = torch.tensor(0.0, device=self.device)
 
@@ -190,7 +215,9 @@ class CUTLightningModule(pl.LightningModule):
             "pose_loss": loss_pose.item() if self.P is not None else 0.0,
         }
         for k, v in metrics.items():
-            self.log(f"val_{k}", v, on_step=False, on_epoch=True, prog_bar=True, logger=False)
+            self.log(
+                f"val_{k}", v, on_step=False, on_epoch=True, prog_bar=True, logger=False
+            )
 
         return cast(torch.Tensor, loss_G)
 
@@ -201,10 +228,11 @@ class CUTLightningModule(pl.LightningModule):
 class CUTTrainer(BaseTrainer):
     """
     Trainer wrapper for CUT using PyTorch Lightning.
-    
+
     Orchestrates the setup of the models, optimizers, and the Lightning trainer
     for Contrastive Unpaired Translation.
     """
+
     def __init__(
         self,
         config: Dict[str, Any],
@@ -241,25 +269,30 @@ class CUTTrainer(BaseTrainer):
         self.optimizer_D = torch.optim.Adam(
             self.D.parameters(), lr=self.lr, betas=(self.b1, self.b2)
         )
-        
-        self.pose_estimator = None
-        pretrained_pose = config.get("training", {}).get("pretrained_pose_estimator_path", None)
+
+        self.pose_estimator: Optional[nn.Module] = None
+        pretrained_pose = config.get("training", {}).get(
+            "pretrained_pose_estimator_path", None
+        )
         if pretrained_pose:
             from src.models import build_model
+
             if self.is_main:
-                print(f"[CUTTrainer] Loading frozen pose estimator from {pretrained_pose}")
+                print(
+                    f"[CUTTrainer] Loading frozen pose estimator from {pretrained_pose}"
+                )
             ckpt = torch.load(pretrained_pose, map_location="cpu", weights_only=False)
-            
+
             if "config" in ckpt:
                 pose_model = build_model(ckpt["config"]).to(device)
             else:
                 pose_model = build_model(config).to(device)
-                
+
             if "model_state_dict" in ckpt:
                 pose_model.load_state_dict(ckpt["model_state_dict"])
             else:
                 pose_model.load_state_dict(ckpt)
-                
+
             pose_model.eval()
             for param in pose_model.parameters():
                 param.requires_grad = False

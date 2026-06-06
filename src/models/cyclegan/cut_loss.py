@@ -2,8 +2,12 @@
 Provides loss functions and modules for Contrastive Unpaired Translation (CUT).
 Includes the patch sampling MLP and the InfoNCE contrastive loss.
 """
+
 import torch
 import torch.nn as nn
+
+
+from typing import List, Optional, Tuple, Union, cast
 
 
 class PatchSampleF(nn.Module):
@@ -12,7 +16,11 @@ class PatchSampleF(nn.Module):
     embedding space for Patchwise Contrastive Learning (CUT).
     """
 
-    def __init__(self, in_channels_list=[128, 256, 256, 256, 256], embed_dim=256):
+    def __init__(
+        self,
+        in_channels_list: List[int] = [128, 256, 256, 256, 256],
+        embed_dim: int = 256,
+    ) -> None:
         super().__init__()
         self.embed_dim = embed_dim
 
@@ -25,7 +33,12 @@ class PatchSampleF(nn.Module):
             )
             self.mlps.append(mlp)
 
-    def forward(self, features, patch_ids=None, num_patches=256):
+    def forward(
+        self,
+        features: List[torch.Tensor],
+        patch_ids: Optional[List[torch.Tensor]] = None,
+        num_patches: int = 256,
+    ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
         """
         Samples patches from features and projects them to the embedding space.
 
@@ -74,12 +87,14 @@ class PatchNCELoss(nn.Module):
     Maximizes mutual information between corresponding patches.
     """
 
-    def __init__(self, tau=0.07):
+    def __init__(self, tau: float = 0.07) -> None:
         super().__init__()
         self.cross_entropy_loss = nn.CrossEntropyLoss(reduction="mean")
         self.tau = tau
 
-    def forward(self, feat_q, feat_k):
+    def forward(
+        self, feat_q: List[torch.Tensor], feat_k: List[torch.Tensor]
+    ) -> torch.Tensor:
         """
         Calculates the InfoNCE loss between generated features and source features.
 
@@ -90,7 +105,7 @@ class PatchNCELoss(nn.Module):
         Returns:
             The computed InfoNCE loss averaged across all feature layers.
         """
-        loss = 0.0
+        loss: Union[float, torch.Tensor] = 0.0
         for q, k in zip(feat_q, feat_k):
             # q, k shape: (B, num_patches, embed_dim)
             B, num_patches, C = q.shape
@@ -113,4 +128,4 @@ class PatchNCELoss(nn.Module):
 
             loss += self.cross_entropy_loss(logits, labels)
 
-        return loss / len(feat_q)
+        return cast(torch.Tensor, loss / len(feat_q))

@@ -4,10 +4,13 @@ from typing import Dict, Any
 from src.models.registry import register_model
 
 
+from typing import List, Optional, Tuple, Union, cast
+
+
 class ResidualBlock(nn.Module):
     """Residual Block with Instance Normalization."""
 
-    def __init__(self, in_features):
+    def __init__(self, in_features: int) -> None:
         super(ResidualBlock, self).__init__()
 
         self.block = nn.Sequential(
@@ -20,8 +23,8 @@ class ResidualBlock(nn.Module):
             nn.InstanceNorm2d(in_features),
         )
 
-    def forward(self, x):
-        return x + self.block(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return cast(torch.Tensor, x + self.block(x))
 
 
 class GeneratorResNet(nn.Module):
@@ -30,7 +33,12 @@ class GeneratorResNet(nn.Module):
     Uses Reflection Padding to reduce boundary artifacts.
     """
 
-    def __init__(self, input_shape, num_residual_blocks=9, pretrained=False):
+    def __init__(
+        self,
+        input_shape: Tuple[int, ...],
+        num_residual_blocks: int = 9,
+        pretrained: bool = False,
+    ) -> None:
         super(GeneratorResNet, self).__init__()
 
         channels = input_shape[0]
@@ -88,7 +96,7 @@ class GeneratorResNet(nn.Module):
         if pretrained:
             self._load_pretrained_encoder()
 
-    def _load_pretrained_encoder(self):
+    def _load_pretrained_encoder(self) -> None:
         """Loads ImageNet weights into the encoder layers."""
         try:
             import torchvision.models as models
@@ -105,7 +113,7 @@ class GeneratorResNet(nn.Module):
             print("[Generator] Initializing encoder with ResNet18 ImageNet weights...")
             with torch.no_grad():
                 # Map 7x7 conv (first layer in both)
-                self.encoder[1].weight.copy_(resnet.conv1.weight)
+                cast(Any, self.encoder[1]).weight.copy_(cast(Any, resnet.conv1).weight)
 
                 # For downsampling, we can use weights from resnet layer1/layer2
                 # This is heuristic but better than random
@@ -115,7 +123,15 @@ class GeneratorResNet(nn.Module):
         except Exception as e:
             print(f"[Generator] Could not load pretrained weights: {e}")
 
-    def forward(self, x, return_features=False, encode_only=False, nce_layers=None):
+    def forward(
+        self,
+        x: torch.Tensor,
+        return_features: bool = False,
+        encode_only: bool = False,
+        nce_layers: Optional[List[int]] = None,
+    ) -> Union[
+        torch.Tensor, List[torch.Tensor], Tuple[torch.Tensor, List[torch.Tensor]]
+    ]:
         if not return_features and not encode_only:
             x = self.encoder(x)
             x = self.resblocks(x)
@@ -124,7 +140,7 @@ class GeneratorResNet(nn.Module):
                 x = x.repeat(1, 3, 1, 1)
             return x
 
-        features = []
+        features: List[torch.Tensor] = []
 
         # Process through encoder and collect intermediate features
         feat_x = x
@@ -152,13 +168,13 @@ class GeneratorResNet(nn.Module):
             out = self.decoder(feat_x)
             if out.shape[1] == 1:
                 out = out.repeat(1, 3, 1, 1)
-            return out, features
+            return cast(Tuple[torch.Tensor, List[torch.Tensor]], (out, features))
 
         # Standard full forward
         out = self.decoder(feat_x)
         if out.shape[1] == 1:
             out = out.repeat(1, 3, 1, 1)
-        return out
+        return cast(torch.Tensor, out)
 
 
 @register_model("resnet_gan")
@@ -188,4 +204,3 @@ class RegisteredGeneratorResNet(GeneratorResNet):
             num_residual_blocks=num_residual_blocks,
             pretrained=pretrained,
         )
-

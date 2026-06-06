@@ -297,7 +297,7 @@ def train() -> None:
             in_channels=3,
             return_joints=False,
         )
-        train_dataset: Union[VIPCupDataset, PairedDataset] = PairedDataset(ds_A, ds_B)
+        train_dataset = PairedDataset(ds_A, ds_B)
 
         ds_A_val = VIPCupDataset(
             args.data_root,
@@ -317,7 +317,7 @@ def train() -> None:
             in_channels=3,
             return_joints=False,
         )
-        val_dataset: Union[VIPCupDataset, PairedDataset] = PairedDataset(ds_A_val, ds_B_val)
+        val_dataset = PairedDataset(ds_A_val, ds_B_val)
         collate_fn = None
     else:
         train_dataset = VIPCupDataset(
@@ -467,7 +467,6 @@ def train() -> None:
             pass
 
     # Force exit to prevent DDP process hang on exit (especially on multi-GPU)
-    import os
     os._exit(0)
 
 

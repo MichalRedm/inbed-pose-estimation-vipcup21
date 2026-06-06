@@ -122,7 +122,7 @@ def create_trainer(
         )
         model = trainer.G
     elif use_cyclegan:
-        trainer: Any = CycleGANTrainer(
+        trainer = CycleGANTrainer(
             config=config, device=device, rank=rank, world_size=world_size
         )
         # For CycleGAN, 'model' returned by factory is G_AB (contained in trainer)
